@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Universal Ranking System",
-  description: "Rank anything with tier lists",
+  title: "Curator",
+  description: "A universal ranking and rating system for organizing anything",
 };
 
 export default function RootLayout({
@@ -37,7 +37,7 @@ export default function RootLayout({
               <div className="mr-4 hidden md:flex">
                 <Link className="mr-6 flex items-center space-x-2" href="/">
                   <span className="hidden font-bold sm:inline-block">
-                    Ranking System
+                    Curator
                   </span>
                 </Link>
                 <nav className="flex items-center space-x-6 text-sm font-medium">

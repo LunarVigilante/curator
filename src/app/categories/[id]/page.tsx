@@ -5,16 +5,35 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import EditCategoryButton from './EditCategoryButton'
-import RecommendationDialog from '@/components/dialogs/RecommendationDialog'
 import AddItemDialog from '@/components/dialogs/AddItemDialog'
+import CustomRanksButton from './CustomRanksButton'
+import { getCustomRanks } from '@/lib/actions/customRanks'
+import { AnalyzeButton } from '@/components/analysis/AnalyzeButton'
 
 export default async function CategoryPage(props: { params: Promise<{ id: string }> }) {
     const params = await props.params
     const category = await getCategory(params.id)
     const items = await getItems(params.id)
+    const customRanks = await getCustomRanks(params.id) as Array<{
+        id: string
+        name: string
+        sentiment: 'positive' | 'neutral' | 'negative'
+        color: string | null
+        sortOrder: number
+    }>
 
     if (!category) {
-        return <div>Category not found</div>
+        return (
+            <div className="container mx-auto py-20 flex justify-center">
+                <div className="text-center space-y-4">
+                    <h1 className="text-2xl font-bold">Category Not Found</h1>
+                    <p className="text-muted-foreground">The category you are looking for does not exist or has been deleted.</p>
+                    <Link href="/">
+                        <Button>Return to Home</Button>
+                    </Link>
+                </div>
+            </div>
+        )
     }
 
     return (
@@ -36,8 +55,9 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
                         <p className="text-muted-foreground text-lg">{category.description}</p>
                     </div>
                     <div className="flex gap-2">
+                        <AnalyzeButton categoryId={category.id} />
+                        <CustomRanksButton categoryId={category.id} />
                         <AddItemDialog categoryId={category.id} categoryName={category.name} />
-                        <RecommendationDialog categoryId={category.id} categoryName={category.name} />
                     </div>
                 </div>
             </div>
@@ -46,6 +66,7 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
                 items={items}
                 categoryId={category.id}
                 categoryMetadata={category.metadata}
+                customRanks={customRanks}
             />
         </div>
     )

@@ -30,6 +30,7 @@ type SettingsFormProps = {
         llm_api_key?: string
         llm_model?: string
         llm_endpoint?: string
+
     }
 }
 
@@ -200,6 +201,8 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
                         </Button>
                     </div>
                 </div>
+
+
             </CardContent>
             <CardFooter>
                 <Button type="submit" disabled={loading}>

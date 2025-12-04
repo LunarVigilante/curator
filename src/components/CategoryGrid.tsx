@@ -19,14 +19,18 @@ type Category = {
     createdAt: Date | null
 }
 
-export default function CategoryGrid({ categories }: { categories: Category[] }) {
+export default function CategoryGrid({ categories, tileSize = 300 }: { categories: Category[], tileSize?: number }) {
     const [editingCategory, setEditingCategory] = useState<Category | null>(null)
 
     return (
         <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            <div className="flex flex-wrap justify-center gap-6 w-full">
                 {categories.map((category) => (
-                    <div key={category.id} className="relative group">
+                    <div
+                        key={category.id}
+                        className="relative group w-full"
+                        style={{ maxWidth: `${tileSize}px`, minWidth: '200px', flex: `1 1 ${tileSize}px` }}
+                    >
                         <Link href={`/categories/${category.id}`} className="block h-full">
                             <Card className="h-full overflow-hidden border-0 bg-muted/20 hover:bg-muted/40 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl group-hover:ring-2 ring-primary/20">
                                 <CardContent className="p-0 relative aspect-video overflow-hidden">

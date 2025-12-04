@@ -9,6 +9,7 @@ import { notFound } from 'next/navigation'
 import { Separator } from '@/components/ui/separator'
 import NumericalRating from '@/components/rating/NumericalRating'
 import TierSelector from '@/components/rating/TierSelector'
+import { RatingDisplay } from '@/components/rating/RatingDisplay'
 
 export default async function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
@@ -49,8 +50,8 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="category">Category</Label>
-                                <Input id="category" name="category" defaultValue={item.category || ''} />
+                                <Label htmlFor="category">Category ID</Label>
+                                <Input id="category" name="category" defaultValue={item.categoryId || ''} />
                             </div>
 
                             <div className="grid gap-2">
@@ -86,10 +87,10 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                             {item.ratings.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">No ratings yet.</p>
                             ) : (
-                                <ul className="space-y-1">
+                                <ul className="space-y-2">
                                     {item.ratings.map((r: any) => (
-                                        <li key={r.id} className="text-sm">
-                                            {r.type === 'NUMERICAL' ? `Score: ${r.value}` : `Tier: ${r.tier}`}
+                                        <li key={r.id} className="text-sm flex items-center gap-2">
+                                            <RatingDisplay rating={r} variant={r.type === 'NUMERICAL' ? 'bar' : 'badge'} />
                                         </li>
                                     ))}
                                 </ul>

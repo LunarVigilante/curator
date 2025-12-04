@@ -28,7 +28,7 @@ export async function callLLM(prompt: string) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
                 'HTTP-Referer': 'https://universal-ranking-system.local', // Required by OpenRouter
-                'X-Title': 'Universal Ranking System'
+                'X-Title': 'Curator'
             },
             body: JSON.stringify({
                 model: model,

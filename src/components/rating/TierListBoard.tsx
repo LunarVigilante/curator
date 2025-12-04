@@ -6,8 +6,9 @@ import Image from 'next/image'
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, closestCenter, PointerSensor, useSensor, useSensors, useDraggable, useDroppable } from '@dnd-kit/core'
 import { useState, useTransition } from 'react'
 import { assignItemToTier, removeItemTier } from '@/lib/actions/tiers'
-import { Pencil } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import EditItemDialog from '@/components/dialogs/EditItemDialog'
+import AddItemDialog from '@/components/dialogs/AddItemDialog'
 import ItemPlaceholder from '@/components/ItemPlaceholder'
 import TagSelector from '@/components/tags/TagSelector'
 
@@ -34,11 +35,19 @@ const TIERS = [
 export default function TierListBoard({
     items,
     categoryId,
-    categoryMetadata
+    categoryMetadata,
+    customRanks
 }: {
     items: Item[]
     categoryId: string
     categoryMetadata: string | null
+    customRanks: {
+        id: string
+        name: string
+        sentiment: 'positive' | 'neutral' | 'negative'
+        color: string | null
+        sortOrder: number
+    }[]
 }) {
     const [activeId, setActiveId] = useState<string | null>(null)
     const [selectedTags, setSelectedTags] = useState<string[]>([])
@@ -91,6 +100,25 @@ export default function TierListBoard({
     }
 
     const activeItem = items.find(item => item.id === activeId)
+
+    if (items.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-zinc-800 rounded-lg bg-zinc-900/50">
+                <div className="text-center space-y-4">
+                    <h3 className="text-xl font-semibold">No items yet</h3>
+                    <p className="text-muted-foreground max-w-sm">
+                        This category is empty. Add your first item to start ranking!
+                    </p>
+                    <AddItemDialog categoryId={categoryId} categoryName={categoryMetadata ? JSON.parse(categoryMetadata).name : 'Category'} trigger={
+                        <Button>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add First Item
+                        </Button>
+                    } />
+                </div>
+            </div>
+        )
+    }
 
     return (
         <DndContext
