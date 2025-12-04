@@ -26,8 +26,19 @@ export const ratings = sqliteTable('ratings', {
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
     value: real('value').notNull(),
     tier: text('tier'),
+    customRank: text('custom_rank'), // Custom rank name for category-specific ranks
     type: text('type').notNull(), // "NUMERICAL", "TIER", "HYBRID"
     itemId: text('item_id').notNull().references(() => items.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const customRanks = sqliteTable('custom_ranks', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    categoryId: text('category_id').notNull().references(() => categories.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    sentiment: text('sentiment').notNull(), // "positive", "neutral", "negative"
+    sortOrder: integer('sort_order').notNull().default(0),
+    color: text('color'), // Optional color for visual distinction
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
@@ -51,6 +62,7 @@ export const settings = sqliteTable('settings', {
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
     items: many(items),
+    customRanks: many(customRanks),
 }));
 
 export const itemsRelations = relations(items, ({ many, one }) => ({
@@ -81,5 +93,12 @@ export const itemsToTagsRelations = relations(itemsToTags, ({ one }) => ({
     tag: one(tags, {
         fields: [itemsToTags.tagId],
         references: [tags.id],
+    }),
+}));
+
+export const customRanksRelations = relations(customRanks, ({ one }) => ({
+    category: one(categories, {
+        fields: [customRanks.categoryId],
+        references: [categories.id],
     }),
 }));

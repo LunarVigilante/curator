@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { createCategory, deleteCategory } from '@/lib/actions/categories'
 import { Trash2, Plus } from 'lucide-react'
 import EditCategoryDialog from './EditCategoryDialog'
+import ImageCropper from '@/components/ImageCropper'
 
 type Category = {
     id: string
@@ -31,18 +32,25 @@ export default function ManageCategoriesDialog({
     const [isPending, startTransition] = useTransition()
     const [isAdding, setIsAdding] = useState(false)
     const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+    const [imageToCrop, setImageToCrop] = useState<string | null>(null)
     const [newCategory, setNewCategory] = useState({
         name: '',
         description: '',
         image: '',
-        color: '#4CAF50'
+        color: '#4CAF50',
+        imageUploadMode: 'url' as 'url' | 'upload'
     })
 
     const handleCreate = (e: React.FormEvent) => {
         e.preventDefault()
         startTransition(async () => {
-            await createCategory(newCategory)
-            setNewCategory({ name: '', description: '', image: '', color: '#4CAF50' })
+            await createCategory({
+                name: newCategory.name,
+                description: newCategory.description,
+                image: newCategory.image,
+                color: newCategory.color
+            })
+            setNewCategory({ name: '', description: '', image: '', color: '#4CAF50', imageUploadMode: 'url' })
             setIsAdding(false)
         })
     }
@@ -63,7 +71,7 @@ export default function ManageCategoriesDialog({
                     <DialogHeader>
                         <DialogTitle>Manage Categories</DialogTitle>
                         <DialogDescription>
-                            Add, edit, or remove categories from your ranking system.
+                            Add, edit, or remove categories from Curator.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -98,6 +106,97 @@ export default function ManageCategoriesDialog({
                                             onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
                                             rows={2}
                                         />
+                                    </div>
+                                    <div>
+                                        <Label>Image</Label>
+
+                                        {newCategory.image ? (
+                                            <div className="mt-2 relative group">
+                                                <img
+                                                    src={newCategory.image}
+                                                    alt="Preview"
+                                                    className="h-32 w-full object-cover rounded-md"
+                                                    onError={(e) => {
+                                                        e.currentTarget.src = 'https://placehold.co/600x400?text=Invalid+Image'
+                                                    }}
+                                                />
+                                                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        onClick={async () => {
+                                                            const response = await fetch(newCategory.image)
+                                                            const blob = await response.blob()
+                                                            const reader = new FileReader()
+                                                            reader.onload = () => {
+                                                                setImageToCrop(reader.result as string)
+                                                            }
+                                                            reader.readAsDataURL(blob)
+                                                        }}
+                                                    >
+                                                        Adjust
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="destructive"
+                                                        onClick={() => setNewCategory({ ...newCategory, image: '' })}
+                                                    >
+                                                        Delete
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="flex gap-2 mb-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant={newCategory.imageUploadMode === 'url' ? 'default' : 'outline'}
+                                                        size="sm"
+                                                        onClick={() => setNewCategory({ ...newCategory, imageUploadMode: 'url' })}
+                                                    >
+                                                        URL
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant={newCategory.imageUploadMode === 'upload' ? 'default' : 'outline'}
+                                                        size="sm"
+                                                        onClick={() => setNewCategory({ ...newCategory, imageUploadMode: 'upload' })}
+                                                    >
+                                                        Upload
+                                                    </Button>
+                                                </div>
+
+                                                {newCategory.imageUploadMode === 'url' ? (
+                                                    <Input
+                                                        key="url-input"
+                                                        id="new-image"
+                                                        type="url"
+                                                        placeholder="https://example.com/image.jpg"
+                                                        value={newCategory.image}
+                                                        onChange={(e) => setNewCategory({ ...newCategory, image: e.target.value })}
+                                                    />
+                                                ) : (
+                                                    <Input
+                                                        key="file-input"
+                                                        id="new-imageFile"
+                                                        type="file"
+                                                        accept="image/*"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0]
+                                                            if (file) {
+                                                                const reader = new FileReader()
+                                                                reader.onload = () => {
+                                                                    setImageToCrop(reader.result as string)
+                                                                }
+                                                                reader.readAsDataURL(file)
+                                                            }
+                                                        }}
+                                                    />
+                                                )}
+                                            </>
+                                        )}
                                     </div>
                                     <div>
                                         <Label htmlFor="new-color">Color</Label>
@@ -186,6 +285,25 @@ export default function ManageCategoriesDialog({
                     category={editingCategory}
                     open={!!editingCategory}
                     onOpenChange={(open) => !open && setEditingCategory(null)}
+                />
+            )}
+
+            {imageToCrop && (
+                <ImageCropper
+                    imageSrc={imageToCrop}
+                    onCropComplete={async (croppedImage) => {
+                        const response = await fetch(croppedImage)
+                        const blob = await response.blob()
+                        const fileFormData = new FormData()
+                        fileFormData.append('file', blob, 'cropped-image.jpg')
+                        const { uploadImage } = await import('@/lib/actions/upload')
+                        const url = await uploadImage(fileFormData)
+                        if (url) {
+                            setNewCategory(prev => ({ ...prev, image: url }))
+                        }
+                        setImageToCrop(null)
+                    }}
+                    onCancel={() => setImageToCrop(null)}
                 />
             )}
         </>

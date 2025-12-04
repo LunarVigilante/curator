@@ -21,7 +21,7 @@ export default function NewItemPage() {
                 <CardHeader>
                     <CardTitle>Create New Item</CardTitle>
                     <CardDescription>
-                        Add a new item to your ranking system.
+                        Add a new item to Curator.
                     </CardDescription>
                 </CardHeader>
                 <form action={createItem}>

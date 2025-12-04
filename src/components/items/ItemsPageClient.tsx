@@ -17,6 +17,7 @@ import { LayoutGrid, List, Search, ArrowUpDown } from 'lucide-react'
 import ItemGrid from '@/components/items/ItemGrid'
 import { useRouter } from 'next/navigation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { RatingDisplay } from '@/components/rating/RatingDisplay'
 
 type Item = {
     id: string
@@ -164,13 +165,7 @@ export default function ItemsPageClient({ items, initialQuery }: { items: Item[]
                                         </TableCell>
                                         <TableCell>{item.category || '-'}</TableCell>
                                         <TableCell>
-                                            {item.ratings[0] ? (
-                                                <Badge variant={item.ratings[0].type === 'TIER' ? 'default' : 'secondary'}>
-                                                    {item.ratings[0].type === 'TIER' ? `Tier ${item.ratings[0].tier}` : item.ratings[0].value}
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-muted-foreground text-xs">Unranked</span>
-                                            )}
+                                            <RatingDisplay rating={item.ratings[0]} />
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex gap-1 flex-wrap">

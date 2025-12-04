@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import ItemPlaceholder from '@/components/ItemPlaceholder'
+import { RatingDisplay } from '@/components/rating/RatingDisplay'
 
 type Item = {
     id: string
@@ -25,9 +26,7 @@ export default function ItemGrid({ items }: { items: Item[] }) {
                     <Card className="h-full overflow-hidden border-0 bg-muted/20 hover:bg-muted/40 transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative">
                         {item.ratings[0] && (
                             <div className="absolute top-2 right-2 z-10">
-                                <Badge variant={item.ratings[0].type === 'TIER' ? 'default' : 'secondary'} className="shadow-sm">
-                                    {item.ratings[0].type === 'TIER' ? item.ratings[0].tier : item.ratings[0].value}
-                                </Badge>
+                                <RatingDisplay rating={item.ratings[0]} className="shadow-sm" />
                             </div>
                         )}
                         <CardContent className="p-0 flex flex-col h-full">
