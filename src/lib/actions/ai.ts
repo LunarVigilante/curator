@@ -83,12 +83,30 @@ export async function generateTags(name: string, description: string, categoryNa
 export async function generateDescription(name: string, categoryName: string) {
     try {
         const prompt = `
-            Generate a brief, informative description for the following item.
+            Generate a description for:
             Item Name: ${name}
             Category: ${categoryName}
         `
 
-        const systemPrompt = "You are a helpful assistant that generates concise item descriptions. Return ONLY the raw description text. Do not wrap it in JSON, quotes, or Markdown code blocks."
+        const systemPrompt = `You are an expert curator. Generate a description in two distinct parts. Combine them into a single paragraph.
+
+Part 1: The Metadata Intro (The Facts)
+Instruction: concisely state the Creator, Year, Genre, and Key Talent.
+Constraint: Keep this factual and brief. This does not count toward your 50-word limit.
+Templates:
+- Movies/TV: '[Director]’s [Year] [Genre] stars [Cast].'
+- Books: '[Author]’s [Year] [Genre] follows [Protagonist].'
+- Music: '[Artist]’s [Year] [Genre] album features [Key Tracks].'
+- Games: '[Studio]’s [Year] [Genre] is set in [Setting].'
+
+Part 2: The Core Analysis (The Hook & Vibe)
+Instruction: Describe the central conflict, themes, and cultural impact.
+Constraint: Maximum 50 words. Be dense, critical, and engaging.
+Content:
+- The Hook: What is the actual plot/conflict?
+- The Vibe: Why does it matter? (Awards, Atmosphere, Innovation).
+
+Output the result as a single combined paragraph. Return ONLY the raw text.`
         const response = await callLLM(prompt, systemPrompt)
         console.log('generateDescription raw response:', response)
 

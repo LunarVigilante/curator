@@ -31,7 +31,7 @@ import { assignItemToTier, removeItemTier } from '@/lib/actions/tiers'
 import { createCustomRank, deleteCustomRank, updateCustomRank, updateCustomRankOrder } from '@/lib/actions/customRanks'
 import {
     Pencil, Plus, GripVertical, Trash2, Check, X, Eye, Image as ImageIcon,
-    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown
+    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -44,11 +44,13 @@ import { Slider } from '@/components/ui/slider'
 import EditItemDialog from '@/components/dialogs/EditItemDialog'
 import AddItemDialog from '@/components/dialogs/AddItemDialog'
 import { CreateTierDialog } from '@/components/dialogs/CreateTierDialog'
+import { TournamentModal } from '@/components/dialogs/TournamentModal'
+import StatsDashboard from '@/components/stats/StatsDashboard'
 import ItemPlaceholder from '@/components/ItemPlaceholder'
 import TagSelector from '@/components/tags/TagSelector'
 import { toast } from 'sonner'
 
-type Item = {
+export type Item = {
     id: string
     name: string
     description: string | null
@@ -57,6 +59,7 @@ type Item = {
     metadata: string | null
     ratings: { tier: string | null, value: number }[]
     tags: { id: string; name: string }[]
+    eloScore: number
     createdAt?: Date
 }
 
@@ -108,6 +111,8 @@ export default function TierListBoard({
     const [dragType, setDragType] = useState<'item' | 'row' | null>(null)
     const [ranks, setRanks] = useState<CustomRank[]>(initialCustomRanks)
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+    const [isTournamentOpen, setIsTournamentOpen] = useState(false)
+    const [showStats, setShowStats] = useState(false)
     const [mounted, setMounted] = useState(false)
     const [, startTransition] = useTransition()
 
@@ -266,6 +271,29 @@ export default function TierListBoard({
                     </Button>
                 )}
 
+                {/* Tournament Mode Entry & Stats Toggle */}
+                <div className="flex justify-end mb-4 gap-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => setShowStats(!showStats)}
+                        className={`text-zinc-400 hover:text-white ${showStats ? 'bg-zinc-800 text-white' : ''}`}
+                    >
+                        <BarChart3 className="h-5 w-5" />
+                    </Button>
+                    <Button
+                        onClick={() => setIsTournamentOpen(true)}
+                        className="bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white border-0 shadow-lg gap-2"
+                    >
+                        <Trophy className="h-4 w-4" />
+                        Start Face-Off Tournament
+                    </Button>
+                </div>
+
+                {/* Stats Dashboard Overlay */}
+                {showStats && (
+                    <StatsDashboard items={items} />
+                )}
+
                 {/* Unranked Pool */}
                 {showUnranked && (
                     <UnrankedPool
@@ -322,6 +350,13 @@ export default function TierListBoard({
                     isOpen={isCreateDialogOpen}
                     onOpenChange={setIsCreateDialogOpen}
                     onCreated={(newRank) => setRanks([...ranks, newRank])}
+                />
+
+                <TournamentModal
+                    isOpen={isTournamentOpen}
+                    onOpenChange={setIsTournamentOpen}
+                    items={items}
+                    categoryId={categoryId}
                 />
             </div>
         </DndContext>

@@ -290,3 +290,38 @@ export async function deleteItem(id: string) {
     revalidatePath('/items')
     redirect('/items')
 }
+
+import { ChallengerItem } from './discovery'
+
+export async function updateItemScores(updates: { id: string, elo: number }[]) {
+    // Process updates in batches or parallel
+    await db.transaction(async (tx) => {
+        for (const update of updates) {
+            await tx.update(items)
+                .set({ eloScore: update.elo })
+                .where(eq(items.id, update.id))
+        }
+    })
+
+    // We don't know exactly which category was updated, so we might need to rely on revalidating specific paths or generic ones.
+    // For now, revalidate everything relevant.
+    revalidatePath('/items')
+    revalidatePath('/categories')
+}
+
+export async function addChallengerItem(challenger: ChallengerItem, categoryId: string, initialElo: number) {
+    // 1. Create item
+    const [newItem] = await db.insert(items).values({
+        name: challenger.name,
+        description: challenger.description,
+        categoryId: categoryId,
+        eloScore: initialElo,
+        image: challenger.image, // Ideally we'd download this if it was a real URL
+    }).returning()
+
+    // 2. Add "New Discovery" tag if possible?
+    // Let's just return for now.
+
+    revalidatePath(`/categories/${categoryId}`)
+    return newItem
+}

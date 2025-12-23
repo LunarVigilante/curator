@@ -24,6 +24,7 @@ export const items = sqliteTable('items', {
     image: text('image'),
     categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
     metadata: text('metadata'), // JSON string for custom field values
+    eloScore: real('elo_score').notNull().default(1200), // Elo rating (default 1200)
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
 });
