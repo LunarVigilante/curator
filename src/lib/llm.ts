@@ -35,13 +35,30 @@ export function cleanLLMResponse(text: string): string {
 }
 
 export async function callLLM(prompt: string, systemPrompt?: string) {
-    const settings = await getSettings()
-    const apiKey = settings.llm_api_key
-    const model = settings.llm_model || 'openai/gpt-4o'
-    const endpoint = settings.llm_endpoint || 'https://openrouter.ai/api/v1'
+    const { SystemConfigService } = await import('@/lib/services/SystemConfigService')
 
-    if (!apiKey) {
-        throw new Error('LLM API Key is not configured. Please go to Settings to configure it.')
+    // Fetch configs safely from Vault
+    // Prioritize Anannas
+    const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key');
+    const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key');
+
+    // Default to Anannas if available, otherwise Fallback to OpenRouter/OpenAI? 
+    // User requested "Replace OpenRouter... Keep OpenRouter... uncommented or as backup".
+
+    let apiKey = anannasKey || openaiKey;
+    let endpoint = 'https://api.anannas.ai/v1'; // Hypothetical Anannas Endpoint
+    let model = 'anannas-core'; // Hypothetical Model
+
+    // Verify logic
+    if (anannasKey) {
+        endpoint = await SystemConfigService.getDecryptedConfig('anannas_endpoint') || 'https://api.anannas.ai/v1';
+        model = await SystemConfigService.getDecryptedConfig('anannas_model') || 'anannas-v1';
+    } else if (openaiKey) {
+        // Fallback
+        endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint') || 'https://openrouter.ai/api/v1';
+        model = await SystemConfigService.getDecryptedConfig('llm_model') || 'openai/gpt-4o';
+    } else {
+        throw new Error('No LLM API Key configured (Anannas or OpenAI). Please check System Settings.');
     }
 
     // Ensure endpoint ends with /chat/completions

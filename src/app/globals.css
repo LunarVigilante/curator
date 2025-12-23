@@ -120,6 +120,11 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* Global Cursor Fix */
+  button, [role="button"], a {
+    cursor: pointer !important;
+  }
 }
 
 /* Landing Page Styles */

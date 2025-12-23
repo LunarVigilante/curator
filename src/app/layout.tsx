@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { PageBackground } from "@/components/ui/PageBackground";
+import { PostHogProvider } from "@/components/providers/PostHogProvider";
+import { Navbar } from "@/components/layout/Navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,28 +40,18 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-          <PageBackground>
-            <nav className="sticky top-0 z-50 border-b border-white/10 bg-black/60 backdrop-blur-[10px] supports-[backdrop-filter]:bg-black/60">
-              <div className="container mx-auto flex h-16 items-center px-4">
-                <div className="mr-4 hidden md:flex">
-                  <Link className="mr-6 flex items-center space-x-2" href="/">
-                    <span className="hidden font-serif font-bold text-xl sm:inline-block">
-                      Curator
-                    </span>
-                  </Link>
-                  <nav className="flex items-center space-x-6 text-sm font-medium">
-                    <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/items">Items</Link>
-                    <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/tags">Tags</Link>
-                    <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/settings">Settings</Link>
-                  </nav>
-                </div>
-              </div>
-            </nav>
-            <main>
-              {children}
-            </main>
-          </PageBackground>
-          <Toaster />
+          <PostHogProvider
+            apiKey={process.env.NEXT_PUBLIC_POSTHOG_KEY}
+            apiHost={process.env.NEXT_PUBLIC_POSTHOG_HOST}
+          >
+            <PageBackground>
+              <Navbar />
+              <main>
+                {children}
+              </main>
+            </PageBackground>
+            <Toaster />
+          </PostHogProvider>
         </ThemeProvider>
       </body>
     </html>

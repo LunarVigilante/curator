@@ -36,7 +36,8 @@ export default function AddItemDialog({
         description: '',
         image: '',
         imageUploadMode: 'url' as 'url' | 'upload',
-        tags: [] as string[]
+        tags: [] as string[],
+        metadata: '' as string
     }
 
     const [formData, setFormData] = useState(initialFormData)
@@ -50,6 +51,7 @@ export default function AddItemDialog({
             formDataObj.append('image', formData.image)
             formDataObj.append('category', categoryId)
             formDataObj.append('tags', JSON.stringify(formData.tags))
+            formDataObj.append('metadata', formData.metadata)
 
             await createItem(formDataObj)
             setOpen(false)
@@ -148,7 +150,12 @@ export default function AddItemDialog({
                                                         name: result.title,
                                                         image: result.imageUrl || prev.image,
                                                         imageUploadMode: result.imageUrl ? 'url' : prev.imageUploadMode,
-                                                        description: '✨ Generating description...' // Loading state
+                                                        description: '✨ Generating description...',
+                                                        metadata: JSON.stringify({
+                                                            externalId: result.id,
+                                                            year: result.year,
+                                                            type: result.type
+                                                        })
                                                     }))
                                                     setMediaResults([])
 
@@ -365,29 +372,31 @@ export default function AddItemDialog({
                     </DialogFooter>
                 </form>
             </DialogContent>
-            {imageToCrop && (
-                <ImageCropper
-                    imageSrc={imageToCrop}
-                    aspectRatio={2 / 3}
-                    onCropComplete={async (croppedImage) => {
-                        // Convert base64 to blob
-                        const response = await fetch(croppedImage)
-                        const blob = await response.blob()
+            {
+                imageToCrop && (
+                    <ImageCropper
+                        imageSrc={imageToCrop}
+                        aspectRatio={2 / 3}
+                        onCropComplete={async (croppedImage) => {
+                            // Convert base64 to blob
+                            const response = await fetch(croppedImage)
+                            const blob = await response.blob()
 
-                        // Upload the cropped image
-                        const fileFormData = new FormData()
-                        fileFormData.append('file', blob, 'cropped-image.jpg')
-                        const { uploadImage } = await import('@/lib/actions/upload')
-                        const url = await uploadImage(fileFormData)
+                            // Upload the cropped image
+                            const fileFormData = new FormData()
+                            fileFormData.append('file', blob, 'cropped-image.jpg')
+                            const { uploadImage } = await import('@/lib/actions/upload')
+                            const url = await uploadImage(fileFormData)
 
-                        if (url) {
-                            setFormData({ ...formData, image: url })
-                        }
-                        setImageToCrop(null)
-                    }}
-                    onCancel={() => setImageToCrop(null)}
-                />
-            )}
-        </Dialog>
+                            if (url) {
+                                setFormData({ ...formData, image: url })
+                            }
+                            setImageToCrop(null)
+                        }}
+                        onCancel={() => setImageToCrop(null)}
+                    />
+                )
+            }
+        </Dialog >
     )
 }

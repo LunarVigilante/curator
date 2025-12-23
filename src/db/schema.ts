@@ -17,30 +17,83 @@ export const categories = sqliteTable('categories', {
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const globalItems = sqliteTable('global_items', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    externalId: text('external_id').unique(), // e.g. 'tmdb-123'
+    title: text('title').notNull(),
+    description: text('description'),
+    imageUrl: text('image_url'),
+    releaseYear: integer('release_year'),
+    metadata: text('metadata'), // JSON for cast, director, etc.
+    categoryType: text('category_type'), // ANIME, GAME, MOVIE, etc.
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const items = sqliteTable('items', {
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    name: text('name').notNull(),
+    // Temporary name field for migration
+    name: text('name'),
     description: text('description'),
     image: text('image'),
+    metadata: text('metadata'),
+
+    // New Master/Instance fields
+    globalItemId: text('global_item_id').references(() => globalItems.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    tier: text('tier'), // Storing tier directly here now
+    rank: integer('rank'), // Custom sort rank within tier
+    notes: text('notes'),
+
     categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
-    metadata: text('metadata'), // JSON string for custom field values
-    eloScore: real('elo_score').notNull().default(1200), // Elo rating (default 1200)
+    eloScore: real('elo_score').notNull().default(1200),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
 });
 
-export const users = sqliteTable('users', {
+export const users = sqliteTable('user', {
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    username: text('username').notNull().unique(),
-    password: text('password').notNull(),
+    name: text('name').notNull(),
+    email: text('email').notNull().unique(),
+    emailVerified: integer('emailVerified', { mode: 'boolean' }).notNull().default(false),
+    image: text('image'),
     role: text('role').notNull().default('USER'), // 'ADMIN' | 'USER'
+    requiredPasswordChange: integer('required_password_change', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
 });
 
-export const sessions = sqliteTable('sessions', {
-    sessionToken: text('sessionToken').primaryKey(),
+export const sessions = sqliteTable('session', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    expiresAt: integer('expiresAt', { mode: 'timestamp' }).notNull(),
+    ipAddress: text('ipAddress'),
+    userAgent: text('userAgent'),
     userId: text('userId').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    expires: integer('expires', { mode: 'timestamp_ms' }).notNull(),
+    token: text('token').notNull().unique(),
+    createdAt: integer('createdAt', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
+});
+
+export const accounts = sqliteTable('account', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    accountId: text('accountId').notNull(),
+    providerId: text('providerId').notNull(),
+    userId: text('userId').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    accessToken: text('accessToken'),
+    refreshToken: text('refreshToken'),
+    idToken: text('idToken'),
+    expiresAt: integer('expiresAt', { mode: 'timestamp' }),
+    password: text('password'), // For credential auth
+    createdAt: integer('createdAt', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
+});
+
+export const verifications = sqliteTable('verification', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: integer('expiresAt', { mode: 'timestamp' }).notNull(),
+    createdAt: integer('createdAt', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
 });
 
 export const ratings = sqliteTable('ratings', {
@@ -77,6 +130,15 @@ export const itemsToTags = sqliteTable('items_to_tags', {
     pk: primaryKey({ columns: [t.itemId, t.tagId] }),
 }));
 
+export const systemSettings = sqliteTable('system_settings', {
+    key: text('key').primaryKey(), // e.g., 'openai_api_key'
+    value: text('value').notNull(), // Encrypted value
+    category: text('category').notNull(), // 'LLM', 'SECURITY', 'GENERAL'
+    isSecret: integer('is_secret', { mode: 'boolean' }).notNull().default(false), // e.g. true for API keys
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
+});
+
+// Deprecated: Old settings table, keeping for now to avoid breaking existing users until full migration
 export const settings = sqliteTable('settings', {
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
     key: text('key').notNull().unique(),
@@ -99,6 +161,18 @@ export const itemsRelations = relations(items, ({ many, one }) => ({
         fields: [items.categoryId],
         references: [categories.id],
     }),
+    globalItem: one(globalItems, {
+        fields: [items.globalItemId],
+        references: [globalItems.id],
+    }),
+    user: one(users, {
+        fields: [items.userId],
+        references: [users.id],
+    }),
+}));
+
+export const globalItemsRelations = relations(globalItems, ({ many }) => ({
+    instances: many(items),
 }));
 
 export const ratingsRelations = relations(ratings, ({ one }) => ({

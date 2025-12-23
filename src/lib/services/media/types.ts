@@ -1,10 +1,12 @@
 export interface MediaResult {
+    id: string;
+    type: string;
     title: string;
     description: string;
     imageUrl: string;
     year?: string;
     tags?: string[];
-    metadata?: string; // JSON string for extra data users might want
+    metadata?: string;
 }
 
 export interface MediaStrategy {

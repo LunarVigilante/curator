@@ -57,7 +57,8 @@ export default function EditItemDialog({
         image: item.image || '',
         imageUploadMode: 'url' as 'url' | 'upload',
         categoryId: item.categoryId || categoryId,
-        tags: item.tags.map(t => t.id)
+        tags: item.tags.map(t => t.id),
+        metadata: item.metadata || ''
     })
 
     // Fetch all categories
@@ -82,6 +83,7 @@ export default function EditItemDialog({
             formDataObj.append('image', formData.image)
             formDataObj.append('category', formData.categoryId)
             formDataObj.append('tags', JSON.stringify(formData.tags))
+            formDataObj.append('metadata', formData.metadata)
 
             await updateItem(item.id, formDataObj)
             onOpenChange(false)
@@ -173,7 +175,12 @@ export default function EditItemDialog({
                                                         name: result.title,
                                                         image: result.imageUrl || prev.image,
                                                         imageUploadMode: result.imageUrl ? 'url' : prev.imageUploadMode,
-                                                        description: '✨ Generating description...' // Loading state
+                                                        description: '✨ Generating description...',
+                                                        metadata: JSON.stringify({
+                                                            externalId: result.id,
+                                                            year: result.year,
+                                                            type: result.type
+                                                        })
                                                     }))
                                                     setMediaResults([]) // Clear after selection
 

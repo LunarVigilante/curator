@@ -30,6 +30,8 @@ export class TmdbStrategy implements MediaStrategy {
                 .map((item: any) => {
                     const isMovie = item.media_type === 'movie';
                     return {
+                        id: `tmdb-${item.id}`,
+                        type: item.media_type,
                         title: isMovie ? item.title : item.name,
                         description: item.overview || "No description available.",
                         imageUrl: item.poster_path

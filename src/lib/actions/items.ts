@@ -1,10 +1,10 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { items, itemsToTags, users } from '@/db/schema'
+import { items, itemsToTags, users, globalItems } from '@/db/schema'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { desc, eq, like, and, sql } from 'drizzle-orm'
+import { desc, eq, like, and, or, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { downloadImageFromUrl } from './upload'
 import { getGuestUserId } from './auth'
@@ -21,12 +21,16 @@ export async function getItems(
 
     const whereClause = and(
         categoryId ? eq(items.categoryId, categoryId) : undefined,
-        query ? like(items.name, `%${query}%`) : undefined
+        query ? or(
+            like(globalItems.title, `%${query}%`),
+            like(items.name, `%${query}%`) // Fallback for migration
+        ) : undefined
     )
 
     const [totalCountResult] = await db
         .select({ count: sql<number>`count(*)` })
         .from(items)
+        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
         .where(whereClause)
 
     const totalCount = totalCountResult?.count || 0
@@ -46,13 +50,18 @@ export async function getItems(
                     tag: true
                 }
             },
-            ratings: true
+            ratings: true,
+            globalItem: true
         }
     })
 
-    // Transform to match UI expectation (flatten tags) and filter ratings
+    // Transform to match UI expectation (flatten tags) and handle missing items
     const transformedItems = result.map(item => ({
         ...item,
+        // Prioritize global data, fallback to old item data for migration
+        name: item.globalItem?.title || item.name || 'Untitled',
+        description: item.globalItem?.description || item.description,
+        image: item.globalItem?.imageUrl || item.image,
         tags: item.tags.map(t => t.tag),
         ratings: userId ? item.ratings.filter(r => r.userId === userId) : []
     }))
@@ -76,6 +85,7 @@ export async function getItem(id: string) {
                 }
             },
             ratings: true,
+            globalItem: true,
             category: {
                 with: {
                     customRanks: true
@@ -89,6 +99,9 @@ export async function getItem(id: string) {
     // Transform to match UI expectation
     return {
         ...item,
+        name: item.globalItem?.title || item.name || 'Untitled',
+        description: item.globalItem?.description || item.description,
+        image: item.globalItem?.imageUrl || item.image,
         tags: item.tags.map(t => t.tag),
         ratings: userId ? item.ratings.filter(r => r.userId === userId) : [],
         category: item.category
@@ -96,13 +109,50 @@ export async function getItem(id: string) {
 }
 
 
+async function upsertGlobalItem(data: {
+    externalId?: string | null
+    title: string
+    description?: string | null
+    imageUrl?: string | null
+    metadata?: string | null
+}) {
+    // 1. Check for existing GlobalItem by externalId
+    if (data.externalId) {
+        const existing = await db.query.globalItems.findFirst({
+            where: eq(globalItems.externalId, data.externalId)
+        })
+        if (existing) return existing
+    }
+
+    // 2. Check for existing GlobalItem by exact title + image as fallback
+    const existing = await db.query.globalItems.findFirst({
+        where: and(
+            eq(globalItems.title, data.title),
+            eq(globalItems.imageUrl, data.imageUrl || '')
+        )
+    })
+    if (existing) return existing
+
+    // 3. Create new GlobalItem
+    const [newItem] = await db.insert(globalItems).values({
+        externalId: data.externalId,
+        title: data.title,
+        description: data.description,
+        imageUrl: data.imageUrl,
+        metadata: data.metadata,
+    }).returning()
+
+    return newItem
+}
+
 export async function createItem(data: FormData | {
     name: string
     description: string
     categoryId: string
     image: string
-    tags?: string[] // Add tags to type
+    tags?: string[]
 }) {
+    const userId = await getGuestUserId()
     let name: string
     let description: string
     let categoryId: string
@@ -126,7 +176,6 @@ export async function createItem(data: FormData | {
         categoryId = data.categoryId
         image = data.image
         tagIds = data.tags || []
-        // metadata not supported in object mode yet
     }
 
     // Auto-localize external images
@@ -137,12 +186,28 @@ export async function createItem(data: FormData | {
         }
     }
 
-    const [newItem] = await db.insert(items).values({
-        name,
+    // Upsert GlobalItem first
+    let externalId: string | null = null
+    if (metadata) {
+        try {
+            const meta = JSON.parse(metadata)
+            externalId = meta.externalId || meta.id || null
+        } catch (e) { }
+    }
+
+    const globalItem = await upsertGlobalItem({
+        externalId,
+        title: name,
         description,
+        imageUrl: image,
+        metadata
+    })
+
+    const [newItem] = await db.insert(items).values({
+        globalItemId: globalItem.id,
+        userId,
         categoryId,
-        image,
-        metadata,
+        eloScore: 1200,
     }).returning()
 
     if (tagIds.length > 0) {
@@ -167,6 +232,9 @@ export async function updateItem(id: string, data: FormData | {
     image?: string
     metadata?: string
     tags?: string[]
+    notes?: string
+    tier?: string
+    rank?: number
 }) {
     let name: string | undefined
     let description: string | undefined
@@ -174,6 +242,9 @@ export async function updateItem(id: string, data: FormData | {
     let image: string | undefined
     let metadata: string | undefined
     let tagIds: string[] | undefined
+    let notes: string | undefined
+    let tier: string | undefined
+    let rank: number | undefined
 
     if (data instanceof FormData) {
         name = data.get('name') as string
@@ -181,6 +252,9 @@ export async function updateItem(id: string, data: FormData | {
         categoryId = data.get('category') as string
         image = data.get('image') as string
         metadata = data.get('metadata') as string
+        notes = data.get('notes') as string
+        tier = data.get('tier') as string
+        rank = Number(data.get('rank')) || undefined
         const tagsJson = data.get('tags') as string
         if (tagsJson) {
             tagIds = JSON.parse(tagsJson)
@@ -192,27 +266,22 @@ export async function updateItem(id: string, data: FormData | {
         image = data.image
         metadata = data.metadata
         tagIds = data.tags
+        notes = data.notes
+        tier = data.tier
+        rank = data.rank
     }
 
-    // Prepare update object with only defined fields
+    // 1. Handle GlobalItem updates if name/image changed
+    // In a shared system, users shouldn't easily change global metadata unless they have permissions.
+    // However, for this MVP, we'll allow it or just update the current user's link.
+    // For now, let's keep GlobalItem as is and only update instance fields.
+
+    // Prepare update object for instance fields
     const updateData: any = { updatedAt: new Date() }
-    if (name !== undefined) updateData.name = name
-    if (description !== undefined) updateData.description = description
     if (categoryId !== undefined) updateData.categoryId = categoryId
-    if (image !== undefined) {
-        // Auto-localize external images
-        if (image && image.startsWith('http')) {
-            const localPath = await downloadImageFromUrl(image)
-            if (localPath) {
-                updateData.image = localPath
-            } else {
-                updateData.image = image
-            }
-        } else {
-            updateData.image = image
-        }
-    }
-    if (metadata !== undefined) updateData.metadata = metadata
+    if (notes !== undefined) updateData.notes = notes
+    if (tier !== undefined) updateData.tier = tier
+    if (rank !== undefined) updateData.rank = rank
 
     await db.update(items)
         .set(updateData)
@@ -220,10 +289,7 @@ export async function updateItem(id: string, data: FormData | {
 
     // Update tags if provided
     if (tagIds !== undefined) {
-        // First delete existing tags
         await db.delete(itemsToTags).where(eq(itemsToTags.itemId, id))
-
-        // Then insert new tags
         if (tagIds.length > 0) {
             await db.insert(itemsToTags).values(
                 tagIds.map(tagId => ({
@@ -236,11 +302,7 @@ export async function updateItem(id: string, data: FormData | {
 
     revalidatePath(`/items/${id}`)
     revalidatePath('/items')
-    if (categoryId || updateData.categoryId) {
-        // Try to invalidate mostly relevant paths. 
-        // We might not know old categoryId if we only have new one, but revalidating new one is good.
-        if (updateData.categoryId) revalidatePath(`/categories/${updateData.categoryId}`)
-    }
+    if (categoryId) revalidatePath(`/categories/${categoryId}`)
 }
 
 // Helper to apply AI suggestions (tags by name, description)
@@ -310,17 +372,23 @@ export async function updateItemScores(updates: { id: string, elo: number }[]) {
 }
 
 export async function addChallengerItem(challenger: ChallengerItem, categoryId: string, initialElo: number) {
-    // 1. Create item
-    const [newItem] = await db.insert(items).values({
-        name: challenger.name,
+    const userId = await getGuestUserId()
+
+    // 1. Upsert GlobalItem
+    const globalItem = await upsertGlobalItem({
+        externalId: challenger.id,
+        title: challenger.name,
         description: challenger.description,
+        imageUrl: challenger.image,
+    })
+
+    // 2. Create local item instance
+    const [newItem] = await db.insert(items).values({
+        globalItemId: globalItem.id,
+        userId,
         categoryId: categoryId,
         eloScore: initialElo,
-        image: challenger.image, // Ideally we'd download this if it was a real URL
     }).returning()
-
-    // 2. Add "New Discovery" tag if possible?
-    // Let's just return for now.
 
     revalidatePath(`/categories/${categoryId}`)
     return newItem
