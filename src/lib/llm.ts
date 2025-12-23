@@ -1,6 +1,40 @@
 import { getSettings } from '@/lib/actions/settings'
 
-export async function callLLM(prompt: string) {
+
+export function cleanLLMResponse(text: string): string {
+    let cleaned = text.trim()
+
+    // Step A: Strip markdown code blocks
+    const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+    if (codeBlockMatch) {
+        cleaned = codeBlockMatch[1].trim()
+    }
+
+    // Step B & C: Attempt JSON parse
+    try {
+        const parsed = JSON.parse(cleaned)
+
+        if (typeof parsed === 'object' && parsed !== null) {
+            // If it has a description property, use that
+            if ('description' in parsed && typeof parsed.description === 'string') {
+                return parsed.description.trim()
+            }
+            // Fallback: return the first string value found
+            for (const value of Object.values(parsed)) {
+                if (typeof value === 'string') return value.trim()
+            }
+        }
+
+        // If it's a string, it might have been JSON-wrapped string
+        if (typeof parsed === 'string') return parsed.trim()
+    } catch (e) {
+        // Parsing failed, return as-is (already plain text or malformed JSON)
+    }
+
+    return cleaned
+}
+
+export async function callLLM(prompt: string, systemPrompt?: string) {
     const settings = await getSettings()
     const apiKey = settings.llm_api_key
     const model = settings.llm_model || 'openai/gpt-4o'
@@ -35,7 +69,7 @@ export async function callLLM(prompt: string) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a helpful assistant that recommends items based on user preferences. Return ONLY JSON.'
+                        content: systemPrompt || 'You are a helpful assistant that recommends items based on user preferences. Return ONLY JSON.'
                     },
                     {
                         role: 'user',

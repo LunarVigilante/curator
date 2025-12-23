@@ -1,35 +1,55 @@
 export default function CategoryPlaceholder({
     name,
     color,
+    emoji,
+    backgroundImage,
     className = ''
 }: {
     name: string
     color?: string | null
+    emoji?: string | null
+    backgroundImage?: string | null
     className?: string
 }) {
     // Use provided color or generate from name hash
     const bgColor = color || generateColorFromString(name)
 
     // Create gradient for visual interest
-    const gradient = `linear-gradient(135deg, ${bgColor} 0%, ${adjustBrightness(bgColor, -20)} 100%)`
-
-    // Get initials (first 2 letters or first letter of each word)
-    const initials = name
-        .split(' ')
-        .map(word => word[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
+    const gradient = `linear-gradient(135deg, ${bgColor} 0%, ${adjustBrightness(bgColor, -30)} 100%)`
 
     return (
         <div
-            className={`relative w-full h-full flex items-center justify-center ${className}`}
-            style={{ background: gradient }}
+            className={`relative w-full h-full overflow-hidden ${className}`}
+            style={{
+                background: backgroundImage ? undefined : gradient,
+            }}
         >
-            <div className="absolute inset-0 bg-black/10" />
-            <span className="relative text-white font-bold text-4xl drop-shadow-lg">
-                {initials}
-            </span>
+            {backgroundImage && (
+                <div
+                    className="absolute inset-0 bg-cover bg-center transition-all duration-500 group-hover:scale-110 group-hover:brightness-110"
+                    style={{ backgroundImage: `url(${backgroundImage})` }}
+                />
+            )}
+
+            {/* Noise texture overlay for premium look */}
+            {!backgroundImage && (
+                <svg className="absolute inset-0 w-full h-full opacity-20 mix-blend-overlay pointer-events-none">
+                    <filter id="noise">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch" />
+                        <feColorMatrix type="saturate" values="0" />
+                    </filter>
+                    <rect width="100%" height="100%" filter="url(#noise)" />
+                </svg>
+            )}
+
+            {/* Emoji display if provided */}
+            {emoji && !backgroundImage && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-8xl filter drop-shadow-lg opacity-40 group-hover:opacity-60 transition-opacity duration-300">
+                        {emoji}
+                    </span>
+                </div>
+            )}
         </div>
     )
 }
@@ -42,7 +62,7 @@ function generateColorFromString(str: string): string {
     }
 
     const hue = Math.abs(hash % 360)
-    return `hsl(${hue}, 70%, 55%)`
+    return `hsl(${hue}, 30%, 35%)`
 }
 
 // Adjust color brightness

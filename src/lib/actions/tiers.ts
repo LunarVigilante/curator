@@ -1,15 +1,21 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { ratings } from '@/db/schema'
+import { ratings, users } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import bcrypt from 'bcryptjs'
+import { getGuestUserId } from './auth'
 
 export async function assignItemToTier(itemId: string, tier: string, categoryId: string) {
-    // Check if there's an existing tier rating for this item
+    const userId = await getGuestUserId()
+    console.log(`[assignItemToTier] User: ${userId}, Item: ${itemId}, Tier: "${tier}"`)
+
+    // Check if there's an existing tier rating for this item by this user
     const existing = await db.query.ratings.findFirst({
         where: and(
             eq(ratings.itemId, itemId),
+            eq(ratings.userId, userId),
             eq(ratings.type, 'TIER')
         )
     })
@@ -23,6 +29,7 @@ export async function assignItemToTier(itemId: string, tier: string, categoryId:
         // Create new tier rating
         await db.insert(ratings).values({
             itemId,
+            userId,
             tier,
             value: getTierValue(tier),
             type: 'TIER'
@@ -33,10 +40,13 @@ export async function assignItemToTier(itemId: string, tier: string, categoryId:
 }
 
 export async function removeItemTier(itemId: string, categoryId: string) {
-    // Delete tier ratings for this item
+    const userId = await getGuestUserId()
+
+    // Delete tier ratings for this item by this user
     await db.delete(ratings)
         .where(and(
             eq(ratings.itemId, itemId),
+            eq(ratings.userId, userId),
             eq(ratings.type, 'TIER')
         ))
 

@@ -13,11 +13,15 @@ import {
 } from '@/components/ui/table'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
-import { LayoutGrid, List, Search, ArrowUpDown } from 'lucide-react'
+import { RatingDisplay } from '@/components/rating/RatingDisplay'
+import PageContainer from '@/components/PageContainer'
+import EmptyState from '@/components/EmptyState'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Slider } from '@/components/ui/slider'
+import { LayoutGrid, List, Search, ArrowUpDown, ChevronLeft, ChevronRight, Box, Eye, Settings2, Image as ImageIcon, Grid3X3 } from 'lucide-react'
 import ItemGrid from '@/components/items/ItemGrid'
 import { useRouter } from 'next/navigation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { RatingDisplay } from '@/components/rating/RatingDisplay'
 
 type Item = {
     id: string
@@ -31,15 +35,30 @@ type Item = {
     createdAt: Date
 }
 
-export default function ItemsPageClient({ items, initialQuery }: { items: Item[], initialQuery?: string }) {
+export default function ItemsPageClient({
+    items,
+    initialQuery,
+    totalPages,
+    currentPage
+}: {
+    items: Item[]
+    initialQuery?: string
+    totalPages: number
+    currentPage: number
+}) {
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
+    const [gridCols, setGridCols] = useState(5)
     const router = useRouter()
     const [query, setQuery] = useState(initialQuery || '')
     const [sortBy, setSortBy] = useState<'newest' | 'name' | 'rating'>('newest')
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault()
-        router.push(`/items?q=${encodeURIComponent(query)}`)
+        router.push(`/items?q=${encodeURIComponent(query)}&page=1`)
+    }
+
+    const handlePageChange = (page: number) => {
+        router.push(`/items?q=${encodeURIComponent(query)}&page=${page}`)
     }
 
     const sortedItems = useMemo(() => {
@@ -65,7 +84,7 @@ export default function ItemsPageClient({ items, initialQuery }: { items: Item[]
     }, [items, sortBy])
 
     return (
-        <div className="container mx-auto py-10">
+        <PageContainer>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Items</h1>
@@ -92,6 +111,42 @@ export default function ItemsPageClient({ items, initialQuery }: { items: Item[]
                 </form>
 
                 <div className="flex items-center gap-2">
+                    {viewMode === 'grid' && (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="icon" className="shrink-0">
+                                    <Eye className="h-4 w-4" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80" align="end">
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-medium leading-none">View Settings</h4>
+                                        <Grid3X3 className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                            <span>Card Size</span>
+                                            <span>{gridCols} columns</span>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                                            <Slider
+                                                value={[9 - gridCols]}
+                                                min={1}
+                                                max={7}
+                                                step={1}
+                                                onValueChange={([val]) => setGridCols(9 - val)}
+                                                className="flex-1 [&_.range-slider-track]:bg-zinc-700 [&_.range-slider-thumb]:bg-blue-600 [&_.range-slider-thumb]:border-blue-600"
+                                            />
+                                            <ImageIcon className="h-5 w-5 text-foreground" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+
                     <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
                         <SelectTrigger className="w-[140px]">
                             <ArrowUpDown className="w-4 h-4 mr-2 text-muted-foreground" />
@@ -129,63 +184,96 @@ export default function ItemsPageClient({ items, initialQuery }: { items: Item[]
             </div>
 
             {sortedItems.length === 0 ? (
-                <div className="text-center py-20 border rounded-lg bg-muted/10">
-                    <p className="text-muted-foreground">No items found.</p>
-                    {query && (
-                        <Button variant="link" onClick={() => {
+                <EmptyState
+                    icon={Box}
+                    title="No items found"
+                    description={query ? "Try adjusting your search terms." : "Get started by adding your first item."}
+                    action={query ? {
+                        label: "Clear search",
+                        onClick: () => {
                             setQuery('')
                             router.push('/items')
-                        }}>
-                            Clear search
-                        </Button>
-                    )}
-                </div>
+                        }
+                    } : {
+                        label: "Add New Item",
+                        onClick: () => router.push('/items/new')
+                    }}
+                />
             ) : (
-                viewMode === 'grid' ? (
-                    <ItemGrid items={sortedItems} />
-                ) : (
-                    <div className="border rounded-md">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Category</TableHead>
-                                    <TableHead>Rating</TableHead>
-                                    <TableHead>Tags</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {sortedItems.map((item) => (
-                                    <TableRow key={item.id}>
-                                        <TableCell className="font-medium">
-                                            <Link href={`/items/${item.id}`} className="hover:underline flex items-center gap-2">
-                                                {item.name}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell>{item.category || '-'}</TableCell>
-                                        <TableCell>
-                                            <RatingDisplay rating={item.ratings[0]} />
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex gap-1 flex-wrap">
-                                                {item.tags.map((tag) => (
-                                                    <Badge key={tag.id} variant="outline" className="text-xs">{tag.name}</Badge>
-                                                ))}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <Link href={`/items/${item.id}`}>
-                                                <Button variant="ghost" size="sm">View</Button>
-                                            </Link>
-                                        </TableCell>
+                <>
+                    {viewMode === 'grid' ? (
+                        <ItemGrid items={sortedItems} gridCols={gridCols} />
+                    ) : (
+                        <div className="border rounded-md">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Name</TableHead>
+                                        <TableHead>Category</TableHead>
+                                        <TableHead>Rating</TableHead>
+                                        <TableHead>Tags</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                )
+                                </TableHeader>
+                                <TableBody>
+                                    {sortedItems.map((item) => (
+                                        <TableRow key={item.id}>
+                                            <TableCell className="font-medium">
+                                                <Link href={`/items/${item.id}`} className="hover:underline flex items-center gap-2">
+                                                    {item.name}
+                                                </Link>
+                                            </TableCell>
+                                            <TableCell>{item.category || '-'}</TableCell>
+                                            <TableCell>
+                                                <RatingDisplay rating={item.ratings[0]} />
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex gap-1 flex-wrap">
+                                                    {item.tags.map((tag) => (
+                                                        <Badge key={tag.id} variant="outline" className="text-xs">{tag.name}</Badge>
+                                                    ))}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <Link href={`/items/${item.id}`}>
+                                                    <Button variant="ghost" size="sm">View</Button>
+                                                </Link>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    )}
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-center gap-2 mt-8">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePageChange(currentPage - 1)}
+                                disabled={currentPage <= 1}
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                                Previous
+                            </Button>
+                            <div className="text-sm text-muted-foreground">
+                                Page {currentPage} of {totalPages}
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePageChange(currentPage + 1)}
+                                disabled={currentPage >= totalPages}
+                            >
+                                Next
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    )}
+                </>
             )}
-        </div>
+        </PageContainer>
     )
 }

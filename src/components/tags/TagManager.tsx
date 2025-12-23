@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createTag, deleteTag } from '@/lib/actions/tags'
 import { Trash2, Tag as TagIcon } from 'lucide-react'
+import EmptyState from '@/components/EmptyState'
 
 type Tag = {
     id: string
@@ -43,7 +44,7 @@ export default function TagManager({ initialTags }: { initialTags: Tag[] }) {
     return (
         <div className="space-y-6">
             <div className="flex items-center gap-4">
-                <form onSubmit={handleCreate} className="flex gap-2 flex-1 max-w-md">
+                <form onSubmit={handleCreate} className="flex gap-4 flex-1 max-w-md">
                     <Input
                         placeholder="New tag name..."
                         value={newTag}
@@ -78,8 +79,12 @@ export default function TagManager({ initialTags }: { initialTags: Tag[] }) {
                     </div>
                 ))}
                 {initialTags.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-muted-foreground">
-                        No tags created yet.
+                    <div className="col-span-full">
+                        <EmptyState
+                            icon={TagIcon}
+                            title="No tags created yet"
+                            description="Create your first tag above to start organizing your items."
+                        />
                     </div>
                 )}
             </div>

@@ -30,6 +30,10 @@ type SettingsFormProps = {
         llm_api_key?: string
         llm_model?: string
         llm_endpoint?: string
+        tmdb_api_key?: string
+        rawg_api_key?: string
+        lastfm_api_key?: string
+        google_books_api_key?: string
 
     }
 }
@@ -118,7 +122,7 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
                 </div>
 
                 <div className="grid gap-2">
-                    <Label htmlFor="llm_api_key">API Key</Label>
+                    <Label htmlFor="llm_api_key">LLM API Key</Label>
                     <Input
                         id="llm_api_key"
                         name="llm_api_key"
@@ -128,6 +132,57 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
                         placeholder="sk-..."
                     />
                 </div>
+
+                <div className="my-6 border-t border-white/10" />
+                <h3 className="text-lg font-medium text-white">Media Services</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                    Configure external APIs for auto-fill functionality.
+                </p>
+
+                <div className="grid gap-2">
+                    <Label htmlFor="tmdb_api_key">TMDB API Key (Movies & TV)</Label>
+                    <Input
+                        id="tmdb_api_key"
+                        name="tmdb_api_key"
+                        type="password"
+                        defaultValue={initialSettings.tmdb_api_key || ''}
+                        placeholder="TMDB Read Access Token or API Key"
+                    />
+                </div>
+
+                <div className="grid gap-2">
+                    <Label htmlFor="rawg_api_key">RAWG API Key (Video Games)</Label>
+                    <Input
+                        id="rawg_api_key"
+                        name="rawg_api_key"
+                        type="password"
+                        defaultValue={initialSettings.rawg_api_key || ''}
+                        placeholder="RAWG API Key"
+                    />
+                </div>
+
+                <div className="grid gap-2">
+                    <Label htmlFor="lastfm_api_key">Last.fm API Key (Music)</Label>
+                    <Input
+                        id="lastfm_api_key"
+                        name="lastfm_api_key"
+                        type="password"
+                        defaultValue={initialSettings.lastfm_api_key || ''}
+                        placeholder="Last.fm API Key"
+                    />
+                </div>
+
+                <div className="grid gap-2">
+                    <Label htmlFor="google_books_api_key">Google Books API Key</Label>
+                    <Input
+                        id="google_books_api_key"
+                        name="google_books_api_key"
+                        type="password"
+                        defaultValue={initialSettings.google_books_api_key || ''}
+                        placeholder="Google Books API Key"
+                    />
+                </div>
+                <div className="my-2 border-t border-white/10" />
 
                 <div className="grid gap-2">
                     <Label htmlFor="llm_model">Model</Label>
@@ -204,7 +259,7 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
 
 
             </CardContent>
-            <CardFooter>
+            <CardFooter className="pt-6">
                 <Button type="submit" disabled={loading}>
                     {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Save Changes

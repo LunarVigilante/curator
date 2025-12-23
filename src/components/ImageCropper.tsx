@@ -42,10 +42,12 @@ export default function ImageCropper({
         if (!croppedAreaPixels) return
 
         const image = new Image()
+        image.setAttribute('crossOrigin', 'anonymous')
         image.src = imageSrc
 
-        await new Promise((resolve) => {
+        await new Promise((resolve, reject) => {
             image.onload = resolve
+            image.onerror = reject
         })
 
         const canvas = document.createElement('canvas')

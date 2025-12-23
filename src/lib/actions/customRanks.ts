@@ -6,6 +6,15 @@ import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { callLLM } from '@/lib/llm'
 
+const DEFAULT_TIERS = [
+    { name: 'S', color: '#f87171' }, // red-400
+    { name: 'A', color: '#fb923c' }, // orange-400
+    { name: 'B', color: '#facc15' }, // yellow-400
+    { name: 'C', color: '#4ade80' }, // green-400
+    { name: 'D', color: '#60a5fa' }, // blue-400
+    { name: 'F', color: '#60a5fa' }, // blue-400
+]
+
 export async function getCustomRanks(categoryId: string) {
     const ranks = await db.query.customRanks.findMany({
         where: eq(customRanks.categoryId, categoryId),
@@ -52,20 +61,47 @@ export async function createCustomRank(categoryId: string, data: {
     sentiment?: 'positive' | 'neutral' | 'negative'
     color?: string
     sortOrder?: number
+    type?: 'RANKED' | 'UTILITY'
 }) {
     // If sentiment is not provided, use LLM to analyze it
     const sentiment = data.sentiment || await analyzeSentiment(data.name)
 
+    // Auto-detect utility type keyworks if not explicitly provided
+    let type = data.type || 'RANKED'
+    const lowerName = data.name.toLowerCase()
+    if (!data.type && (lowerName.includes('watchlist') || lowerName.includes('plan to') || lowerName.includes('never seen') || lowerName.includes('dropped'))) {
+        type = 'UTILITY'
+    }
+
     // Get the current max sort order for this category
     const existingRanks = await getCustomRanks(categoryId)
-    const maxSortOrder = existingRanks.reduce((max, rank) => Math.max(max, rank.sortOrder), -1)
+
+    // Bootstrap default tiers if this is the first custom rank
+    if (existingRanks.length === 0) {
+        for (let i = 0; i < DEFAULT_TIERS.length; i++) {
+            const tier = DEFAULT_TIERS[i]
+            await db.insert(customRanks).values({
+                categoryId,
+                name: tier.name,
+                sentiment: 'neutral', // Defaults are neutral contextually until customized
+                color: tier.color,
+                sortOrder: i,
+                type: 'RANKED'
+            })
+        }
+    }
+
+    // Re-fetch to get correct sort order base (now populated)
+    const updatedRanks = await getCustomRanks(categoryId)
+    const maxSortOrder = updatedRanks.reduce((max, rank) => Math.max(max, rank.sortOrder), -1)
 
     const newRank = await db.insert(customRanks).values({
         categoryId,
         name: data.name,
         sentiment,
         color: data.color || null,
-        sortOrder: data.sortOrder ?? (maxSortOrder + 1)
+        sortOrder: data.sortOrder ?? (maxSortOrder + 1),
+        type
     }).returning()
 
     revalidatePath(`/categories/${categoryId}`)
@@ -77,6 +113,7 @@ export async function updateCustomRank(id: string, data: {
     sentiment?: 'positive' | 'neutral' | 'negative'
     color?: string
     sortOrder?: number
+    type?: 'RANKED' | 'UTILITY'
 }) {
     const updateData: any = {}
 
@@ -91,6 +128,7 @@ export async function updateCustomRank(id: string, data: {
     if (data.sentiment !== undefined) updateData.sentiment = data.sentiment
     if (data.color !== undefined) updateData.color = data.color
     if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder
+    if (data.type !== undefined) updateData.type = data.type
 
     const updated = await db.update(customRanks)
         .set(updateData)
@@ -115,4 +153,15 @@ export async function deleteCustomRank(id: string) {
 
     await db.delete(customRanks).where(eq(customRanks.id, id))
     revalidatePath(`/categories/${rank.categoryId}`)
+}
+
+export async function updateCustomRankOrder(categoryId: string, rankOrders: { id: string, sortOrder: number }[]) {
+    await db.transaction(async (tx) => {
+        for (const item of rankOrders) {
+            await tx.update(customRanks)
+                .set({ sortOrder: item.sortOrder })
+                .where(eq(customRanks.id, item.id))
+        }
+    })
+    revalidatePath(`/categories/${categoryId}`)
 }

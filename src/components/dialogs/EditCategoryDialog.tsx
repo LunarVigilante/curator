@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { updateCategory, deleteCategory } from '@/lib/actions/categories'
 import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import ImageCropper from '@/components/ImageCropper'
 
 type Category = {
@@ -15,16 +16,19 @@ type Category = {
     description: string | null
     image: string | null
     metadata: string | null
+    isPublic: boolean
 }
 
 export default function EditCategoryDialog({
     category,
     open,
-    onOpenChange
+    onOpenChange,
+    onSuccess
 }: {
     category: Category
     open: boolean
     onOpenChange: (open: boolean) => void
+    onSuccess: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const router = useRouter()
@@ -34,6 +38,7 @@ export default function EditCategoryDialog({
         name: category.name,
         description: category.description || '',
         image: category.image || '',
+        isPublic: category.isPublic,
         imageUploadMode: 'url' as 'url' | 'upload'
     })
 
@@ -43,8 +48,10 @@ export default function EditCategoryDialog({
             await updateCategory(category.id, {
                 name: formData.name,
                 description: formData.description,
-                image: formData.image
+                image: formData.image,
+                isPublic: formData.isPublic
             })
+            onSuccess() // Trigger refresh
             onOpenChange(false)
         })
     }
@@ -53,8 +60,8 @@ export default function EditCategoryDialog({
         if (confirm('Are you sure you want to delete this category? This action cannot be undone.')) {
             startTransition(async () => {
                 await deleteCategory(category.id)
+                onSuccess() // Trigger refresh
                 onOpenChange(false)
-                router.push('/')
             })
         }
     }
@@ -78,6 +85,7 @@ export default function EditCategoryDialog({
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 required
+                                className="h-10"
                             />
                         </div>
 
@@ -91,26 +99,43 @@ export default function EditCategoryDialog({
                             />
                         </div>
 
+                        <div className="flex items-start space-x-3 py-2">
+                            <Checkbox
+                                id="edit-public"
+                                checked={formData.isPublic}
+                                onCheckedChange={(checked) => setFormData({ ...formData, isPublic: checked as boolean })}
+                                className="mt-1"
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <Label htmlFor="edit-public" className="text-sm font-medium cursor-pointer">
+                                    Public Category
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Visible to everyone
+                                </p>
+                            </div>
+                        </div>
+
                         <div className="grid gap-2">
                             <Label>Image</Label>
 
                             {formData.image ? (
-                                <div className="mt-2 relative group">
+                                <div className="mt-2 relative group aspect-video rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
                                     <img
                                         src={formData.image}
                                         alt="Preview"
-                                        className="h-32 w-full object-cover rounded-md"
+                                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
                                         onError={(e) => {
-                                            e.currentTarget.src = 'https://placehold.co/600x400?text=Invalid+Image'
+                                            e.currentTarget.src = 'https://placehold.co/1280x720?text=Invalid+Image'
                                         }}
                                     />
-                                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                         <Button
                                             type="button"
                                             size="sm"
                                             variant="secondary"
+                                            className="h-8 shadow-lg"
                                             onClick={async () => {
-                                                // Fetch the image and convert to data URL
                                                 const response = await fetch(formData.image)
                                                 const blob = await response.blob()
                                                 const reader = new FileReader()
@@ -126,9 +151,10 @@ export default function EditCategoryDialog({
                                             type="button"
                                             size="sm"
                                             variant="destructive"
+                                            className="h-8 shadow-lg"
                                             onClick={() => setFormData({ ...formData, image: '' })}
                                         >
-                                            Delete
+                                            Remove
                                         </Button>
                                     </div>
                                 </div>
@@ -210,6 +236,7 @@ export default function EditCategoryDialog({
             {imageToCrop && (
                 <ImageCropper
                     imageSrc={imageToCrop}
+                    aspectRatio={16 / 9}
                     onCropComplete={async (croppedImage) => {
                         // Convert base64 to blob
                         const response = await fetch(croppedImage)

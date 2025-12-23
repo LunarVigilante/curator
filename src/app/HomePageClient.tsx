@@ -9,6 +9,12 @@ import ManageCategoriesDialog from '@/components/dialogs/ManageCategoriesDialog'
 
 export default function HomePageClient({ categories }: { categories: Awaited<ReturnType<typeof getCategories>> }) {
     const [isManaging, setIsManaging] = useState(false)
+    const [categoryList, setCategoryList] = useState(categories)
+
+    const loadCategories = async () => {
+        const updated = await getCategories()
+        setCategoryList(updated)
+    }
 
     return (
         <div className="container mx-auto py-10">
@@ -20,12 +26,13 @@ export default function HomePageClient({ categories }: { categories: Awaited<Ret
                 </Button>
             </div>
 
-            <CategoryGrid categories={categories} />
+            <CategoryGrid categories={categoryList} bentoLayout={true} onSuccess={loadCategories} />
 
             <ManageCategoriesDialog
-                categories={categories}
+                categories={categoryList}
                 open={isManaging}
                 onOpenChange={setIsManaging}
+                onSuccess={loadCategories}
             />
         </div>
     )

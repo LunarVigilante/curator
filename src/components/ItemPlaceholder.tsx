@@ -1,32 +1,37 @@
+import { ImageIcon } from 'lucide-react'
+
 export default function ItemPlaceholder({
     name,
     className = '',
-    size = 80
 }: {
     name: string
     className?: string
-    size?: number
 }) {
     // Generate unique color from name
     const color = generateColorFromString(name)
-    const gradient = `linear-gradient(135deg, ${color} 0%, ${adjustBrightness(color, -15)} 100%)`
-
-    // Get first letter or emoji-like representation
-    const initial = name[0]?.toUpperCase() || '?'
+    const gradient = `linear-gradient(135deg, ${color} 0%, ${adjustBrightness(color, -20)} 100%)`
 
     return (
         <div
-            className={`relative flex items-center justify-center rounded-sm ${className}`}
+            className={`relative flex items-center justify-center ${className}`}
             style={{
                 background: gradient,
-                width: `${size}px`,
-                height: `${size}px`
             }}
         >
-            <div className="absolute inset-0 bg-black/10 rounded-sm" />
-            <span className="relative text-white font-bold drop-shadow-md" style={{ fontSize: `${size * 0.5}px` }}>
-                {initial}
-            </span>
+            {/* Noise texture overlay */}
+            <svg className="absolute inset-0 w-full h-full opacity-10 mix-blend-overlay pointer-events-none">
+                <filter id={`noise-${name.replace(/\s/g, '')}`}>
+                    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch" />
+                    <feColorMatrix type="saturate" values="0" />
+                </filter>
+                <rect width="100%" height="100%" filter={`url(#noise-${name.replace(/\s/g, '')})`} />
+            </svg>
+
+            {/* Icon placeholder */}
+            <ImageIcon className="w-1/3 h-1/3 text-white/20" strokeWidth={1.5} />
+
+            {/* Dark gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         </div>
     )
 }
@@ -40,8 +45,8 @@ function generateColorFromString(str: string): string {
 
     // Generate vibrant colors with good saturation
     const hue = Math.abs(hash % 360)
-    const saturation = 65 + (Math.abs(hash) % 20) // 65-85%
-    const lightness = 50 + (Math.abs(hash >> 8) % 15) // 50-65%
+    const saturation = 60 + (Math.abs(hash) % 15) // 60-75%
+    const lightness = 40 + (Math.abs(hash >> 8) % 15) // 40-55%
 
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`
 }

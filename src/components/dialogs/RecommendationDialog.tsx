@@ -58,7 +58,7 @@ export default function RecommendationDialog({
 
     return (
         <>
-            <Button onClick={handleOpen} variant="default" className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-0">
+            <Button onClick={handleOpen} variant="default" className="bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 text-white border-0">
                 <Sparkles className="h-4 w-4 mr-2" />
                 Recommend New Items
             </Button>
@@ -67,7 +67,7 @@ export default function RecommendationDialog({
                 <DialogContent className="sm:max-w-[600px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-purple-500" />
+                            <Sparkles className="h-5 w-5 text-blue-500" />
                             AI Recommendations
                         </DialogTitle>
                         <DialogDescription>
@@ -78,7 +78,7 @@ export default function RecommendationDialog({
                     <div className="py-6 space-y-4 max-h-[60vh] overflow-y-auto">
                         {loading ? (
                             <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                                 <p className="text-sm text-muted-foreground">Analyzing your taste...</p>
                             </div>
                         ) : recommendation ? (

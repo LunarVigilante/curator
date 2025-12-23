@@ -2,24 +2,34 @@
 
 import { db } from '@/lib/db'
 import { categories } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, asc } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import { downloadImageFromUrl } from './upload'
 
 export async function getCategories() {
-    return await db.select().from(categories)
+    return await db.select().from(categories).orderBy(asc(categories.sortOrder))
 }
 
 export async function updateCategory(
     id: string,
-    data: { name: string; description: string; image: string; color?: string; metadata?: string }
+    data: { name: string; description: string; image: string; color?: string; metadata?: string; isPublic?: boolean }
 ) {
+    let image = data.image
+    if (image && image.startsWith('http')) {
+        const localPath = await downloadImageFromUrl(image)
+        if (localPath) {
+            image = localPath
+        }
+    }
+
     await db.update(categories)
         .set({
             name: data.name,
             description: data.description || null,
-            image: data.image || null,
+            image: image || null,
             color: data.color || null,
-            metadata: data.metadata || null
+            metadata: data.metadata || null,
+            isPublic: data.isPublic
         })
         .where(eq(categories.id, id))
 
@@ -32,12 +42,23 @@ export async function createCategory(data: {
     description: string
     image: string
     color: string
+    isPublic?: boolean
 }) {
+    let image = data.image
+    if (image && image.startsWith('http')) {
+        const localPath = await downloadImageFromUrl(image)
+        if (localPath) {
+            image = localPath
+        }
+    }
+
     const result = await db.insert(categories).values({
         name: data.name,
         description: data.description || null,
-        image: data.image || null,
-        color: data.color || null
+        image: image || null,
+        color: data.color || null,
+        userId: null,
+        isPublic: data.isPublic || true
     }).returning()
 
     revalidatePath('/')
@@ -57,4 +78,27 @@ export async function getCategory(id: string) {
     }
 
     return result[0]
+}
+
+export async function updateCategoryOrder(categoryId: string, newOrder: number) {
+    await db.update(categories)
+        .set({ sortOrder: newOrder })
+        .where(eq(categories.id, categoryId))
+
+    revalidatePath('/')
+    revalidatePath('/')
+    revalidatePath('/categories')
+}
+
+export async function reorderCategories(items: { id: string; sortOrder: number }[]) {
+    db.transaction((tx) => {
+        for (const item of items) {
+            tx.update(categories)
+                .set({ sortOrder: item.sortOrder })
+                .where(eq(categories.id, item.id))
+                .run()
+        }
+    })
+
+    revalidatePath('/')
 }

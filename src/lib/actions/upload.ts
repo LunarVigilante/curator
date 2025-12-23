@@ -51,3 +51,48 @@ export async function uploadImage(formData: FormData): Promise<string | null> {
         return null
     }
 }
+
+export async function downloadImageFromUrl(url: string): Promise<string | null> {
+    try {
+        if (!url || !url.startsWith('http')) {
+            return null
+        }
+
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        })
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`)
+
+        const contentType = response.headers.get('content-type')
+        if (!contentType || !contentType.startsWith('image/')) {
+            throw new Error('URL does not point to an image')
+        }
+
+        const arrayBuffer = await response.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+
+        // Generate unique filename
+        const bytes = randomBytes(16).toString('hex')
+
+        // Try to get extension from URL or content-type
+        let ext = url.split('.').pop()?.split(/[?#]/)[0]?.toLowerCase()
+        if (!ext || ext.length > 4 || !['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) {
+            ext = contentType.split('/').pop() || 'jpg'
+            if (ext === 'jpeg') ext = 'jpg'
+        }
+        const filename = `${bytes}.${ext}`
+
+        const uploadDir = join(process.cwd(), 'public', 'uploads')
+        await mkdir(uploadDir, { recursive: true })
+
+        const filepath = join(uploadDir, filename)
+        await writeFile(filepath, buffer)
+
+        return `/uploads/${filename}`
+    } catch (error) {
+        console.error(`Failed to download image from URL: ${url}`, error)
+        return null
+    }
+}

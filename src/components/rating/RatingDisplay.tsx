@@ -27,8 +27,8 @@ export function RatingDisplay({ rating, showLabel = true, className, variant = '
             case 'A': return 'bg-orange-500 hover:bg-orange-600 border-orange-600'
             case 'B': return 'bg-yellow-500 hover:bg-yellow-600 border-yellow-600'
             case 'C': return 'bg-green-500 hover:bg-green-600 border-green-600'
-            case 'D': return 'bg-blue-500 hover:bg-blue-600 border-blue-600'
-            case 'F': return 'bg-purple-500 hover:bg-purple-600 border-purple-600'
+            case 'D': return 'bg-blue-600 hover:bg-blue-700 border-blue-600'
+            case 'F': return 'bg-blue-600 hover:bg-blue-700 border-blue-600'
             default: return 'bg-gray-500'
         }
     }

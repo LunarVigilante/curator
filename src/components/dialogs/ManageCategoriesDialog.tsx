@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { createCategory, deleteCategory } from '@/lib/actions/categories'
 import { Trash2, Plus } from 'lucide-react'
 import EditCategoryDialog from './EditCategoryDialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 import ImageCropper from '@/components/ImageCropper'
 
 type Category = {
@@ -18,16 +20,19 @@ type Category = {
     image: string | null
     color: string | null
     metadata: string | null
+    isPublic: boolean
 }
 
 export default function ManageCategoriesDialog({
     categories,
     open,
-    onOpenChange
+    onOpenChange,
+    onSuccess
 }: {
     categories: Category[]
     open: boolean
     onOpenChange: (open: boolean) => void
+    onSuccess: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const [isAdding, setIsAdding] = useState(false)
@@ -38,6 +43,7 @@ export default function ManageCategoriesDialog({
         description: '',
         image: '',
         color: '#4CAF50',
+        isPublic: false,
         imageUploadMode: 'url' as 'url' | 'upload'
     })
 
@@ -48,10 +54,12 @@ export default function ManageCategoriesDialog({
                 name: newCategory.name,
                 description: newCategory.description,
                 image: newCategory.image,
-                color: newCategory.color
+                color: newCategory.color,
+                isPublic: newCategory.isPublic
             })
-            setNewCategory({ name: '', description: '', image: '', color: '#4CAF50', imageUploadMode: 'url' })
+            setNewCategory({ name: '', description: '', image: '', color: '#4CAF50', isPublic: false, imageUploadMode: 'url' })
             setIsAdding(false)
+            onSuccess() // Trigger refresh
         })
     }
 
@@ -61,6 +69,7 @@ export default function ManageCategoriesDialog({
         }
         startTransition(async () => {
             await deleteCategory(id)
+            onSuccess() // Trigger refresh
         })
     }
 
@@ -106,6 +115,14 @@ export default function ManageCategoriesDialog({
                                             onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
                                             rows={2}
                                         />
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id="new-public"
+                                            checked={newCategory.isPublic}
+                                            onCheckedChange={(checked) => setNewCategory({ ...newCategory, isPublic: checked as boolean })}
+                                        />
+                                        <Label htmlFor="new-public">Make Public (Shared with everyone)</Label>
                                     </div>
                                     <div>
                                         <Label>Image</Label>
@@ -243,7 +260,12 @@ export default function ManageCategoriesDialog({
                                             {category.name[0]}
                                         </div>
                                         <div>
-                                            <div className="font-medium">{category.name}</div>
+                                            <div className="font-medium flex items-center gap-2">
+                                                {category.name}
+                                                {category.isPublic && (
+                                                    <Badge variant="secondary" className="text-xs">Public</Badge>
+                                                )}
+                                            </div>
                                             {category.description && (
                                                 <div className="text-sm text-muted-foreground">{category.description}</div>
                                             )}
@@ -285,6 +307,7 @@ export default function ManageCategoriesDialog({
                     category={editingCategory}
                     open={!!editingCategory}
                     onOpenChange={(open) => !open && setEditingCategory(null)}
+                    onSuccess={onSuccess}
                 />
             )}
 

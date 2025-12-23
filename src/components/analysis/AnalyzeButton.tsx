@@ -9,9 +9,10 @@ import { toast } from "sonner"
 
 interface AnalyzeButtonProps {
     categoryId?: string
+    variant?: "outline" | "ghost" | "default" | "secondary" | "destructive" | "link"
 }
 
-export function AnalyzeButton({ categoryId }: AnalyzeButtonProps) {
+export function AnalyzeButton({ categoryId, variant = "outline" }: AnalyzeButtonProps) {
     const [isLoading, setIsLoading] = useState(false)
     const [isOpen, setIsOpen] = useState(false)
     const [data, setData] = useState<TasteAnalysis | null>(null)
@@ -40,13 +41,13 @@ export function AnalyzeButton({ categoryId }: AnalyzeButtonProps) {
             <Button
                 onClick={handleAnalyze}
                 disabled={isLoading}
-                variant="outline"
-                className="gap-2 bg-gradient-to-r from-purple-500/10 to-blue-500/10 hover:from-purple-500/20 hover:to-blue-500/20 border-purple-200/50 dark:border-purple-800/50"
+                variant={variant}
+                className={`gap-2 ${variant === 'outline' ? 'bg-gradient-to-r from-blue-500/10 to-blue-500/10 hover:from-blue-500/20 hover:to-blue-500/20 border-blue-200/50 dark:border-blue-800/50' : ''}`}
             >
                 {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                    <Sparkles className="w-4 h-4 text-purple-500" />
+                    <Sparkles className="w-4 h-4 text-blue-500" />
                 )}
                 {isLoading ? "Analyzing..." : (categoryId ? "Analyze This Category" : "Analyze My Taste")}
             </Button>

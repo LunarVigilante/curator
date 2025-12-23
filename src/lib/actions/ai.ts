@@ -1,6 +1,6 @@
 'use server'
 
-import { callLLM } from '@/lib/llm'
+import { callLLM, cleanLLMResponse } from '@/lib/llm'
 import { createTag, getTags } from '@/lib/actions/tags'
 
 function extractJson(text: string): string {
@@ -51,16 +51,14 @@ export async function generateTags(name: string, description: string, categoryNa
 
             Existing Tags (reuse these if applicable): ${existingTagNames}
 
-            Return ONLY a JSON array of strings. Example: ["Action", "RPG", "Multiplayer"]
+            Return ONLY a comma-separated list of 5-7 relevant vibe-based tags. Example: Action, Relentless, Futuristic, Dark, 90s Vibe
         `
 
-        const response = await callLLM(prompt)
+        const systemPrompt = "You are a helpful assistant that suggests tags for items. Return ONLY a comma-separated list of tags, no JSON, no quotes, no markdown."
+        const response = await callLLM(prompt, systemPrompt)
         console.log('generateTags raw response:', response)
 
-        const cleanedResponse = extractJson(response)
-        console.log('generateTags cleaned response:', cleanedResponse)
-
-        const suggestedTags: string[] = JSON.parse(cleanedResponse)
+        const suggestedTags = response.split(',').map((t: string) => t.trim()).filter(Boolean)
 
         const finalTags: { id: string, name: string }[] = []
 
@@ -88,15 +86,14 @@ export async function generateDescription(name: string, categoryName: string) {
             Generate a brief, informative description for the following item.
             Item Name: ${name}
             Category: ${categoryName}
-
-            Return ONLY the description text (2-3 sentences), without any quotes or additional formatting.
         `
 
-        const response = await callLLM(prompt)
+        const systemPrompt = "You are a helpful assistant that generates concise item descriptions. Return ONLY the raw description text. Do not wrap it in JSON, quotes, or Markdown code blocks."
+        const response = await callLLM(prompt, systemPrompt)
         console.log('generateDescription raw response:', response)
 
-        // For description, we just trim and return the response
-        return response.trim()
+        // For description, use the refactored cleaner
+        return cleanLLMResponse(response)
     } catch (error) {
         console.error('Description generation failed:', error)
         return ''
