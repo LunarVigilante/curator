@@ -20,24 +20,31 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
     const [currentPair, setCurrentPair] = useState<[TournamentItem, TournamentItem] | null>(null)
     const [history, setHistory] = useState<string[]>([]) // Track pairs to avoid immediate repeats
     const [roundCount, setRoundCount] = useState(0)
+    const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set())
 
     // Helper to get current score
     const getScore = useCallback((id: string) => eloScores.get(id) || 1200, [eloScores])
 
     // Generate a new pair
     const generatePair = useCallback(() => {
-        if (initialItems.length < 2) return null
+        // Filter out ignored items
+        const activeItems = initialItems.filter(i => !ignoredIds.has(i.id))
 
-        const pool = [...initialItems]
+        if (activeItems.length < 2) return null
+
+        const pool = [...activeItems]
 
         // 20% Chance for Discovery Round (if challengers exist)
-        const isDiscoveryRound = challengers.length > 0 && Math.random() < 0.20
+        // ...
+        // Ensure challengers are not ignored (if we track their IDs in ignoredIds too)
+        const activeChallengers = challengers.filter(c => !ignoredIds.has(c.id))
+        const isDiscoveryRound = activeChallengers.length > 0 && Math.random() < 0.20
 
         if (isDiscoveryRound) {
             // Pick rand user item
             const userItem = pool[Math.floor(Math.random() * pool.length)]
             // Pick rand challenger
-            const challenger = challengers[Math.floor(Math.random() * challengers.length)]
+            const challenger = activeChallengers[Math.floor(Math.random() * activeChallengers.length)]
 
             const challengerItem: TournamentItem = {
                 ...challenger,
@@ -65,7 +72,7 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
 
         return [itemA, itemB] as [TournamentItem, TournamentItem]
 
-    }, [initialItems, challengers, getScore])
+    }, [initialItems, challengers, getScore, ignoredIds])
 
     // Initial pair
     useEffect(() => {
@@ -101,10 +108,23 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
         setCurrentPair(generatePair())
     }
 
+    const ignore = (itemId: string) => {
+        // Remove from local pool (effectively) by removing from initialItems? 
+        // We can't easily mutate initialItems prop. 
+        // We can maintain a set of ignored IDs.
+        setIgnoredIds(prev => new Set(prev).add(itemId))
+
+        // Skip match
+        setCurrentPair(generatePair())
+    }
+
+    // Filter available items logic in generatePair needs to respect ignoredIds
+
     return {
         currentPair,
         vote,
         skip,
+        ignore,
         eloScores,
         roundCount
     }

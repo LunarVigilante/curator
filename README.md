@@ -1,3 +1,5 @@
+![CI Status](https://github.com/LunarVigilante/curator/actions/workflows/ci.yml/badge.svg)
+
 # Curator
 
 **Curate your culture.** The definitive vault for tracking, ranking, and discovering movies, games, books, and music.

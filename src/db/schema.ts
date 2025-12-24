@@ -12,6 +12,7 @@ export const categories = sqliteTable('categories', {
     metadata: text('metadata'), // JSON string for custom field schema
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     isPublic: integer('is_public', { mode: 'boolean' }).notNull().default(false),
+    isFeatured: integer('is_featured', { mode: 'boolean' }).notNull().default(false),
     cachedAnalysis: text('cached_analysis'), // JSON string of last successful analysis
     analysisHash: text('analysis_hash'), // Fingerprint of the list state (items + ranks)
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
@@ -36,6 +37,7 @@ export const items = sqliteTable('items', {
     description: text('description'),
     image: text('image'),
     metadata: text('metadata'),
+    status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'IGNORED', 'SEEN', 'WISHLIST'
 
     // New Master/Instance fields
     globalItemId: text('global_item_id').references(() => globalItems.id, { onDelete: 'cascade' }),
@@ -56,6 +58,8 @@ export const users = sqliteTable('user', {
     email: text('email').notNull().unique(),
     emailVerified: integer('emailVerified', { mode: 'boolean' }).notNull().default(false),
     image: text('image'),
+    bio: text('bio'),
+    preferences: text('preferences'), // JSON string for { theme, visibility, etc. }
     role: text('role').notNull().default('USER'), // 'ADMIN' | 'USER'
     requiredPasswordChange: integer('required_password_change', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
@@ -136,6 +140,25 @@ export const systemSettings = sqliteTable('system_settings', {
     category: text('category').notNull(), // 'LLM', 'SECURITY', 'GENERAL'
     isSecret: integer('is_secret', { mode: 'boolean' }).notNull().default(false), // e.g. true for API keys
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
+});
+
+export const emailTemplates = sqliteTable('email_templates', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    name: text('name').notNull().unique(), // e.g., 'password-reset', 'invite-user'
+    subject: text('subject').notNull(),
+    bodyHtml: text('body_html').notNull(),
+    variables: text('variables'), // JSON string listing available placeholders
+    lastUpdated: integer('last_updated', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`).$onUpdate(() => new Date()),
+});
+
+export const invites = sqliteTable('invites', {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    code: text('code').notNull().unique(),
+    createdBy: text('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    isUsed: integer('is_used', { mode: 'boolean' }).notNull().default(false),
+    usedBy: text('used_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    usedAt: integer('used_at', { mode: 'timestamp' }),
 });
 
 // Deprecated: Old settings table, keeping for now to avoid breaking existing users until full migration

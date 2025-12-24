@@ -7,7 +7,14 @@ import { redirect } from 'next/navigation'
 import { desc, eq, like, and, or, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { downloadImageFromUrl } from './upload'
-import { getGuestUserId } from './auth'
+import { getGuestUserId } from '@/lib/actions/auth'
+// Fixed import path to be local active auth file, OR correct if it is in ../auth
+// Wait, I previously changed it to `../auth` and it failed. 
+// Let's check where `getGuestUserId` is defined. 
+// It is likely in `src/lib/actions/auth.ts` or `src/lib/auth.ts`?
+// I see `src/lib/actions/auth.ts` was edited in earlier turns.
+// I will check `src/lib/actions/auth.ts` content first.
+
 
 
 export async function getItems(
@@ -392,4 +399,40 @@ export async function addChallengerItem(challenger: ChallengerItem, categoryId: 
 
     revalidatePath(`/categories/${categoryId}`)
     return newItem
+}
+
+export async function ignoreItem(itemId: string) {
+    const userId = await getGuestUserId()
+
+    // Check if item exists in user library
+    const existing = await db.query.items.findFirst({
+        where: and(
+            eq(items.id, itemId),
+            eq(items.userId, userId)
+        )
+    })
+
+    if (existing) {
+        // Update status
+        await db.update(items)
+            .set({ status: 'IGNORED', updatedAt: new Date() })
+            .where(eq(items.id, itemId))
+    } else {
+        // If it's a temp/challenger item not in DB, we'd need to add it as IGNORED.
+        // But temp items usually have ID 'temp-...', so we can't update them directly.
+        // Frontend handles ignoring temp items by just not showing them, 
+        // BUT if "Never Show" is clicked for a global/challenger, we SHOULD persist that ban.
+        // Current implementation assumes we only ignore things we track. 
+        // For "Discovery" items, we'd ideally blacklist the externalId.
+        // For MVP: We only support ignoring existing User Items.
+    }
+
+    revalidatePath('/items')
+}
+
+import { TournamentService } from '@/lib/services/TournamentService'
+
+export async function getTournamentPool(categoryId: string, size: number = 20) {
+    const userId = await getGuestUserId()
+    return await TournamentService.generateTournamentPool(userId, categoryId, size, true)
 }

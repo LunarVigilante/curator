@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { useTournamentMatchmaker } from '@/hooks/useTournamentMatchmaker'
-import { AnimatePresence, motion } from 'framer-motion'
-import { Trophy, Check, X, SkipForward, Save } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Trophy, Check, SkipForward, Save } from 'lucide-react'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { updateItemScores, addChallengerItem } from '@/lib/actions/items'
+import { updateItemScores, addChallengerItem, ignoreItem } from '@/lib/actions/items'
 import { fetchChallengers, ChallengerItem } from '@/lib/actions/discovery'
 
 type TournamentItem = {
@@ -52,22 +53,28 @@ export function TournamentModal({
         }
     }, [isOpen, categoryId, items, challengers.length])
 
-    const { currentPair, vote, skip, eloScores, roundCount } = useTournamentMatchmaker(tournamentItems, challengers)
+    const { currentPair, vote, skip, ignore, eloScores, roundCount } = useTournamentMatchmaker(tournamentItems, challengers)
 
     const handleVote = async (winnerId: string) => {
         const result = vote(winnerId)
         if (!result) return
 
-        const { winner, loser } = result
+        const { winner } = result
 
-        // Logic 4: Auto-Add Challenger if they receive a vote (Winner OR Loser? Spec says "Voting FOR a Challenger")
-        // If the user VOTED FOR the challenger (winner is challenger) -> Add it.
-        // If the user voted AGAINST the challenger (loser is challenger) -> Do nothing (User rejected it).
-
+        // Logic: Auto-Add Challenger if they receive a vote (Winner is challenger)
         if (winner.type === 'CHALLENGER') {
             toast.info(`Adding "${winner.name}" to your collection...`)
             try {
-                await addChallengerItem(winner as ChallengerItem, categoryId, result.newWinnerScore)
+                // Cast because we know it's a challenger structure mostly, but safe spread better
+                const challengerData: ChallengerItem = {
+                    id: winner.id,
+                    name: winner.name,
+                    image: winner.image || '', // Fallback
+                    description: winner.description || '',
+                    origin: 'TMDB' // Default or need to pass from upstream
+                }
+
+                await addChallengerItem(challengerData, categoryId, result.newWinnerScore)
                 toast.success(`${winner.name} saved!`)
             } catch (e) {
                 toast.error(`Failed to save ${winner.name}`)
@@ -81,14 +88,8 @@ export function TournamentModal({
             // Convert Map to array of updates
             const updates = Array.from(eloScores.entries()).map(([id, elo]) => ({ id, elo }))
 
-            // Filter out challengers who haven't been added to DB yet (we only update existing items)
-            // But wait, added challengers are already in DB via handleVote. 
-            // We only need to update USER items that are in the map.
-            // IDs in eloScores might belong to temporary challengers that were NOT voted for (if they lost).
-            // So we strictly filter updates for items that exist in our initial 'items' list OR were added.
-            // Simplified: Just attempt to update. If ID doesn't exist in DB, `updateItemScores` will ignore or fail gracefully.
-            // Better: updateItemScores should handle it.
-
+            // Only update items that are not challengers or challengers that were added
+            // Effectively, the server action filters or upserts.
             await updateItemScores(updates)
 
             toast.success(`Tournament Complete! ${updates.length} ratings updated.`)
@@ -138,15 +139,43 @@ export function TournamentModal({
 
                 {/* Footer Controls */}
                 <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-50">
-                    <Button
-                        variant="secondary"
-                        size="lg"
-                        onClick={skip}
-                        className="rounded-full px-8 bg-zinc-900/80 backdrop-blur text-zinc-400 hover:text-white border border-white/10"
-                    >
-                        <SkipForward className="w-4 h-4 mr-2" />
-                        Skip / Haven't Seen
-                    </Button>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="secondary"
+                                size="lg"
+                                className="rounded-full px-8 bg-zinc-900/80 backdrop-blur text-zinc-400 hover:text-white border border-white/10"
+                            >
+                                <SkipForward className="w-4 h-4 mr-2" />
+                                Skip / Haven&apos;t Seen
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 bg-zinc-900 border-white/10 p-2 text-zinc-200" side="top">
+                            <div className="grid gap-1">
+                                <Button variant="ghost" className="justify-start text-zinc-300 hover:text-white hover:bg-white/10" onClick={skip}>
+                                    Skip this match
+                                </Button>
+                                <div className="h-px bg-white/10 my-1" />
+                                <p className="text-xs text-zinc-500 px-2 py-1 font-medium">NEVER SHOW AGAIN</p>
+                                <Button
+                                    variant="ghost"
+                                    className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 truncate"
+                                    onClick={() => { ignore(itemA.id); ignoreItem(itemA.id); }}
+                                    title={`Ignore ${itemA.name}`}
+                                >
+                                    Ignore &quot;{itemA.name}&quot;
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 truncate"
+                                    onClick={() => { ignore(itemB.id); ignoreItem(itemB.id); }}
+                                    title={`Ignore ${itemB.name}`}
+                                >
+                                    Ignore &quot;{itemB.name}&quot;
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
                 </div>
 
             </DialogContent>

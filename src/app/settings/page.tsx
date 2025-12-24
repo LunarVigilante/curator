@@ -1,31 +1,26 @@
-import { getSettings, updateSettings } from '@/lib/actions/settings'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
-import SettingsForm from '@/components/settings/SettingsForm'
+import { auth } from '@/lib/auth';
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import UserSettings from '@/components/settings/UserSettings';
+import { Separator } from '@/components/ui/separator';
 
 export default async function SettingsPage() {
-    const settings = await getSettings()
+    const session = await auth.api.getSession({
+        headers: await headers()
+    });
+
+    if (!session) {
+        redirect('/login');
+    }
+
+    const { user } = session;
 
     return (
-        <div className="container mx-auto py-10">
+        <div className="container mx-auto py-10 max-w-5xl px-4">
             <h1 className="text-3xl font-bold mb-6">Settings</h1>
             <Separator className="my-6" />
 
-            <div className="grid gap-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>LLM Configuration</CardTitle>
-                        <CardDescription>
-                            Configure the Large Language Model settings for auto-tagging and recommendations.
-                            Defaulting to OpenRouter for best compatibility.
-                        </CardDescription>
-                    </CardHeader>
-                    <SettingsForm initialSettings={settings} />
-                </Card>
-            </div>
+            <UserSettings user={user} />
         </div>
-    )
+    );
 }

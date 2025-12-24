@@ -4,9 +4,10 @@ import { ThemeProvider } from "next-themes";
 import Link from "next/link";
 import { Toaster } from "sonner";
 import "./globals.css";
-import { PageBackground } from "@/components/ui/PageBackground";
+import { AmbientBackground } from "@/components/ui/AmbientBackground";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { Navbar } from "@/components/layout/Navbar";
+import { PasswordResetGuard } from "@/components/auth/PasswordResetGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} antialiased min-h-screen bg-black text-white`}
         suppressHydrationWarning
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
@@ -44,12 +45,19 @@ export default function RootLayout({
             apiKey={process.env.NEXT_PUBLIC_POSTHOG_KEY}
             apiHost={process.env.NEXT_PUBLIC_POSTHOG_HOST}
           >
-            <PageBackground>
+            <PasswordResetGuard />
+
+            {/* 1. Global Background (The Base) */}
+            <AmbientBackground className="fixed inset-0 z-0" />
+
+            {/* 2. Main Content Wrapper */}
+            <div className="relative z-10 flex flex-col min-h-screen">
               <Navbar />
-              <main>
+              <main className="flex-1">
                 {children}
               </main>
-            </PageBackground>
+            </div>
+
             <Toaster />
           </PostHogProvider>
         </ThemeProvider>

@@ -7,9 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import { PageBackground } from '@/components/ui/PageBackground';
 import { Eye, EyeOff, Lock, Loader2 } from 'lucide-react';
-import Link from 'next/link';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -45,11 +43,10 @@ export default function LoginPage() {
     };
 
     return (
-        <PageBackground className="flex items-center justify-center p-4">
+        <div className="flex items-center justify-center min-h-screen w-full p-4 relative z-10">
             <Card className="w-full max-w-md bg-black/40 backdrop-blur-xl border-white/10 shadow-2xl relative z-20">
                 <CardHeader className="text-center space-y-2 pb-8 pt-10">
                     <div className="flex justify-center mb-2">
-                        {/* Curator Logo (Serif) */}
                         <h1 className="font-serif font-bold text-4xl tracking-tight text-white">
                             Curator
                         </h1>
@@ -59,8 +56,7 @@ export default function LoginPage() {
                     </p>
                 </CardHeader>
                 <form onSubmit={handleLogin}>
-                    <CardContent className="space-y-5 px-8">
-                        {/* Email Input */}
+                    <CardContent className="space-y-6 px-8">
                         <div className="space-y-2">
                             <Label htmlFor="email" className="text-zinc-300">Email</Label>
                             <Input
@@ -74,7 +70,6 @@ export default function LoginPage() {
                             />
                         </div>
 
-                        {/* Password Input with Toggle */}
                         <div className="space-y-2">
                             <Label htmlFor="password" className="text-zinc-300">Password</Label>
                             <div className="relative">
@@ -104,9 +99,9 @@ export default function LoginPage() {
                         )}
                     </CardContent>
 
-                    <CardFooter className="flex flex-col gap-6 px-8 pb-10">
+                    <CardFooter className="flex flex-col gap-6 px-8 pb-10 pt-2">
                         <Button
-                            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-6 transition-all shadow-lg hover:shadow-blue-500/20"
+                            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-6 transition-all shadow-lg hover:shadow-blue-500/20 mt-2"
                             disabled={loading}
                         >
                             {loading ? (
@@ -124,6 +119,6 @@ export default function LoginPage() {
                     </CardFooter>
                 </form>
             </Card>
-        </PageBackground>
+        </div>
     );
 }

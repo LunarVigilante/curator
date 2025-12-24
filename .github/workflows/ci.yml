@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  quality-check:
+    name: Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # Note: 'prisma generate' is not needed as we use Drizzle ORM (schema.ts).
+      # If we were using Drizzle Introspection, we might run 'npx drizzle-kit push' or 'generate',
+      # but for type checking, the static schema file is sufficient.
+
+      - name: Linting
+        run: npm run lint
+
+      - name: Type Checking
+        run: npm run typecheck
+
+      - name: Build Test
+        run: npm run build
+        env:
+            # Add dummy env vars if build fails due to missing keys (Next.js usually requires them at build time)
+            BETTER_AUTH_SECRET: 'autogenerate_ci_dummy_secret'
+            ANANNAS_API_KEY: 'ci_dummy_key'
+            RESEND_API_KEY: 're_123456789'
+            NEXT_PUBLIC_POSTHOG_KEY: 'ph_dummy_key'
+            NEXT_PUBLIC_POSTHOG_HOST: 'https://app.posthog.com'

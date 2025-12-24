@@ -4,11 +4,14 @@ import Link from "next/link";
 import { authClient } from "@/lib/auth-client"; // Client-side auth
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+import { User } from "lucide-react";
 
 export function Navbar() {
     // Hooks
     const { data: session, isPending } = authClient.useSession();
     const router = useRouter();
+    // Use type assertion for image as it might be missing from the default session type definition but present in runtime
+    const userImage = session?.user?.image as string | null | undefined;
 
     const handleSignOut = async () => {
         await authClient.signOut({
@@ -32,21 +35,25 @@ export function Navbar() {
                         </span>
                     </Link>
 
-                    {/* Render Links ONLY if Logged In */}
-                    {session && !isPending && (
-                        <nav className="flex items-center space-x-6 text-sm font-medium">
-                            <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/items">Items</Link>
-                            <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/tags">Tags</Link>
-                            <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/settings">Settings</Link>
+                    <nav className="flex items-center space-x-6 text-sm font-medium">
+                        <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/browse">Browse</Link>
 
-                            {/* Admin Link Guard */}
-                            {(session.user as any).role === 'ADMIN' && (
-                                <Link className="transition-colors hover:text-red-400 text-foreground/60" href="/admin">
-                                    Admin
-                                </Link>
-                            )}
-                        </nav>
-                    )}
+                        {/* Render Links ONLY if Logged In */}
+                        {session && !isPending && (
+                            <>
+                                <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/items">Items</Link>
+                                <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/tags">Tags</Link>
+                                <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/settings">Settings</Link>
+
+                                {/* Admin Link Guard */}
+                                {(session.user as any).role === 'ADMIN' && (
+                                    <Link className="transition-colors hover:text-red-400 text-foreground/60" href="/admin">
+                                        Admin
+                                    </Link>
+                                )}
+                            </>
+                        )}
+                    </nav>
                 </div>
 
                 {/* Right Side: Auth Buttons */}
@@ -57,10 +64,22 @@ export function Navbar() {
                     ) : session ? (
                         // User Profile / Sign Out
                         <div className="flex items-center gap-4">
-                            {/* Maybe show user email or avatar? */}
-                            <span className="text-sm text-muted-foreground hidden md:block">
-                                {session.user.email}
-                            </span>
+                            <div className="flex items-center gap-3">
+                                {userImage ? (
+                                    <img
+                                        src={userImage}
+                                        alt="Avatar"
+                                        className="h-8 w-8 rounded-full border border-white/10 object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-zinc-800 text-zinc-400">
+                                        <User size={16} />
+                                    </div>
+                                )}
+                                <span className="text-sm text-muted-foreground hidden md:block">
+                                    {session.user.email}
+                                </span>
+                            </div>
                             <Button
                                 variant="outline"
                                 size="sm"

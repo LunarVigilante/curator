@@ -4,7 +4,7 @@ import { getCustomRanks } from '@/lib/actions/customRanks'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import CategoryView from './CategoryView'
-import { PageBackground } from '@/components/ui/PageBackground'
+// import { PageBackground } from '@/components/ui/PageBackground'
 
 export default async function CategoryPage(props: { params: Promise<{ id: string }> }) {
     const params = await props.params
@@ -30,13 +30,25 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
     const isOwner = true // No-login mode: everyone is an owner for now
 
     return (
-        <PageBackground imageUrl={category.image}>
+        <>
+            {/* Blended Overlay Layer (Local to Category) */}
+            {category.image && (
+                <div
+                    className="fixed inset-0 z-[1] bg-cover bg-center opacity-40 mix-blend-overlay pointer-events-none transition-all duration-1000"
+                    style={{
+                        backgroundImage: `url(${category.image})`,
+                        maskImage: 'linear-gradient(to bottom, black 0%, transparent 90%)',
+                        WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 90%)'
+                    }}
+                />
+            )}
+
             <CategoryView
                 category={category}
                 items={items}
                 customRanks={customRanks}
                 isOwner={isOwner}
             />
-        </PageBackground>
+        </>
     )
 }

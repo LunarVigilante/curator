@@ -5,6 +5,8 @@ import { categories } from '@/db/schema'
 import { eq, asc } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { downloadImageFromUrl } from './upload'
+import { auth } from '@/lib/auth'
+import { headers } from 'next/headers'
 
 export async function getCategories() {
     return await db.select().from(categories).orderBy(asc(categories.sortOrder))
@@ -102,3 +104,74 @@ export async function reorderCategories(items: { id: string; sortOrder: number }
 
     revalidatePath('/')
 }
+
+export async function toggleCategoryFeature(id: string, isFeatured: boolean) {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    })
+
+    if (!session || (session.user as any).role !== 'ADMIN') {
+        throw new Error('Unauthorized')
+    }
+
+    await db.update(categories)
+        .set({ isFeatured })
+        .where(eq(categories.id, id))
+
+    revalidatePath('/')
+}
+
+export async function getFeaturedCategories() {
+    return await db.select()
+        .from(categories)
+        .where(eq(categories.isFeatured, true))
+        .orderBy(asc(categories.sortOrder))
+}
+
+export async function getAllCategoriesWithOwners() {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    })
+
+    if (!session || (session.user as any).role !== 'ADMIN') {
+        throw new Error('Unauthorized')
+    }
+
+    return await db.query.categories.findMany({
+        with: {
+            owner: true
+        },
+        orderBy: (categories, { asc }) => [asc(categories.name)]
+    })
+}
+
+export async function getPublicCategories(query?: string) {
+    if (query) {
+        return await db.query.categories.findMany({
+            where: (categories, { and, eq, like }) => and(
+                eq(categories.isPublic, true),
+                like(categories.name, `%${query}%`)
+            ),
+            with: {
+                owner: true
+            },
+            orderBy: (categories, { asc }) => [asc(categories.name)]
+        })
+    }
+
+    return await db.query.categories.findMany({
+        where: (categories, { eq }) => eq(categories.isPublic, true),
+        with: {
+            owner: true
+        },
+        orderBy: (categories, { asc }) => [asc(categories.name)]
+    })
+}
+
+export async function getUserCategories(userId: string) {
+    return await db.select()
+        .from(categories)
+        .where(eq(categories.userId, userId))
+        .orderBy(asc(categories.sortOrder))
+}
+
