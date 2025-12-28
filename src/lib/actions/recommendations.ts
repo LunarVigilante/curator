@@ -3,7 +3,7 @@
 import { db } from '@/lib/db'
 import { categories, items } from '@/db/schema'
 import { eq } from 'drizzle-orm'
-import { callLLM } from '@/lib/llm'
+import { callLLMWithConfig } from '@/lib/llm'
 
 export type Recommendation = {
     name: string
@@ -81,7 +81,7 @@ export async function getRecommendation(categoryId: string): Promise<Recommendat
 
     // 4. Call LLM
     try {
-        const jsonResponse = await callLLM(prompt)
+        const jsonResponse = await callLLMWithConfig(prompt)
         const cleanJson = jsonResponse.replace(/```json/g, '').replace(/```/g, '').trim()
         const result = JSON.parse(cleanJson) as RecommendationResult
         return result

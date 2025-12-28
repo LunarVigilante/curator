@@ -4,7 +4,7 @@ import { ThemeProvider } from "next-themes";
 import Link from "next/link";
 import { Toaster } from "sonner";
 import "./globals.css";
-import { AmbientBackground } from "@/components/ui/AmbientBackground";
+import { AntigravityBackground } from "@/components/ui/AntigravityBackground";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { Navbar } from "@/components/layout/Navbar";
 import { PasswordResetGuard } from "@/components/auth/PasswordResetGuard";
@@ -48,7 +48,7 @@ export default function RootLayout({
             <PasswordResetGuard />
 
             {/* 1. Global Background (The Base) */}
-            <AmbientBackground className="fixed inset-0 z-0" />
+            <AntigravityBackground className="fixed inset-0 z-0" />
 
             {/* 2. Main Content Wrapper */}
             <div className="relative z-10 flex flex-col min-h-screen">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { useTournamentMatchmaker } from '@/hooks/useTournamentMatchmaker'
@@ -9,7 +9,7 @@ import { motion } from 'framer-motion'
 import { Trophy, Check, SkipForward, Save } from 'lucide-react'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { updateItemScores, addChallengerItem, ignoreItem } from '@/lib/actions/items'
+import { updateItemScores, addChallengerItem, ignoreItem, submitMatchActivity } from '@/lib/actions/items'
 import { fetchChallengers, ChallengerItem } from '@/lib/actions/discovery'
 
 type TournamentItem = {
@@ -80,6 +80,15 @@ export function TournamentModal({
                 toast.error(`Failed to save ${winner.name}`)
             }
         }
+
+        // Log Activity (Non-blocking)
+        const loser = itemA.id === winnerId ? itemB : itemA
+        submitMatchActivity({
+            winnerId: winner.id,
+            winnerName: winner.name,
+            loserId: loser.id,
+            loserName: loser.name
+        })
     }
 
     const handleEndTournament = async () => {
@@ -108,6 +117,7 @@ export function TournamentModal({
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-[90vw] h-[80vh] p-0 gap-0 bg-black border-none overflow-hidden flex flex-col">
+                <DialogTitle className="sr-only">Tournament Match</DialogTitle>
 
                 {/* Header */}
                 <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50 bg-gradient-to-b from-black/80 to-transparent">

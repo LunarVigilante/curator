@@ -8,6 +8,7 @@ import { getGuestUserId } from './auth'
 
 export async function rateItem(itemId: string, value: number, type: 'NUMERICAL' | 'TIER' | 'HYBRID', tier?: string) {
     const userId = await getGuestUserId()
+    if (!userId) return
 
     // Delete existing rating for this user/item to prevent duplicates
     await db.delete(ratings).where(and(

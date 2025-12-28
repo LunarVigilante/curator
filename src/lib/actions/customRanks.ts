@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { customRanks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
-import { callLLM } from '@/lib/llm'
+import { callLLMWithConfig } from '@/lib/llm'
 
 const DEFAULT_TIERS = [
     { name: 'S', color: '#f87171' }, // red-400
@@ -12,7 +12,7 @@ const DEFAULT_TIERS = [
     { name: 'B', color: '#facc15' }, // yellow-400
     { name: 'C', color: '#4ade80' }, // green-400
     { name: 'D', color: '#60a5fa' }, // blue-400
-    { name: 'F', color: '#60a5fa' }, // blue-400
+    { name: 'F', color: '#a855f7' }, // purple-500
 ]
 
 export async function getCustomRanks(categoryId: string) {
@@ -36,7 +36,7 @@ Return ONLY a JSON object with this exact format:
 { "sentiment": "positive" | "neutral" | "negative", "reasoning": "brief explanation" }
 `
 
-        const response = await callLLM(prompt)
+        const response = await callLLMWithConfig(prompt)
 
         // Clean up response if it contains markdown code blocks
         const jsonStr = response.replace(/```json\n?|\n?```/g, '').trim()

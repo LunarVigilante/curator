@@ -1,6 +1,6 @@
 'use server'
 
-import { callLLM, cleanLLMResponse } from '@/lib/llm'
+import { callLLMWithConfig, cleanLLMResponse } from '@/lib/llm'
 
 export type ChallengerItem = {
     id: string // External ID (e.g. "tmdb-12345")
@@ -33,7 +33,7 @@ export async function fetchChallengers(categoryName: string, existingItemNames: 
             Example: [{"name": "The Godfather", "description": "Mafia masterpiece...", "year": "1972"}]
         `
 
-        const response = await callLLM(prompt)
+        const response = await callLLMWithConfig(prompt)
         const cleaned = cleanLLMResponse(response)
         const suggestions = JSON.parse(cleaned)
 

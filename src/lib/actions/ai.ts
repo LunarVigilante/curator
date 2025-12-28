@@ -1,180 +1,267 @@
 'use server'
 
-import { callLLM, cleanLLMResponse } from '@/lib/llm'
-import { createTag, getTags } from '@/lib/actions/tags'
+import { callLLM } from '@/lib/llm'
+import { SystemConfigService } from '@/lib/services/SystemConfigService'
+import { db } from '@/lib/db'
+import { globalItems } from '@/db/schema'
+import { eq, and, sql } from 'drizzle-orm'
+import { z } from 'zod'
 
-function extractJson(text: string): string {
-    // Try to find JSON block enclosed in ```json ... ```
-    const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
-    if (jsonBlockMatch) {
-        return jsonBlockMatch[1]
-    }
+const generateDescriptionSchema = z.object({
+    title: z.string().min(1),
+    type: z.string().min(1),
+    context: z.string().optional()
+})
 
-    // Try to find JSON block enclosed in ``` ... ```
-    const codeBlockMatch = text.match(/```\s*([\s\S]*?)\s*```/)
-    if (codeBlockMatch) {
-        return codeBlockMatch[1]
-    }
+const generateTagsSchema = z.object({
+    title: z.string().min(1),
+    type: z.string().min(1),
+    description: z.string().optional()
+})
 
-    // Fallback: Try to find the first { or [ and the last } or ]
-    const firstOpenBrace = text.indexOf('{')
-    const firstOpenBracket = text.indexOf('[')
+// =============================================================================
+// SECURITY: Sanitize user input to prevent prompt injection
+// =============================================================================
 
-    let startIndex = -1
-    let endIndex = -1
-
-    if (firstOpenBrace !== -1 && (firstOpenBracket === -1 || firstOpenBrace < firstOpenBracket)) {
-        startIndex = firstOpenBrace
-        endIndex = text.lastIndexOf('}')
-    } else if (firstOpenBracket !== -1) {
-        startIndex = firstOpenBracket
-        endIndex = text.lastIndexOf(']')
-    }
-
-    if (startIndex !== -1 && endIndex !== -1) {
-        return text.substring(startIndex, endIndex + 1)
-    }
-
-    return text
+function sanitizeInput(input: string | undefined, maxLength = 200): string {
+    if (!input) return ''
+    return input
+        .replace(/[\n\r]/g, ' ')      // Strip newlines
+        .replace(/</g, '&lt;')         // Escape < 
+        .replace(/>/g, '&gt;')         // Escape >
+        .replace(/\s+/g, ' ')          // Collapse whitespace
+        .trim()
+        .substring(0, maxLength)
 }
 
-export async function generateTags(name: string, description: string, categoryName: string) {
+export async function generateDescriptionAction(input: z.input<typeof generateDescriptionSchema>) {
     try {
-        const existingTags = await getTags()
-        const existingTagNames = existingTags.map(t => t.name).join(', ')
+        const { title, type, context } = generateDescriptionSchema.parse(input)
 
-        const prompt = `
-            Analyze the following item and suggest up to 5 relevant tags.
-            Item Name: ${name}
-            Description: ${description}
-            Category: ${categoryName}
+        // 1. Check Cache
+        const normalizedType = type.toUpperCase().replace(/\s+/g, '_');
+        const existingItem = await db.query.globalItems.findFirst({
+            where: and(
+                sql`lower(${globalItems.title}) = lower(${title})`,
+                // Try to match type if possible, but fallback to title-only match if fuzzy
+                // For now, strict type match to avoid cross-pollination (e.g. Game vs Movie)
+                // We use LIKE or just standard equality on normalized type
+                eq(globalItems.categoryType, normalizedType)
+            )
+        });
 
-            Existing Tags (reuse these if applicable): ${existingTagNames}
-
-            Return ONLY a comma-separated list of 5-7 relevant vibe-based tags. Example: Action, Relentless, Futuristic, Dark, 90s Vibe
-        `
-
-        const systemPrompt = "You are a helpful assistant that suggests tags for items. Return ONLY a comma-separated list of tags, no JSON, no quotes, no markdown."
-        const response = await callLLM(prompt, systemPrompt)
-        console.log('generateTags raw response:', response)
-
-        const suggestedTags = response.split(',').map((t: string) => t.trim()).filter(Boolean)
-
-        const finalTags: { id: string, name: string }[] = []
-
-        for (const tagName of suggestedTags) {
-            try {
-                const tag = await createTag(tagName)
-                if (tag) {
-                    finalTags.push(tag)
-                }
-            } catch (e) {
-                console.error(`Failed to create/get tag ${tagName}`, e)
-            }
+        if (existingItem?.description) {
+            console.log(`[AI Cache] Hit for description: "${title}"`);
+            return { description: existingItem.description };
         }
 
-        return finalTags
-    } catch (error) {
-        console.error('Auto-tagging failed:', error)
-        return []
+        // Fetch LLM config from database
+        const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
+        const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
+        const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
+        const model = await SystemConfigService.getDecryptedConfig('llm_model');
+        const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key');
+        const anthropicKey = await SystemConfigService.getDecryptedConfig('anthropic_api_key');
+        const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key');
+        const openrouterKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key');
+        const googleAiKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key');
+
+        let finalApiKey = apiKey;
+        if (!finalApiKey) {
+            switch (provider) {
+                case 'ananas': finalApiKey = anannasKey; break;
+                case 'anthropic': finalApiKey = anthropicKey; break;
+                case 'openai': finalApiKey = openaiKey; break;
+                case 'openrouter': finalApiKey = openrouterKey; break;
+                case 'google': finalApiKey = googleAiKey; break;
+            }
+        }
+        finalApiKey = finalApiKey || openrouterKey || anannasKey || anthropicKey || openaiKey || googleAiKey;
+
+        if (!finalApiKey) {
+            throw new Error('LLM API Key not configured in System Settings')
+        }
+
+        const systemPrompt = `You are an expert curator and critic. Generate a compelling description for the given item.
+
+DESCRIPTION FORMAT:
+1. Body: Maximum 50 words. Focus on plot summary first, then the vibe/atmosphere.
+2. Footer: After the body, append exactly this format on a new line after a double newline:
+
+Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
+
+Return ONLY the description text. No JSON, no markdown, no quotes.`;
+
+        const userPrompt = `Generate a description for:
+Title: ${sanitizeInput(title, 150)}
+Type: ${sanitizeInput(type, 50)}
+${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
+
+        const response = await callLLM({
+            userPrompt,
+            systemPrompt,
+            apiKey: finalApiKey,
+            provider,
+            model: model || undefined,
+            endpoint: endpoint || undefined
+        });
+
+        let description = response.trim();
+        if (description.startsWith('{') || description.startsWith('"')) {
+            try {
+                const parsed = JSON.parse(description);
+                description = typeof parsed === 'string' ? parsed : parsed.description || description;
+            } catch (e) { }
+        }
+
+        // 2. Update Cache
+        if (existingItem) {
+            await db.update(globalItems)
+                .set({ description })
+                .where(eq(globalItems.id, existingItem.id));
+        } else {
+            // Note: We don't have externalId or image here usually, just title/desc
+            await db.insert(globalItems).values({
+                title,
+                description,
+                categoryType: normalizedType
+            });
+        }
+
+        return { description }
+
+    } catch (e: any) {
+        console.error("Generate Description Error:", e)
+        return { error: e.message || "Generation Failed" }
     }
 }
 
-export async function generateDescription(name: string, categoryName: string) {
+export async function generateTagsAction(input: z.input<typeof generateTagsSchema>) {
     try {
-        const prompt = `
-            Generate a description for:
-            Item Name: ${name}
-            Category: ${categoryName}
-        `
+        const { title, type, description } = generateTagsSchema.parse(input)
 
-        const systemPrompt = `You are an expert curator. Generate a description in two distinct parts. Combine them into a single paragraph.
+        // 1. Check Cache
+        const normalizedType = type.toUpperCase().replace(/\s+/g, '_');
+        const existingItem = await db.query.globalItems.findFirst({
+            where: and(
+                sql`lower(${globalItems.title}) = lower(${title})`,
+                eq(globalItems.categoryType, normalizedType)
+            )
+        });
 
-Part 1: The Metadata Intro (The Facts)
-Instruction: concisely state the Creator, Year, Genre, and Key Talent.
-Constraint: Keep this factual and brief. This does not count toward your 50-word limit.
-Templates:
-- Movies/TV: '[Director]’s [Year] [Genre] stars [Cast].'
-- Books: '[Author]’s [Year] [Genre] follows [Protagonist].'
-- Music: '[Artist]’s [Year] [Genre] album features [Key Tracks].'
-- Games: '[Studio]’s [Year] [Genre] is set in [Setting].'
+        if (existingItem?.cachedTags) {
+            try {
+                const cached = JSON.parse(existingItem.cachedTags);
+                if (Array.isArray(cached) && cached.length > 0) {
+                    console.log(`[AI Cache] Hit for tags: "${title}"`);
+                    return { tags: cached };
+                }
+            } catch (e) { /* Invalid JSON, regenerate */ }
+        }
 
-Part 2: The Core Analysis (The Hook & Vibe)
-Instruction: Describe the central conflict, themes, and cultural impact.
-Constraint: Maximum 50 words. Be dense, critical, and engaging.
-Content:
-- The Hook: What is the actual plot/conflict?
-- The Vibe: Why does it matter? (Awards, Atmosphere, Innovation).
+        // Fetch LLM config from database
+        const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
+        const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
+        const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
+        const model = await SystemConfigService.getDecryptedConfig('llm_model');
+        const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key');
+        const anthropicKey = await SystemConfigService.getDecryptedConfig('anthropic_api_key');
+        const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key');
+        const openrouterKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key');
+        const googleAiKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key');
 
-Output the result as a single combined paragraph. Return ONLY the raw text.`
-        const response = await callLLM(prompt, systemPrompt)
-        console.log('generateDescription raw response:', response)
+        let finalApiKey = apiKey;
+        if (!finalApiKey) {
+            switch (provider) {
+                case 'ananas': finalApiKey = anannasKey; break;
+                case 'anthropic': finalApiKey = anthropicKey; break;
+                case 'openai': finalApiKey = openaiKey; break;
+                case 'openrouter': finalApiKey = openrouterKey; break;
+                case 'google': finalApiKey = googleAiKey; break;
+            }
+        }
+        finalApiKey = finalApiKey || openrouterKey || anannasKey || anthropicKey || openaiKey || googleAiKey;
 
-        // For description, use the refactored cleaner
-        return cleanLLMResponse(response)
-    } catch (error) {
-        console.error('Description generation failed:', error)
-        return ''
+        if (!finalApiKey) {
+            throw new Error('LLM API Key not configured in System Settings')
+        }
+
+        const systemPrompt = `You are an expert curator. Generate 5-8 relevant tags for the given item.
+
+TAG RULES:
+- Generate 5-8 tags
+- Include: Genre, Mood, Theme, Era/Period
+- Be specific and useful for discovery
+- Each tag should be 1-3 words
+
+Return ONLY a comma-separated list of tags. No JSON, no quotes, no markdown.
+Example: Action, Sci-Fi, Dark Atmosphere, 1990s, Cyberpunk, Neo-Noir`;
+
+        const userPrompt = `Generate tags for:
+Title: ${sanitizeInput(title, 150)}
+Type: ${sanitizeInput(type, 50)}
+${description ? `Description: ${sanitizeInput(description, 300)}` : ''}`;
+
+        const response = await callLLM({
+            userPrompt,
+            systemPrompt,
+            apiKey: finalApiKey,
+            provider,
+            model: model || undefined,
+            endpoint: endpoint || undefined
+        });
+
+        // Parse comma-separated tags
+        const tags = response
+            .split(',')
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0 && tag.length < 50)
+            .slice(0, 8);
+
+        // 2. Update Cache
+        if (existingItem) {
+            await db.update(globalItems)
+                .set({ cachedTags: JSON.stringify(tags) })
+                .where(eq(globalItems.id, existingItem.id));
+        } else {
+            await db.insert(globalItems).values({
+                title,
+                cachedTags: JSON.stringify(tags),
+                categoryType: normalizedType
+            });
+        }
+
+        return { tags }
+
+    } catch (e: any) {
+        console.error("Generate Tags Error:", e)
+        return { error: e.message || "Generation Failed" }
     }
 }
 
-export type MetadataField = {
-    name: string
-    type: 'text' | 'number' | 'url' | 'date'
-    required?: boolean
+// Backward compatibility wrappers for legacy imports
+export async function generateDescription(title: string, type: string): Promise<string | null> {
+    const result = await generateDescriptionAction({ title, type })
+    return result.description || null
 }
 
-export async function extractMetadata(name: string, description: string, schema: MetadataField[]) {
-    try {
-        const fields = schema.map(f => `${f.name} (${f.type})`).join(', ')
-
-        const prompt = `
-            Analyze the following item and extract metadata values for the specified fields.
-            Item Name: ${name}
-            Description: ${description}
-
-            Fields to Extract: ${fields}
-
-            Return ONLY a JSON object where keys are the field names and values are the extracted values. 
-            If a value cannot be found, omit the key or use null.
-            Example: {"Year": 1999, "Genre": "Action"}
-        `
-
-        console.log('extractMetadata prompt:', prompt)
-        const response = await callLLM(prompt)
-        console.log('extractMetadata raw response:', response)
-
-        const cleanedResponse = extractJson(response)
-        console.log('extractMetadata cleaned response:', cleanedResponse)
-
-        return JSON.parse(cleanedResponse)
-    } catch (error) {
-        console.error('Metadata extraction failed:', error)
-        return {}
+export async function generateTags(title: string, description: string, type: string): Promise<{ id: string; name: string }[]> {
+    const result = await generateTagsAction({ title, type, description })
+    if (result.tags) {
+        // Create tags and return them
+        const { createTag } = await import('@/lib/actions/tags')
+        const tagPromises = result.tags.map(async (tagName: string) => {
+            const tag = await createTag(tagName)
+            return tag
+        })
+        const tags = await Promise.all(tagPromises)
+        return tags.filter((t): t is { id: string; name: string } => t !== null)
     }
+    return []
 }
 
-export async function suggestMetadataSchema(categoryName: string, categoryDescription: string) {
-    try {
-        const prompt = `
-            Suggest a list of custom metadata fields for a ranking category.
-            Category Name: ${categoryName}
-            Description: ${categoryDescription}
-
-            Return ONLY a JSON array of objects with 'name' (string), 'type' ('text', 'number', 'url', 'date'), and 'required' (boolean).
-            Suggest 3-5 relevant fields.
-            Example: [{"name": "Release Year", "type": "number", "required": false}, {"name": "Studio", "type": "text", "required": true}]
-        `
-
-        const response = await callLLM(prompt)
-        console.log('suggestMetadataSchema raw response:', response)
-
-        const cleanedResponse = extractJson(response)
-        console.log('suggestMetadataSchema cleaned response:', cleanedResponse)
-
-        return JSON.parse(cleanedResponse) as MetadataField[]
-    } catch (error) {
-        console.error('Schema suggestion failed:', error)
-        return []
-    }
+// Stub for legacy import (TODO: implement properly if needed)
+export async function suggestMetadataSchema(categoryName: string, categoryDescription?: string): Promise<{ name: string; type: 'text' | 'number' | 'date' | 'url'; required?: boolean }[]> {
+    // Returns empty array - feature not yet implemented
+    return []
 }

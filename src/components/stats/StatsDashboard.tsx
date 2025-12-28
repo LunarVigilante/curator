@@ -1,40 +1,135 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-    calculateTierDistribution,
-    calculateTopTags,
-    identifyControversialItems
-} from '@/lib/stats'
+import { Button } from '@/components/ui/button'
 import { motion } from 'framer-motion'
-import { TrendingUp, TrendingDown, Tag, BarChart3, Activity } from 'lucide-react'
+import { TrendingUp, Tag, BarChart3, Activity, X, Sparkles, Loader2 } from 'lucide-react'
 import Image from 'next/image'
-import type { Item } from '../rating/TierListBoard'
+import { TasteReportModal } from '../analysis/TasteReportModal'
+import { TasteAnalysis } from '@/lib/types/analysis'
+import { toast } from 'sonner'
+import { getStatsAnalytics } from '@/lib/actions/stats'
+import type { StatsData, TierCount } from '@/lib/types/stats'
+import { calculatePercentages } from '@/lib/utils/stats-utils'
 
-export default function StatsDashboard({ items }: { items: Item[] }) {
+// Props interface - accepts either raw items OR pre-calculated stats
+interface StatsDashboardProps {
+    // Pre-calculated stats from server (preferred)
+    serverStats?: StatsData
+    // Category ID for filtered stats
+    categoryId?: string
+    // Optional item count for display
+    itemCount?: number
+    // Close handler
+    onClose?: () => void
+}
 
-    // Memoize stats to avoid recalculating on every render if not needed
-    const { distribution, topTags, controversial } = useMemo(() => {
-        return {
-            distribution: calculateTierDistribution(items),
-            topTags: calculateTopTags(items),
-            controversial: identifyControversialItems(items)
+export default function StatsDashboard({ serverStats, categoryId, itemCount, onClose }: StatsDashboardProps) {
+    const [stats, setStats] = useState<StatsData | null>(serverStats || null)
+    const [loading, setLoading] = useState(!serverStats)
+    const [showTasteReport, setShowTasteReport] = useState(false)
+    const [tasteData, setTasteData] = useState<TasteAnalysis | null>(null)
+
+    // Fetch stats from server if not provided
+    useEffect(() => {
+        if (!serverStats && !stats) {
+            setLoading(true)
+            getStatsAnalytics(categoryId)
+                .then(data => {
+                    setStats(data)
+                })
+                .catch(err => {
+                    console.error('Failed to load stats:', err)
+                    toast.error('Failed to load statistics')
+                })
+                .finally(() => setLoading(false))
         }
-    }, [items])
+    }, [serverStats, categoryId, stats])
 
-    const totalRated = distribution.reduce((acc, curr) => acc + curr.count, 0)
+    // Calculate percentages for display
+    const tierDataWithPercentages = stats
+        ? calculatePercentages(stats.tierDistribution, stats.totalRated)
+        : []
+
+    // Map tags to [name, count] tuples for backward compatibility
+    const topTagsTuples: [string, number][] = stats
+        ? stats.topTags.map(t => [t.tagName, t.count])
+        : []
+
+    const handleAnalyze = async () => {
+        setShowTasteReport(true)
+        try {
+            const res = await fetch('/api/ai/analyze-taste', {
+                method: 'POST',
+                body: JSON.stringify({ categoryId })
+            })
+            if (!res.ok) throw new Error("Analysis failed")
+            const data = await res.json()
+            setTasteData(data)
+        } catch (error) {
+            console.error(error)
+            toast.error("Failed to generate taste report")
+            setShowTasteReport(false)
+        }
+    }
+
+    if (loading) {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-40 bg-black/80 backdrop-blur-xl p-8 flex items-center justify-center"
+            >
+                <Loader2 className="w-8 h-8 animate-spin text-white" />
+            </motion.div>
+        )
+    }
+
+    if (!stats) {
+        return null
+    }
 
     return (
-        <div className="absolute inset-0 z-40 bg-black/95 backdrop-blur-xl p-8 overflow-y-auto animate-in fade-in duration-300">
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 z-40 bg-black/80 backdrop-blur-xl p-8 overflow-y-auto"
+        >
+            {/* Close Button */}
+            {onClose && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onClose}
+                    className="absolute top-6 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-50"
+                >
+                    <X className="h-5 w-5" />
+                </Button>
+            )}
+
             <div className="max-w-6xl mx-auto space-y-8">
 
-                <div className="flex items-center gap-4 mb-8">
-                    <Activity className="w-8 h-8 text-primary" />
-                    <div>
-                        <h2 className="text-3xl font-black text-white tracking-tight">Collection Insights</h2>
-                        <p className="text-zinc-400">Analyzing {items.length} items</p>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                        <Activity className="w-8 h-8 text-primary" />
+                        <div>
+                            <h2 className="text-3xl font-black text-white tracking-tight">Collection Insights</h2>
+                            <p className="text-zinc-400">Analyzing {itemCount ?? stats.totalRated} items</p>
+                        </div>
                     </div>
+
+                    <Button
+                        onClick={handleAnalyze}
+                        className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white shadow-lg border border-white/20"
+                        size="lg"
+                    >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Analyze My Taste
+                    </Button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -49,14 +144,14 @@ export default function StatsDashboard({ items }: { items: Item[] }) {
                         </CardHeader>
                         <CardContent>
                             <div className="flex items-end justify-between h-[200px] gap-2 pt-4 px-4 pb-2">
-                                {distribution.map((d) => (
+                                {tierDataWithPercentages.map((d) => (
                                     <div key={d.tier} className="flex-1 flex flex-col items-center gap-3 group relative">
 
                                         {/* Bar */}
                                         <div className="relative w-full flex justify-center items-end h-full">
                                             <motion.div
                                                 initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: `${(d.count / (totalRated || 1)) * 100}%`, opacity: 1 }}
+                                                animate={{ height: `${(d.count / (stats.totalRated || 1)) * 100}%`, opacity: 1 }}
                                                 transition={{ duration: 0.5, ease: "easeOut" }}
                                                 className="w-full max-w-[50px] rounded-t-lg shadow-[0_0_15px_rgba(0,0,0,0.5)] border-t border-white/10"
                                                 style={{
@@ -74,7 +169,7 @@ export default function StatsDashboard({ items }: { items: Item[] }) {
                                         <span className="font-black text-zinc-400 text-lg">{d.tier}</span>
                                     </div>
                                 ))}
-                                {distribution.length === 0 && (
+                                {tierDataWithPercentages.length === 0 && (
                                     <div className="w-full h-full flex items-center justify-center text-zinc-500 italic">
                                         No rated items yet...
                                     </div>
@@ -84,116 +179,72 @@ export default function StatsDashboard({ items }: { items: Item[] }) {
                     </Card>
 
                     {/* 2. Top Tags */}
-                    <Card className="bg-zinc-900/50 border-white/10 shadow-2xl">
+                    <Card className="col-span-1 bg-zinc-900/50 border-white/10 shadow-lg">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-zinc-100">
                                 <Tag className="w-5 h-5 text-purple-400" />
-                                Dominant Vibes
+                                Top Tags
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="flex flex-col gap-3">
-                                {topTags.map((tag, i) => (
-                                    <div
-                                        key={tag.name}
-                                        className="flex items-center justify-between w-full p-3 rounded-lg bg-zinc-800/40 border border-white/5 hover:bg-zinc-800/60 transition-colors"
-                                    >
+                            <div className="space-y-4">
+                                {topTagsTuples.slice(0, 5).map((t, i) => (
+                                    <div key={t[0]} className="flex items-center justify-between group">
                                         <div className="flex items-center gap-3">
-                                            <span className={`
-                                                flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
-                                                ${i === 0 ? 'bg-yellow-500/20 text-yellow-500' :
-                                                    i === 1 ? 'bg-zinc-500/20 text-zinc-400' :
-                                                        i === 2 ? 'bg-orange-500/20 text-orange-500' : 'bg-zinc-800 text-zinc-500'}
-                                            `}>
-                                                #{i + 1}
-                                            </span>
-                                            <span className="font-semibold text-zinc-200">{tag.name}</span>
+                                            <span className="text-zinc-500 font-mono text-xs">0{i + 1}</span>
+                                            <span className="font-medium text-zinc-300 group-hover:text-purple-300 transition-colors">{t[0]}</span>
                                         </div>
-                                        <span className="text-xs text-zinc-500 font-mono bg-black/20 px-2 py-1 rounded">
-                                            {tag.count}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-1.5 w-16 bg-zinc-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-purple-500/50" style={{ width: `${(t[1] / (topTagsTuples[0]?.[1] || 1)) * 100}%` }} />
+                                            </div>
+                                            <span className="text-xs text-zinc-500">{t[1]}</span>
+                                        </div>
                                     </div>
                                 ))}
-                                {topTags.length === 0 && (
-                                    <div className="py-8 text-center text-zinc-500 text-sm italic">
-                                        No tags found. Add tags to items to see trends!
-                                    </div>
-                                )}
+                                {topTagsTuples.length === 0 && <p className="text-zinc-500 text-sm">No tags found.</p>}
                             </div>
                         </CardContent>
                     </Card>
 
-                    {/* 3. Controversial Picks */}
-                    <Card className="col-span-1 md:col-span-3 bg-zinc-900/50 border-white/10 shadow-2xl">
+                    {/* 3. Hall of Fame */}
+                    <Card className="col-span-1 md:col-span-3 bg-zinc-900/50 border-white/10 shadow-lg">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-zinc-100">
-                                <Activity className="w-5 h-5 text-yellow-400" />
-                                Controversial Picks
-                                <span className="text-sm font-normal text-zinc-500 ml-2">(Tier Rank vs Tournament Elo)</span>
+                                <TrendingUp className="w-5 h-5 text-red-400" />
+                                Hall of Fame (Highest Rated)
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-                                {controversial.map((item) => (
-                                    <div key={item.id} className="flex flex-col rounded-lg bg-zinc-950 border border-white/5 overflow-hidden relative group hover:border-white/20 transition-all shadow-lg">
-                                        {/* Image Header */}
-                                        <div className="relative w-full aspect-video sm:aspect-[4/3] bg-zinc-900 overflow-hidden">
-                                            {item.image ? (
-                                                <Image src={item.image} alt={item.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
-                                            ) : (
-                                                <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600">No Image</div>
-                                            )}
-
-                                            {/* Badge */}
-                                            <div className="absolute top-2 right-2 flex flex-col items-end">
-                                                {item.diff > 0 ? (
-                                                    <span className="bg-green-500/90 text-black text-[10px] font-black px-2 py-0.5 rounded shadow-sm uppercase tracking-wide flex items-center gap-1">
-                                                        <TrendingUp className="w-3 h-3" /> Underrated
-                                                    </span>
-                                                ) : (
-                                                    <span className="bg-red-500/90 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-sm uppercase tracking-wide flex items-center gap-1">
-                                                        <TrendingDown className="w-3 h-3" /> Overrated
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Content */}
-                                        <div className="p-4 flex flex-col gap-2 relative">
-                                            {/* Edge indicator */}
-                                            <div className={`absolute top-0 left-0 right-0 h-0.5 ${item.diff > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
-
-                                            <h4 className="font-bold text-sm text-zinc-100 truncate" title={item.name}>{item.name}</h4>
-
-                                            <div className="flex items-center justify-between text-xs mt-1">
-                                                <div className="flex flex-col">
-                                                    <span className="text-zinc-500 text-[10px] uppercase tracking-wider">You Ranked</span>
-                                                    <span className="font-black text-white text-lg leading-none">{item.tier}</span>
-                                                </div>
-                                                <div className="h-6 w-px bg-white/10" />
-                                                <div className="flex flex-col items-end">
-                                                    <span className="text-zinc-500 text-[10px] uppercase tracking-wider">Elo Score</span>
-                                                    <span className={`font-mono font-bold text-lg leading-none ${item.diff > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                        {Math.round(item.elo)}
-                                                    </span>
-                                                </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                {stats.topRated.map(item => (
+                                    <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg bg-zinc-950/50 border border-white/5">
+                                        {item.image ? (
+                                            <Image src={item.image} alt={item.name} width={40} height={40} className="rounded object-cover" sizes="40px" />
+                                        ) : (
+                                            <div className="w-10 h-10 bg-zinc-800 rounded flex-shrink-0" />
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-sm truncate text-white">{item.name}</div>
+                                            <div className="text-xs text-yellow-500 font-mono">
+                                                {item.tier}
                                             </div>
                                         </div>
                                     </div>
                                 ))}
-                                {controversial.length === 0 && (
-                                    <div className="col-span-full py-12 text-center flex flex-col items-center gap-2 text-zinc-500">
-                                        <Activity className="w-12 h-12 opacity-20" />
-                                        <p>No significant anomalies found.</p>
-                                        <p className="text-sm">Your manual rankings perfectly match the tournament results! (Or not enough data yet)</p>
-                                    </div>
-                                )}
+                                {stats.topRated.length === 0 && <p className="text-zinc-500 text-sm italic">Rank items to see them here.</p>}
                             </div>
                         </CardContent>
                     </Card>
 
                 </div>
             </div>
-        </div>
+
+            <TasteReportModal
+                isOpen={showTasteReport}
+                onOpenChange={setShowTasteReport}
+                data={tasteData}
+            />
+        </motion.div>
     )
 }

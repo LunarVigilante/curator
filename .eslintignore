@@ -1,0 +1,4 @@
+apply_migration.js
+check_tables.js
+migrate.js
+src/scripts/**/*

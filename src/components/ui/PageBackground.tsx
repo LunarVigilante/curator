@@ -1,6 +1,6 @@
 'use client'
 
-import { AmbientBackground } from './AmbientBackground'
+import { AntigravityBackground } from './AntigravityBackground'
 import { cn } from '@/lib/utils'
 
 interface PageBackgroundProps {
@@ -27,7 +27,7 @@ export function PageBackground({ imageUrl, children, className }: PageBackground
             )}
 
             {/* LAYER B: The Mesh (Dynamic Mode) */}
-            <AmbientBackground
+            <AntigravityBackground
                 className={cn(
                     "absolute inset-0 transition-all duration-1000",
                     hasImage

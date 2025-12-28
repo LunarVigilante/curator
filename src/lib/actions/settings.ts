@@ -1,10 +1,11 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { settings } from '@/db/schema'
+import { systemSettings } from '@/db/schema'
 import { revalidatePath } from 'next/cache'
 
 import { encrypt, decrypt } from '@/lib/encryption'
+import { SystemSettings, SystemSettingKey } from '@/lib/services/SystemConfigService'
 
 const SENSITIVE_KEYS = [
   'llm_api_key',
@@ -14,12 +15,12 @@ const SENSITIVE_KEYS = [
   'google_books_api_key'
 ]
 
-export async function getSettings() {
-  const allSettings = await db.select().from(settings)
+export async function getSettings(): Promise<SystemSettings> {
+  const allSettings = await db.select().from(systemSettings)
   return allSettings.reduce((acc, setting) => {
-    acc[setting.key] = decrypt(setting.value)
+    acc[setting.key as SystemSettingKey] = decrypt(setting.value)
     return acc
-  }, {} as Record<string, string>)
+  }, {} as SystemSettings)
 }
 
 export async function updateSettings(formData: FormData) {
@@ -28,13 +29,22 @@ export async function updateSettings(formData: FormData) {
 
   for (const [key, value] of entries) {
     if (typeof value === 'string') {
-      const finalValue = SENSITIVE_KEYS.includes(key) ? encrypt(value) : value
+      const isSecret = SENSITIVE_KEYS.includes(key)
+      const finalValue = isSecret ? encrypt(value) : value
 
-      await db.insert(settings)
-        .values({ key, value: finalValue })
+      await db.insert(systemSettings)
+        .values({
+          key,
+          value: finalValue,
+          category: 'GENERAL', // Default category for legacy updates
+          isSecret: isSecret
+        })
         .onConflictDoUpdate({
-          target: settings.key,
-          set: { value: finalValue }
+          target: systemSettings.key,
+          set: {
+            value: finalValue,
+            updatedAt: new Date()
+          }
         })
     }
   }

@@ -2,7 +2,7 @@ import { getSettings } from '@/lib/actions/settings';
 import AdminDashboardClient from '@/components/admin/AdminDashboardClient';
 import { auth } from '@/lib/auth'; // Server auth
 import { headers } from 'next/headers';
-import { AdminGuard } from '@/components/auth/AdminGuard';
+import AdminGuard from '@/components/auth/AdminGuard';
 
 export default async function AdminPage() {
     const session = await auth.api.getSession({
@@ -21,7 +21,7 @@ export default async function AdminPage() {
     // Strategy: Pass session check to client guard.
     // We'll try to fetch settings, if it fails (due to auth), we just pass empty/null and let Guard redirect.
 
-    let systemSettings = [];
+    let systemSettings: Record<string, string> = {};
     try {
         // Only fetch if looks like admin, otherwise fetch might throw or return empty
         if (session?.user?.role === 'ADMIN') {

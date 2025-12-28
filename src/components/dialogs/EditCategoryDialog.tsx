@@ -19,6 +19,16 @@ type Category = {
     isPublic: boolean
 }
 
+function getCategoryType(metadata: string | null): string {
+    if (!metadata) return '';
+    try {
+        const parsed = JSON.parse(metadata);
+        return parsed.type || '';
+    } catch (e) {
+        return '';
+    }
+}
+
 export default function EditCategoryDialog({
     category,
     open,
@@ -28,7 +38,7 @@ export default function EditCategoryDialog({
     category: Category
     open: boolean
     onOpenChange: (open: boolean) => void
-    onSuccess: () => void
+    onSuccess?: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const router = useRouter()
@@ -39,19 +49,29 @@ export default function EditCategoryDialog({
         description: category.description || '',
         image: category.image || '',
         isPublic: category.isPublic,
+        type: category.metadata ? getCategoryType(category.metadata) : '',
         imageUploadMode: 'url' as 'url' | 'upload'
     })
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         startTransition(async () => {
+            // Preserve existing metadata but update type
+            let newMetadata = category.metadata ? JSON.parse(category.metadata) : {};
+            if (formData.type) {
+                newMetadata.type = formData.type;
+            } else {
+                delete newMetadata.type;
+            }
+
             await updateCategory(category.id, {
                 name: formData.name,
                 description: formData.description,
                 image: formData.image,
-                isPublic: formData.isPublic
+                isPublic: formData.isPublic,
+                metadata: JSON.stringify(newMetadata)
             })
-            onSuccess() // Trigger refresh
+            onSuccess?.() // Trigger refresh safely
             onOpenChange(false)
         })
     }
@@ -60,7 +80,7 @@ export default function EditCategoryDialog({
         if (confirm('Are you sure you want to delete this category? This action cannot be undone.')) {
             startTransition(async () => {
                 await deleteCategory(category.id)
-                onSuccess() // Trigger refresh
+                onSuccess?.() // Trigger refresh
                 onOpenChange(false)
             })
         }
@@ -97,6 +117,31 @@ export default function EditCategoryDialog({
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                 rows={3}
                             />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="type">Content Type</Label>
+                            <select
+                                id="type"
+                                value={formData.type || ''}
+                                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <option value="">Auto-detect (based on Category Name)</option>
+                                <option value="movie">Movies</option>
+                                <option value="tv">TV Shows</option>
+                                <option value="anime">Anime</option>
+                                <option value="music_artist">Music (Artist)</option>
+                                <option value="music_album">Music (Album)</option>
+                                <option value="game">Games</option>
+                                <option value="book">Books</option>
+                                <option value="podcast">Podcasts</option>
+                                <option value="board_game">Board Games</option>
+                                <option value="comic">Comics</option>
+                            </select>
+                            <p className="text-[10px] text-muted-foreground">
+                                Select "Books" or "Podcasts" explicitly if your category has a generic name like "My List".
+                            </p>
                         </div>
 
                         <div className="flex items-start space-x-3 py-2">

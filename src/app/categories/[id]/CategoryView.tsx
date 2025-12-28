@@ -21,8 +21,10 @@ type Item = {
     image: string | null
     categoryId: string | null
     metadata: string | null
+    tier: string | null
     ratings: { tier: string | null, value: number }[]
     tags: { id: string; name: string }[]
+    eloScore: number
 }
 
 type CustomRank = {
@@ -40,22 +42,54 @@ type Category = {
     image: string | null
     metadata: string | null
     userId: string | null
+    isChallenge: boolean
 }
 
 export default function CategoryView({
     category,
     items,
     customRanks,
-    isOwner
+    isOwner,
+    isAdmin = false,
+    categoryOwner,
+    initialLiked = false,
+    initialSaved = false,
+    initialLikeCount = 0,
+    initialSaveCount = 0,
+    challengeStatus
 }: {
     category: Category
     items: Item[]
     customRanks: CustomRank[]
     isOwner: boolean
+    isAdmin?: boolean
+    categoryOwner: { id: string; name: string; image: string | null } | null
+    initialLiked?: boolean
+    initialSaved?: boolean
+    initialLikeCount?: number
+    initialSaveCount?: number
+    challengeStatus?: { status: string; progress: number } | null
 }) {
     const [isEditMode, setIsEditMode] = useState(false)
     const [showUnranked, setShowUnranked] = useState(true)
     const [tileSize, setTileSize] = useState(120)
+    const [isLoaded, setIsLoaded] = useState(false)
+
+    // Load tile size preference
+    useEffect(() => {
+        const saved = localStorage.getItem('curator-tile-size')
+        if (saved) {
+            setTileSize(parseInt(saved))
+        }
+        setIsLoaded(true)
+    }, [])
+
+    // Save tile size preference
+    useEffect(() => {
+        if (isLoaded) {
+            localStorage.setItem('curator-tile-size', tileSize.toString())
+        }
+    }, [tileSize, isLoaded])
     const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
     const [flashItemId, setFlashItemId] = useState<{ id: string, type: 'move' | 'delete' | 'edit' | 'unranked' } | null>(null)
     const [editingItemId, setEditingItemId] = useState<string | null>(null)
@@ -67,7 +101,6 @@ export default function CategoryView({
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Only trigger if an item is hovered and not typing in an input
             const isTyping = document.activeElement?.tagName === 'INPUT' ||
                 document.activeElement?.tagName === 'TEXTAREA' ||
                 (document.activeElement as HTMLElement)?.isContentEditable;
@@ -76,10 +109,9 @@ export default function CategoryView({
 
             const triggerFlash = (type: 'move' | 'delete' | 'edit' | 'unranked') => {
                 setFlashItemId({ id: hoveredItemId, type });
-                setTimeout(() => setFlashItemId(null), 400); // Duration of the flash effect
+                setTimeout(() => setFlashItemId(null), 400);
             };
 
-            // Map keys
             if (e.key >= '1' && e.key <= '6') {
                 const tiers = ['S', 'A', 'B', 'C', 'D', 'F'];
                 const targetTier = tiers[parseInt(e.key) - 1];
@@ -98,8 +130,6 @@ export default function CategoryView({
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (confirm('Are you sure you want to delete this item?')) {
                     startTransition(async () => {
-                        // We need a version of deleteItem that doesn't just redirect if we want a smooth category experience,
-                        // but for now let's use the one we have.
                         triggerFlash('delete');
                         await deleteItem(hoveredItemId);
                     });
@@ -119,7 +149,6 @@ export default function CategoryView({
             const { toPng } = await import('html-to-image')
 
             try {
-                // 1. Create a clone container to assemble our export view
                 const cloneContainer = document.createElement('div')
                 cloneContainer.style.position = 'fixed'
                 cloneContainer.style.top = '0'
@@ -130,16 +159,11 @@ export default function CategoryView({
                 cloneContainer.style.backgroundColor = '#121212'
                 document.body.appendChild(cloneContainer)
 
-                // 2. Clone the Content
                 const contentClone = containerRef.current.cloneNode(true) as HTMLElement
-
-                // Remove ignored elements from clone
                 const ignoredElements = contentClone.querySelectorAll('.export-ignore, .export-exclude')
                 ignoredElements.forEach(el => el.remove())
-
                 cloneContainer.appendChild(contentClone)
 
-                // 2.5 Fix Image Loading in Clone
                 const images = cloneContainer.querySelectorAll('img')
                 const imagePromises: Promise<void>[] = []
 
@@ -164,7 +188,6 @@ export default function CategoryView({
 
                 await new Promise(r => setTimeout(r, 100))
 
-                // 3. Append Watermark
                 const footer = document.createElement('div')
                 footer.style.width = '100%'
                 footer.style.padding = '32px 20px'
@@ -178,7 +201,6 @@ export default function CategoryView({
 
                 cloneContainer.appendChild(footer)
 
-                // 4. Capture
                 const dataUrl = await toPng(cloneContainer, {
                     backgroundColor: '#121212',
                     pixelRatio: 2,
@@ -201,7 +223,6 @@ export default function CategoryView({
 
     return (
         <>
-            {/* Ambient Background Layer - uses negative z-index to sit behind everything */}
             <div className="fixed inset-0 -z-10" ref={backgroundRef}>
                 {category.image ? (
                     <>
@@ -209,13 +230,10 @@ export default function CategoryView({
                             src={category.image}
                             alt=""
                             fill
-                            className="object-cover blur-3xl opacity-50 scale-110"
+                            className="object-cover blur-2xl opacity-50 scale-110"
                             priority
                         />
-                        {/* General Dark overlay for readability */}
                         <div className="absolute inset-0 bg-black/40" />
-
-                        {/* Smooth Transition to Body Color at Bottom 30% */}
                         <div className="absolute bottom-0 inset-x-0 h-[30%] bg-gradient-to-t from-[#121212] to-transparent" />
                     </>
                 ) : (
@@ -227,6 +245,7 @@ export default function CategoryView({
                 <CategoryHeader
                     category={category}
                     isOwner={isOwner}
+                    isAdmin={isAdmin}
                     isEditMode={isEditMode}
                     onToggleEditMode={() => setIsEditMode(!isEditMode)}
                     onExportImage={handleExportImage}
@@ -234,6 +253,12 @@ export default function CategoryView({
                     onToggleUnranked={() => setShowUnranked(!showUnranked)}
                     tileSize={tileSize}
                     onTileSizeChange={setTileSize}
+                    categoryOwner={categoryOwner}
+                    initialLiked={initialLiked}
+                    initialSaved={initialSaved}
+                    initialLikeCount={initialLikeCount}
+                    initialSaveCount={initialSaveCount}
+                    challengeStatus={challengeStatus}
                 />
 
                 <div className="flex items-start justify-between">
@@ -251,6 +276,9 @@ export default function CategoryView({
                             flashItem={flashItemId}
                             editingItemId={editingItemId}
                             onEditingItemIdChange={setEditingItemId}
+                            userName={categoryOwner?.name || 'Curator User'}
+                            userImage={categoryOwner?.image}
+                            categoryName={category.name}
                         />
                     </div>
                 </div>

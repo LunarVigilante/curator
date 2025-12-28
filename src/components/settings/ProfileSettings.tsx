@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Loader2, Trash2, KeyRound, AlertCircle } from 'lucide-react';
+import { Loader2, Trash2, KeyRound, AlertCircle, Monitor, Smartphone, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { Badge } from '@/components/ui/badge';
 
 export default function ProfileSettings() {
     const [isLoading, setIsLoading] = useState(false);
@@ -16,7 +17,27 @@ export default function ProfileSettings() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [sessions, setSessions] = useState<any[]>([]);
+    const [currentSessionToken, setCurrentSessionToken] = useState<string | null>(null);
     const router = useRouter();
+
+    // Fetch sessions on mount
+    useEffect(() => {
+        const fetchSessions = async () => {
+            try {
+                const result = await authClient.listSessions();
+                if (result.data) {
+                    setSessions(result.data);
+                }
+            } catch (err) {
+                console.error('Failed to fetch sessions:', err);
+            }
+        };
+        fetchSessions();
+
+        // Get current session token from cookie (if available)
+        // The current session will have isCurrent = true from the API
+    }, []);
 
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,6 +92,17 @@ export default function ProfileSettings() {
         toast.error("Account deletion is disabled in this demo.");
     };
 
+    const handleRevokeSession = async (token: string) => {
+        try {
+            await authClient.revokeSession({ token });
+            setSessions(prev => prev.filter(s => s.token !== token));
+            toast.success('Session revoked');
+        } catch (err) {
+            console.error('Failed to revoke session:', err);
+            toast.error('Failed to revoke session');
+        }
+    };
+
     return (
         <div className="space-y-8">
             {/* Change Password Card */}
@@ -123,13 +155,72 @@ export default function ProfileSettings() {
                             />
                         </div>
                     </CardContent>
-                    <CardFooter>
+                    <CardFooter className="mt-6">
                         <Button type="submit" disabled={isLoading}>
                             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Update Password
                         </Button>
                     </CardFooter>
                 </form>
+            </Card>
+
+            {/* Active Sessions Card */}
+            <Card className="border-white/10 bg-black/20 backdrop-blur-sm">
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Monitor className="w-5 h-5 text-green-400" />
+                        <CardTitle>Active Sessions</CardTitle>
+                    </div>
+                    <CardDescription>
+                        Manage devices where you're logged in.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {sessions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Loading sessions...</p>
+                    ) : (
+                        sessions.map((session) => (
+                            <div
+                                key={session.token || session.id}
+                                className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10"
+                            >
+                                <div className="flex items-center gap-3">
+                                    {session.userAgent?.includes('Mobile') ? (
+                                        <Smartphone className="w-5 h-5 text-zinc-400" />
+                                    ) : (
+                                        <Monitor className="w-5 h-5 text-zinc-400" />
+                                    )}
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium">
+                                                {session.userAgent?.split(' ')[0] || 'Unknown Browser'}
+                                            </span>
+                                            {session.isCurrent && (
+                                                <Badge variant="secondary" className="text-[10px] bg-green-500/20 text-green-400 border-green-500/30">
+                                                    Current Device
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Last active: {session.updatedAt ? new Date(session.updatedAt).toLocaleDateString() : 'Recently'}
+                                        </p>
+                                    </div>
+                                </div>
+                                {!session.isCurrent && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleRevokeSession(session.token)}
+                                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                    >
+                                        <X className="w-4 h-4 mr-1" />
+                                        Revoke
+                                    </Button>
+                                )}
+                            </div>
+                        ))
+                    )}
+                </CardContent>
             </Card>
 
             {/* Danger Zone */}

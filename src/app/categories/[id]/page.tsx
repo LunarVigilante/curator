@@ -1,10 +1,14 @@
 import { getCategory } from '@/lib/actions/categories'
 import { getItems } from '@/lib/actions/items'
 import { getCustomRanks } from '@/lib/actions/customRanks'
+import { getUserById } from '@/lib/actions/users'
+import { getInteractionStatus, getLikeCount, getSaveCount } from '@/lib/actions/interactions'
+import { getChallengeStatus } from '@/lib/actions/challenges'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import CategoryView from './CategoryView'
-// import { PageBackground } from '@/components/ui/PageBackground'
+import { auth } from '@/lib/auth'
+import { headers } from 'next/headers'
 
 export default async function CategoryPage(props: { params: Promise<{ id: string }> }) {
     const params = await props.params
@@ -27,7 +31,31 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
         )
     }
 
-    const isOwner = true // No-login mode: everyone is an owner for now
+    // Check if current user is owner OR is admin
+    const session = await auth.api.getSession({ headers: await headers() })
+    const userId = session?.user?.id
+    const userRole = (session?.user as any)?.role
+
+    // Separate ownership and admin status for explicit permission handling
+    const isOwner = userId === category.userId
+    const isAdmin = userRole === 'ADMIN' || userRole === 'admin'
+
+    // Fetch Category Owner for Share Card
+    let categoryOwner = null;
+    if (category.userId) {
+        const owner = await getUserById(category.userId);
+        if (owner) {
+            categoryOwner = { id: owner.id, name: owner.name, image: owner.image };
+        }
+    }
+
+    // Fetch interaction data AND challenge status
+    const [interactionStatus, likeCount, saveCount, challengeStatus] = await Promise.all([
+        getInteractionStatus(params.id),
+        getLikeCount(params.id),
+        getSaveCount(params.id),
+        userId ? getChallengeStatus(userId, params.id) : Promise.resolve(null)
+    ])
 
     return (
         <>
@@ -48,7 +76,16 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
                 items={items}
                 customRanks={customRanks}
                 isOwner={isOwner}
+                isAdmin={isAdmin}
+                categoryOwner={categoryOwner}
+                initialLiked={interactionStatus.liked}
+                initialSaved={interactionStatus.saved}
+                initialLikeCount={likeCount}
+                initialSaveCount={saveCount}
+                challengeStatus={challengeStatus}
             />
         </>
     )
 }
+
+

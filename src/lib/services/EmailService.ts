@@ -94,4 +94,26 @@ export class EmailService {
             throw err;
         }
     }
+
+    static async sendTestEmail(to: string) {
+        const apiKey = await SystemConfigService.getDecryptedConfig('resend_api_key');
+        if (!apiKey) {
+            console.warn("RESEND_API_KEY not configured. Test email simulation:", { to });
+            return;
+        }
+
+        const resend = new Resend(apiKey);
+
+        try {
+            await resend.emails.send({
+                from: 'Curator <onboarding@resend.dev>',
+                to: [to],
+                subject: 'Test Email from Curator',
+                html: '<p>This is a test email from your Curator system configuration.</p>',
+            });
+        } catch (err) {
+            console.error("Failed to send test email:", err);
+            throw err;
+        }
+    }
 }

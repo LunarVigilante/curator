@@ -13,6 +13,12 @@ import { useTheme } from 'next-themes';
 import { updateUserProfile } from '@/lib/actions/users';
 import ProfileSettings from './ProfileSettings'; // Existing Security/Danger component
 import { User, Shield, Sliders } from 'lucide-react';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface UserSettingsProps {
     user: {
@@ -33,6 +39,7 @@ export default function UserSettings({ user }: UserSettingsProps) {
     const [email, setEmail] = useState(user.email);
     const [bio, setBio] = useState(user.bio || '');
     const [image, setImage] = useState(user.image || '');
+    const [avatarMode, setAvatarMode] = useState<'url' | 'upload'>('url');
 
     // Preferences State
     const { theme, setTheme } = useTheme();
@@ -143,14 +150,79 @@ export default function UserSettings({ user }: UserSettingsProps) {
                                     />
                                 </div>
                                 <div className="grid gap-2">
-                                    <Label>Avatar URL</Label>
-                                    <Input
-                                        value={image}
-                                        onChange={e => setImage(e.target.value)}
-                                        placeholder="https://..."
-                                    />
+                                    <Label>Avatar</Label>
+
+                                    {/* Current Avatar Preview */}
+                                    {image && (
+                                        <div className="flex items-center gap-4 mb-2">
+                                            <img
+                                                src={image}
+                                                alt="Avatar preview"
+                                                className="h-16 w-16 rounded-full object-cover border border-white/10"
+                                                onError={(e) => {
+                                                    e.currentTarget.style.display = 'none'
+                                                }}
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setImage('')}
+                                            >
+                                                Remove
+                                            </Button>
+                                        </div>
+                                    )}
+
+                                    {/* Upload Mode Toggle */}
+                                    <div className="flex gap-2 mb-2">
+                                        <Button
+                                            type="button"
+                                            variant={avatarMode === 'url' ? 'default' : 'outline'}
+                                            size="sm"
+                                            onClick={() => setAvatarMode('url')}
+                                        >
+                                            URL
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant={avatarMode === 'upload' ? 'default' : 'outline'}
+                                            size="sm"
+                                            onClick={() => setAvatarMode('upload')}
+                                        >
+                                            Upload
+                                        </Button>
+                                    </div>
+
+                                    {avatarMode === 'url' ? (
+                                        <Input
+                                            value={image}
+                                            onChange={e => setImage(e.target.value)}
+                                            placeholder="https://..."
+                                        />
+                                    ) : (
+                                        <Input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0]
+                                                if (file) {
+                                                    const formData = new FormData()
+                                                    formData.append('file', file)
+                                                    const { uploadImage } = await import('@/lib/actions/upload')
+                                                    const url = await uploadImage(formData)
+                                                    if (url) {
+                                                        setImage(url)
+                                                        toast.success('Avatar uploaded!')
+                                                    } else {
+                                                        toast.error('Upload failed')
+                                                    }
+                                                }
+                                            }}
+                                        />
+                                    )}
                                     <p className="text-xs text-muted-foreground">
-                                        Supports JPG, PNG, or GIF links.
+                                        {avatarMode === 'url' ? 'Supports JPG, PNG, or GIF links.' : 'Upload JPG, PNG, or GIF (max 5MB).'}
                                     </p>
                                 </div>
                             </CardContent>
@@ -186,12 +258,21 @@ export default function UserSettings({ user }: UserSettingsProps) {
                                     </p>
                                 </div>
                                 <div className="flex bg-black/40 rounded-lg p-1 border border-white/5">
-                                    <button
-                                        onClick={() => setTheme('light')}
-                                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'light' ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-white'}`}
-                                    >
-                                        Light
-                                    </button>
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <button
+                                                    disabled
+                                                    className="px-3 py-1.5 rounded-md text-sm font-medium transition-all text-zinc-600 cursor-not-allowed opacity-50"
+                                                >
+                                                    Light
+                                                </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                <p>Light mode is currently under development</p>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
                                     <button
                                         onClick={() => setTheme('dark')}
                                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'dark' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
@@ -217,7 +298,7 @@ export default function UserSettings({ user }: UserSettingsProps) {
                                 </select>
                             </div>
                         </CardContent>
-                        <CardFooter>
+                        <CardFooter className="mt-6">
                             <Button onClick={handleSavePreferences} disabled={isLoading}>
                                 Save Preferences
                             </Button>

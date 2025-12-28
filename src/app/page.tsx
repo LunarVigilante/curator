@@ -1,6 +1,9 @@
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { getFeaturedCategories, getUserCategories } from '@/lib/actions/categories';
+import { getFeaturedCategories, getUserCategories, checkAndSeedUserCategories } from '@/lib/actions/categories';
+import { getFollowedUsers } from '@/lib/actions/social';
+import { getChallengeTemplates } from '@/lib/actions/challenges';
+import { getRecentActivities } from '@/lib/actions/activity';
 import UserDashboard from '@/components/dashboard/UserDashboard';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -16,12 +19,24 @@ export default async function LandingPage() {
 
   // 1. Logged In View
   if (session) {
-    const userCategories = await getUserCategories(session.user.id);
+    // Self-healing: Ensure user has categories
+    await checkAndSeedUserCategories(session.user.id);
+
+    const [userCategories, followedUsers, challenges, recentActivities] = await Promise.all([
+      getUserCategories(session.user.id),
+      getFollowedUsers(session.user.id),
+      getChallengeTemplates(),
+      getRecentActivities()
+    ]);
+
     return (
       <UserDashboard
         userCategories={userCategories as any}
         featuredCategories={featuredCategories as any}
+        followedUsers={followedUsers as any}
         userName={session.user.name}
+        currentChallenge={challenges[0] || null}
+        activities={recentActivities as any}
       />
     );
   }

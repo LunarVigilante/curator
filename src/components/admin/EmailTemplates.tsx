@@ -176,12 +176,20 @@ export default function EmailTemplates() {
                                 Ideally, use an iframe to isolate styles. */}
                             <iframe
                                 title="preview"
-                                className="w-full h-full border-none"
-                                srcDoc={`
+                                className="w-full h-full border-none bg-zinc-950"
+                                srcDoc={body && (body.toLowerCase().includes('<html') || body.toLowerCase().includes('<!doctype')) ? body : `
                                     <!DOCTYPE html>
                                     <html>
                                     <head>
-                                        <style>body { font-family: sans-serif; }</style>
+                                        <style>
+                                            body { 
+                                                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                                                margin: 0;
+                                                padding: 20px;
+                                                background-color: white;
+                                                color: black;
+                                            }
+                                        </style>
                                     </head>
                                     <body>
                                         ${body}

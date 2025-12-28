@@ -1,0 +1,514 @@
+// schema.prisma
+// Refactored for Supabase Native Auth + PostgreSQL
+// Auth is handled by Supabase auth.users - this schema is for business logic only
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum ItemStatus {
+  ACTIVE
+  IGNORED
+  WISHLIST
+  SEEN
+}
+
+enum RatingType {
+  NUMERICAL
+  TIER
+  HYBRID
+}
+
+enum RankSentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+enum RankType {
+  RANKED
+  UTILITY
+}
+
+// ============================================================================
+// USER PROFILE (Synced from Supabase auth.users)
+// ============================================================================
+
+/// User profile table - synced from Supabase auth.users via trigger
+/// Auth fields (email, password, 2FA) are managed by Supabase
+model User {
+  id           String    @id @db.Uuid  // Matches auth.users.id
+  email        String    @unique       // Synced from auth.users.email
+  
+  // Profile fields (user-managed)
+  name         String?
+  displayName  String?   @map("display_name")
+  image        String?                  // Avatar URL
+  bio          String?
+  coverImage   String?   @map("cover_image")
+  
+  // Visibility & Settings
+  isPublic     Boolean   @default(false) @map("is_public")
+  profileViews Int       @default(0) @map("profile_views")
+  preferences  Json?                    // { theme, language, notifications, etc. }
+  
+  // Role & Status
+  role         UserRole  @default(USER)
+  isLockedOut  Boolean   @default(false) @map("is_locked_out")
+  
+  // Timestamps
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // App Relations
+  categories         Category[]
+  items              Item[]
+  ratings            Rating[]
+  challenges         UserChallenge[]
+  curatorNotes       CuratorNote[]
+  collectionComments CollectionComment[]
+  shareCards         ShareCard[]
+  collectionLikes    CollectionLike[]
+  collectionSaves    CollectionSave[]
+  collectionTags     CollectionTag[]
+  topPicks           UserTopPick[]
+  
+  // Social
+  followedBy   Follow[]    @relation("FollowedBy")
+  following    Follow[]    @relation("Following")
+  activities   Activity[]
+  
+  // Analytics
+  tasteMetrics   TasteMetric[]
+  tasteSnapshots TasteSnapshot[]
+  insightUnlocks InsightUnlock[]
+  
+  // Invites
+  invitesCreated Invite[] @relation("InvitesCreated")
+  invitesUsed    Invite[] @relation("InvitesUsed")
+
+  @@map("profiles")
+}
+
+// ============================================================================
+// CORE DATA (Categories, Items, Global)
+// ============================================================================
+
+model Category {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  image          String?
+  color          String?
+  emoji          String?
+  sortOrder      Int       @default(0) @map("sort_order")
+  metadata       Json?     
+  isTemplate     Boolean   @default(false) @map("is_template")
+  isChallenge    Boolean   @default(false) @map("is_challenge")
+  isPublic       Boolean   @default(false) @map("is_public")
+  isFeatured     Boolean   @default(false) @map("is_featured")
+  
+  cachedAnalysis Json?     @map("cached_analysis")
+  analysisHash   String?   @map("analysis_hash")
+
+  userId         String?   @map("user_id") @db.Uuid
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+  
+  items          Item[]
+  customRanks    CustomRank[]
+  challenges     UserChallenge[]
+  comments       CollectionComment[]
+  shareCards     ShareCard[]
+  likes          CollectionLike[]
+  saves          CollectionSave[]
+  tags           CollectionTag[]
+  
+  tasteMetrics   TasteMetric[]
+  tasteSnapshots TasteSnapshot[]
+  cohortAverages CohortAverage[]
+
+  @@map("categories")
+}
+
+model GlobalItem {
+  id           String    @id @default(uuid())
+  externalId   String?   @map("external_id")
+  source       String?   // API source: 'tmdb', 'anilist', 'spotify', etc.
+  title        String
+  description  String?
+  imageUrl     String?   @map("image_url")
+  releaseYear  Int?      @map("release_year")
+  metadata     Json?
+  cachedTags   Json?     @map("cached_tags") 
+  categoryType String?   @map("category_type")
+  
+  // Vector/AI fields
+  vectorText   String?   @map("vector_text") @db.Text
+  lastMetadataUpdate DateTime? @map("last_metadata_update")
+  
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  instances    Item[]
+
+  @@unique([source, externalId])
+  @@map("global_items")
+}
+
+model Item {
+  id           String     @id @default(uuid())
+  name         String?   
+  description  String?
+  image        String?
+  metadata     Json?
+  status       ItemStatus @default(ACTIVE)
+  
+  tier         String?
+  rank         Int?
+  notes        String?
+  eloScore     Float      @default(1200) @map("elo_score")
+
+  globalItemId String?    @map("global_item_id")
+  globalItem   GlobalItem? @relation(fields: [globalItemId], references: [id], onDelete: Cascade)
+
+  userId       String?    @map("user_id") @db.Uuid
+  user         User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  categoryId   String?    @map("category_id")
+  category     Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  ratings      Rating[]
+  tags         ItemToTag[]
+  curatorNotes CuratorNote[]
+  topPicks     UserTopPick[]
+
+  @@map("items")
+}
+
+model Tag {
+  id    String      @id @default(uuid())
+  name  String      @unique
+  items ItemToTag[]
+
+  @@map("tags")
+}
+
+model ItemToTag {
+  itemId String @map("item_id")
+  tagId  String @map("tag_id")
+
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, tagId])
+  @@map("items_to_tags")
+}
+
+model Rating {
+  id         String     @id @default(uuid())
+  value      Float
+  tier       String?
+  customRank String?    @map("custom_rank")
+  type       RatingType
+  
+  itemId     String     @map("item_id")
+  userId     String     @map("user_id") @db.Uuid
+  
+  item       Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  @@map("ratings")
+}
+
+model CustomRank {
+  id         String        @id @default(uuid())
+  categoryId String        @map("category_id")
+  name       String
+  sentiment  RankSentiment
+  sortOrder  Int           @default(0) @map("sort_order")
+  color      String?
+  type       RankType      @default(RANKED)
+  
+  category   Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@map("custom_ranks")
+}
+
+// ============================================================================
+// INTERACTION LAYER
+// ============================================================================
+
+model UserChallenge {
+  userId      String    @map("user_id") @db.Uuid
+  categoryId  String    @map("category_id")
+  status      String    @default("ACTIVE")
+  progress    Int       @default(0)
+  joinedAt    DateTime  @default(now()) @map("joined_at")
+  completedAt DateTime? @map("completed_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, categoryId])
+  @@map("user_challenges")
+}
+
+model CuratorNote {
+  id        String   @id @default(uuid())
+  itemId    String   @map("item_id")
+  userId    String   @map("user_id") @db.Uuid
+  content   String
+  isPinned  Boolean  @default(true) @map("is_pinned")
+  
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("curator_notes")
+}
+
+model CollectionComment {
+  id             String   @id @default(uuid())
+  categoryId     String   @map("category_id")
+  userId         String   @map("user_id") @db.Uuid
+  parentId       String?  @map("parent_id")
+  content        String
+  isCreatorReply Boolean  @default(false) @map("is_creator_reply")
+
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent         CollectionComment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies        CollectionComment[] @relation("CommentReplies")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("collection_comments")
+}
+
+model ShareCard {
+  id         String   @id @default(uuid())
+  categoryId String   @map("category_id")
+  userId     String   @map("user_id") @db.Uuid
+  shareHash  String   @unique @map("share_hash")
+  template   String   @default("default")
+  imageUrl   String?  @map("image_url")
+  metadata   Json?    
+  viewCount  Int      @default(0) @map("view_count")
+
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("share_cards")
+}
+
+model CollectionLike {
+  userId     String   @map("user_id") @db.Uuid
+  categoryId String   @map("category_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, categoryId])
+  @@map("collection_likes")
+}
+
+model CollectionSave {
+  userId     String   @map("user_id") @db.Uuid
+  categoryId String   @map("category_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, categoryId])
+  @@map("collection_saves")
+}
+
+model CollectionTag {
+  id          String   @id @default(uuid())
+  categoryId  String   @map("category_id")
+  tag         String
+  addedBy     String?  @map("added_by") @db.Uuid
+  isAdminOnly Boolean  @default(false) @map("is_admin_only")
+
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [addedBy], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("collection_tags")
+}
+
+model UserTopPick {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id") @db.Uuid
+  itemId    String   @map("item_id")
+  sortOrder Int      @default(0) @map("sort_order")
+  pinnedAt  DateTime @default(now()) @map("pinned_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("user_top_picks")
+}
+
+model Follow {
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowedBy", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@map("follows")
+}
+
+model Activity {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id") @db.Uuid
+  type      String   
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+}
+
+// ============================================================================
+// ANALYTICS & SYSTEM
+// ============================================================================
+
+model TasteMetric {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id") @db.Uuid
+  categoryId String?  @map("category_id")
+  metricType String   @map("metric_type")
+  value      Float
+  computedAt DateTime @default(now()) @map("computed_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("taste_metrics")
+}
+
+model TasteSnapshot {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id") @db.Uuid
+  categoryId    String?  @map("category_id")
+  snapshotType  String   @map("snapshot_type")
+  metricsJson   Json     @map("metrics_json")
+  itemCount     Int      @map("item_count")
+  topGenresJson Json?    @map("top_genres_json")
+  capturedAt    DateTime @default(now()) @map("captured_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("taste_snapshots")
+}
+
+model CohortAverage {
+  id          String   @id @default(uuid())
+  cohortType  String   @map("cohort_type")
+  categoryId  String?  @map("category_id")
+  metricType  String   @map("metric_type")
+  avgValue    Float    @map("avg_value")
+  stddevValue Float?   @map("stddev_value")
+  sampleSize  Int      @map("sample_size")
+  computedAt  DateTime @default(now()) @map("computed_at")
+
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("cohort_averages")
+}
+
+model InsightUnlock {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id") @db.Uuid
+  insightKey    String   @map("insight_key")
+  unlockedAt    DateTime @default(now()) @map("unlocked_at")
+  unlockContext Json?    @map("unlock_context")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("insight_unlocks")
+}
+
+model UnlockCondition {
+  id             String   @id @default(uuid())
+  insightKey     String   @map("insight_key")
+  conditionType  String   @map("condition_type")
+  threshold      Int
+  categoryScoped Boolean  @default(false) @map("category_scoped")
+  displayLabel   String   @map("display_label")
+
+  @@map("unlock_conditions")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  category  String
+  isSecret  Boolean  @default(false) @map("is_secret")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  subject     String
+  bodyHtml    String   @map("body_html")
+  variables   Json?    
+  lastUpdated DateTime @updatedAt @map("last_updated")
+
+  @@map("email_templates")
+}
+
+model Invite {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  createdBy String    @map("created_by") @db.Uuid
+  isUsed    Boolean   @default(false) @map("is_used")
+  usedBy    String?   @map("used_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  usedAt    DateTime? @map("used_at")
+
+  creator   User      @relation("InvitesCreated", fields: [createdBy], references: [id], onDelete: Cascade)
+  user      User?     @relation("InvitesUsed", fields: [usedBy], references: [id], onDelete: SetNull)
+
+  @@map("invites")
+}

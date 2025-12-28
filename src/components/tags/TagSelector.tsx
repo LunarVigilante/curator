@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -16,17 +16,20 @@ type Tag = {
 
 export default function TagSelector({
     selectedTags,
-    onTagsChange
+    onTagsChange,
+    isLoading = false
 }: {
     selectedTags: string[] // Array of tag IDs
     onTagsChange: (tags: string[]) => void
+    isLoading?: boolean
 }) {
     const [open, setOpen] = useState(false)
     const [tags, setTags] = useState<Tag[]>([])
 
     useEffect(() => {
+        // Refetch tags when selectedTags changes (e.g., after AI generates new tags)
         getTags().then(setTags)
-    }, [])
+    }, [selectedTags])
 
     const toggleTag = (tagId: string) => {
         if (selectedTags.includes(tagId)) {
@@ -44,10 +47,21 @@ export default function TagSelector({
                         variant="outline"
                         role="combobox"
                         aria-expanded={open}
-                        className="justify-between"
+                        disabled={isLoading}
+                        className={cn(
+                            "justify-between",
+                            isLoading && "animate-pulse bg-zinc-800/50"
+                        )}
                     >
-                        Select tags...
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        {isLoading ? (
+                            <span className="flex items-center gap-2 text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Generating tags...
+                            </span>
+                        ) : (
+                            "Select tags..."
+                        )}
+                        {!isLoading && <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0">
@@ -106,3 +120,4 @@ export default function TagSelector({
         </div>
     )
 }
+

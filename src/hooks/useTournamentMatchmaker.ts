@@ -11,6 +11,7 @@ type TournamentItem = {
     elo: number
     type: 'USER' | 'CHALLENGER'
     description?: string
+    metadata?: any
 }
 
 export function useTournamentMatchmaker(initialItems: TournamentItem[], challengers: ChallengerItem[]) {

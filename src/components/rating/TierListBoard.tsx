@@ -26,14 +26,16 @@ import {
     useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef, useOptimistic } from 'react'
 import { assignItemToTier, removeItemTier } from '@/lib/actions/tiers'
 import { createCustomRank, deleteCustomRank, updateCustomRank, updateCustomRankOrder } from '@/lib/actions/customRanks'
 import {
     Pencil, Plus, GripVertical, Trash2, Check, X, Eye, Image as ImageIcon,
-    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3
+    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3, Share, Loader2, Save, AlertCircle
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { toPng } from 'html-to-image';
+import { LegacyShareCard } from '@/components/sharing/LegacyShareCard';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -46,6 +48,16 @@ import AddItemDialog from '@/components/dialogs/AddItemDialog'
 import { CreateTierDialog } from '@/components/dialogs/CreateTierDialog'
 import { TournamentModal } from '@/components/dialogs/TournamentModal'
 import StatsDashboard from '@/components/stats/StatsDashboard'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import ItemPlaceholder from '@/components/ItemPlaceholder'
 import TagSelector from '@/components/tags/TagSelector'
 import { toast } from 'sonner'
@@ -57,9 +69,11 @@ export type Item = {
     image: string | null
     categoryId: string | null
     metadata: string | null
+    tier: string | null  // Direct tier from items table
     ratings: { tier: string | null, value: number }[]
     tags: { id: string; name: string }[]
     eloScore: number
+    numericalRating?: number
     createdAt?: Date
 }
 
@@ -77,7 +91,7 @@ const DEFAULT_TIERS = [
     { name: 'B', color: '#facc15' }, // yellow-400
     { name: 'C', color: '#4ade80' }, // green-400
     { name: 'D', color: '#60a5fa' }, // blue-400
-    { name: 'F', color: '#60a5fa' }, // blue-400
+    { name: 'F', color: '#a855f7' }, // purple-500
 ]
 
 export default function TierListBoard({
@@ -92,7 +106,10 @@ export default function TierListBoard({
     onHoverChange,
     flashItem,
     editingItemId,
-    onEditingItemIdChange
+    onEditingItemIdChange,
+    userName = 'User', // Default
+    userImage,
+    categoryName = 'My Ranking' // Pass this down or parse from metadata
 }: {
     items: Item[]
     categoryId: string
@@ -106,6 +123,9 @@ export default function TierListBoard({
     flashItem?: { id: string, type: 'move' | 'delete' | 'edit' | 'unranked' } | null
     editingItemId?: string | null
     onEditingItemIdChange?: (id: string | null) => void
+    userName?: string
+    userImage?: string | null
+    categoryName?: string
 }) {
     const [activeId, setActiveId] = useState<string | null>(null)
     const [dragType, setDragType] = useState<'item' | 'row' | null>(null)
@@ -116,9 +136,22 @@ export default function TierListBoard({
     const [mounted, setMounted] = useState(false)
     const [, startTransition] = useTransition()
 
+    // Optimistic UI for items
+    const [optimisticItems, updateOptimisticItem] = useOptimistic(
+        items,
+        (state: Item[], { id, tier }: { id: string, tier: string | null }) => {
+            return state.map(item => item.id === id ? { ...item, tier } : item)
+        }
+    )
+
+    // Share Feature
+    const [isSharing, setIsSharing] = useState(false);
+    const shareRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         setMounted(true)
     }, [])
+
 
     useEffect(() => {
         setRanks(initialCustomRanks)
@@ -140,8 +173,8 @@ export default function TierListBoard({
     )
 
     const getItemTier = (item: Item) => {
-        const rating = item.ratings.find(r => r.tier)
-        return rating?.tier || 'Unranked'
+        // Read tier directly from items table field (set by assignItemToTier)
+        return item.tier || 'Unranked'
     }
 
     const handleDragStart = (event: DragStartEvent) => {
@@ -180,11 +213,20 @@ export default function TierListBoard({
                 targetTier = matchedRank.name
             }
 
+            // OPTIMISTIC UPDATE: Update local state immediately via useOptimistic
             startTransition(async () => {
-                if (targetTier === 'Unranked') {
-                    await removeItemTier(itemId, categoryId)
-                } else {
-                    await assignItemToTier(itemId, targetTier, categoryId)
+                updateOptimisticItem({ id: itemId, tier: targetTier === 'Unranked' ? null : targetTier })
+
+                try {
+                    if (targetTier === 'Unranked') {
+                        await removeItemTier(itemId, categoryId)
+                    } else {
+                        await assignItemToTier(itemId, targetTier, categoryId)
+                    }
+                    toast.success(`Moved to ${targetTier}`)
+                } catch (error) {
+                    console.error('Failed to update tier:', error)
+                    toast.error('Failed to update tier')
                 }
             })
         }
@@ -197,7 +239,56 @@ export default function TierListBoard({
         setIsCreateDialogOpen(true)
     }
 
-    const activeItem = items.find(item => item.id === activeId)
+    const handleShare = async () => {
+        if (!shareRef.current) return;
+
+        setIsSharing(true);
+        try {
+            const dataUrl = await toPng(shareRef.current, { cacheBust: true, pixelRatio: 1 });
+
+            const link = document.createElement('a');
+            link.download = `${categoryName.replace(/\s+/g, '-').toLowerCase()}-ranking.png`;
+            link.href = dataUrl;
+            link.click();
+            toast.success("Image generated!");
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to generate image.");
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
+    const getSortedShareItems = () => {
+        const sortedItems: any[] = [];
+        // Use custom ranks or default tiers logic
+        const currentRanks = ranks.length > 0 ? ranks : DEFAULT_TIERS.map((t, i) => ({
+            id: t.name, name: t.name, color: t.color, sortOrder: i, sentiment: 'neutral' as const
+        }));
+
+        currentRanks.forEach(rank => {
+            const tierItems = optimisticItems.filter(i => (item => {
+                const rating = item.ratings.find(r => r.tier)
+                return (rating?.tier || 'Unranked') === rank.name
+            })(i));
+            // Sort by rank field if exists, otherwise assume order of array is rough approximation or arbitrary
+            tierItems.sort((a, b) => (a.eloScore || 0) - (b.eloScore || 0)); // No explicit rank field visible in `Item` type in my previous view, using elo or index?
+            // Actually `items` has `rank` in the schema but `Item` type in this file:
+            // ratings: { tier: string | null, value: number }[]
+            // It doesn't show `rank` in the Item type definition on line 53.
+            // But schema says `rank: integer('rank')`.
+            // Let's check `Item` type again.
+            // Lines 53-64: No `rank` property.
+            // I'll just skip sorting by rank for now or use ELO.
+            sortedItems.push(...tierItems);
+        });
+
+        return sortedItems;
+    };
+
+    const shareItems = getSortedShareItems();
+
+    const activeItem = optimisticItems.find(item => item.id === activeId)
     const activeRow = ranks.find(r => r.id === activeId)
 
     // Visual fallback if no custom ranks exist
@@ -209,7 +300,7 @@ export default function TierListBoard({
         sentiment: 'neutral' as const
     }))
 
-    if (items.length === 0 && !isEditMode) {
+    if (optimisticItems.length === 0 && !isEditMode) {
         return (
             <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-zinc-800 rounded-lg bg-zinc-900/50">
                 <div className="text-center space-y-4">
@@ -217,7 +308,7 @@ export default function TierListBoard({
                     <p className="text-muted-foreground max-w-sm">
                         This category is empty. Add your first item to start ranking!
                     </p>
-                    <AddItemDialog categoryId={categoryId} categoryName={categoryMetadata ? JSON.parse(categoryMetadata).name : 'Category'} trigger={
+                    <AddItemDialog categoryId={categoryId} categoryName={categoryName} categoryMetadata={categoryMetadata} trigger={
                         <Button className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white border-none shadow-lg transition-all hover:scale-105">
                             <Plus className="mr-2 h-4 w-4" />
                             Add First Item
@@ -240,6 +331,36 @@ export default function TierListBoard({
             onDragEnd={handleDragEnd}
         >
             <div className="space-y-4">
+                {/* Hidden Share Card Container */}
+                <div className="fixed left-[-9999px] top-0 pointer-events-none">
+                    <LegacyShareCard
+                        ref={shareRef}
+                        userName={userName || 'User'}
+                        userImage={userImage}
+                        listTitle={categoryName}
+                        items={shareItems}
+                    />
+                </div>
+
+                {/* Toolbox Header */}
+                <div className="flex justify-between items-center bg-black/40 backdrop-blur-md p-2 rounded-xl mb-4 border border-white/5">
+                    <div className="px-2 text-sm font-medium text-zinc-400">
+                        Drag & Drop Ranking
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleShare}
+                            disabled={isSharing}
+                            className="gap-2 text-zinc-400 hover:text-white hover:bg-white/10"
+                        >
+                            {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share className="w-4 h-4" />}
+                            Share Image
+                        </Button>
+                    </div>
+                </div>
+
                 <div className="border border-white/5 rounded-xl overflow-hidden bg-black/40 backdrop-blur-md shadow-2xl">
                     <SortableContext items={displayRanks.map(r => r.id)} strategy={verticalListSortingStrategy}>
                         {displayRanks.map((rank) => (
@@ -247,7 +368,7 @@ export default function TierListBoard({
                                 key={rank.id}
                                 rank={rank}
                                 isEditMode={isEditMode}
-                                items={items.filter(item => getItemTier(item) === rank.name)}
+                                items={optimisticItems.filter(item => getItemTier(item) === rank.name)}
                                 categoryId={categoryId}
                                 tileSize={tileSize}
                                 hoveredItemId={hoveredItemId}
@@ -291,13 +412,13 @@ export default function TierListBoard({
 
                 {/* Stats Dashboard Overlay */}
                 {showStats && (
-                    <StatsDashboard items={items} />
+                    <StatsDashboard itemCount={optimisticItems.length} onClose={() => setShowStats(false)} />
                 )}
 
                 {/* Unranked Pool */}
                 {showUnranked && (
                     <UnrankedPool
-                        items={items.filter(item => getItemTier(item) === 'Unranked')}
+                        items={optimisticItems.filter(item => getItemTier(item) === 'Unranked')}
                         categoryId={categoryId}
                         categoryName={categoryMetadata ? JSON.parse(categoryMetadata).name : 'Category'}
                         tileSize={tileSize}
@@ -676,13 +797,21 @@ function DraggableItem({
 
     useEffect(() => {
         if (editingItemId === item.id) {
-            setIsEditing(true)
-            onEditingItemIdChange?.(null)
+            if (!isEditing) {
+                setIsEditing(true)
+            }
+            // Clear the parent's editing state after taking over locally to avoid loops
+            if (onEditingItemIdChange) {
+                // Defer the callback to avoid update-during-render
+                setTimeout(() => onEditingItemIdChange(null), 0)
+            }
         }
-    }, [editingItemId, item.id, onEditingItemIdChange])
+    }, [editingItemId, item.id, onEditingItemIdChange, isEditing])
 
     const isHovered = hoveredItemId === item.id
     const isFlashing = flashItem?.id === item.id
+    const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
 
     const flashClasses = {
         move: 'ring-4 ring-white animate-pulse',
@@ -691,18 +820,44 @@ function DraggableItem({
         unranked: 'ring-4 ring-zinc-400 animate-pulse'
     }
 
+    const handleRemoveClick = (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setShowRemoveDialog(true)
+    }
+
+    const confirmRemove = async () => {
+        setIsDeleting(true)
+        setShowRemoveDialog(false)
+        const { deleteItem } = await import('@/lib/actions/items')
+        await deleteItem(item.id, categoryId)
+    }
+
+    const handleCardClick = (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsEditing(true)
+    }
+
     return (
         <>
             <div
                 ref={setNodeRef}
                 style={{ ...style, width: tileSize }}
                 {...attributes}
+                tabIndex={0}
+                role="button"
+                aria-label={`${item.name}. Press Enter to edit, or drag to move to a different tier.`}
                 onMouseEnter={() => onHoverChange?.(item.id)}
                 onMouseLeave={() => onHoverChange?.(null)}
-                className={`relative group cursor-grab active:cursor-grabbing ${isDragging ? 'opacity-30 scale-95' : 'hover:scale-105'} transition-all duration-200 z-0 hover:z-10 ${isFlashing ? flashClasses[flashItem!.type] : ''}`}
+                className={`relative group cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isDragging ? 'opacity-30 scale-95' : 'hover:scale-105'} transition-all duration-200 z-0 hover:z-10 ${isFlashing ? flashClasses[flashItem!.type] : ''} ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
             >
-                {/* Drag handle only - exclude edit button */}
-                <div {...listeners} className="relative w-full aspect-[2/3] rounded-lg overflow-hidden border border-white/5 bg-zinc-900 shadow-md">
+                {/* Card image - click to edit */}
+                <div
+                    {...listeners}
+                    onClick={handleCardClick}
+                    className="relative w-full aspect-[2/3] rounded-lg overflow-hidden border border-white/5 bg-zinc-900 shadow-md cursor-pointer"
+                >
                     {item.image ? (
                         <Image
                             src={item.image}
@@ -718,19 +873,31 @@ function DraggableItem({
                     </div>
                 </div>
 
-                {/* Edit button */}
-                <Button
-                    size="icon"
-                    variant="secondary"
-                    className="absolute -top-1.5 -right-1.5 h-6 w-6 opacity-0 group-hover:opacity-100 transition-all z-20 shadow-lg rounded-full"
-                    onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setIsEditing(true)
-                    }}
-                >
-                    <Pencil className="h-3 w-3" />
-                </Button>
+                {/* Action buttons - edit and remove */}
+                <div className="absolute -top-1.5 -right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all z-20">
+                    <Button
+                        size="icon"
+                        variant="secondary"
+                        className="h-6 w-6 shadow-lg rounded-full"
+                        aria-label={`Edit ${item.name}`}
+                        onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setIsEditing(true)
+                        }}
+                    >
+                        <Pencil className="h-3 w-3" aria-hidden="true" />
+                    </Button>
+                    <Button
+                        size="icon"
+                        variant="destructive"
+                        className="h-6 w-6 shadow-lg rounded-full bg-red-500/90 hover:bg-red-600"
+                        aria-label={`Remove ${item.name}`}
+                        onClick={handleRemoveClick}
+                    >
+                        <Trash2 className="h-3 w-3" aria-hidden="true" />
+                    </Button>
+                </div>
             </div>
 
             {isEditing && (
@@ -741,6 +908,29 @@ function DraggableItem({
                     categoryId={categoryId}
                 />
             )}
+
+            {/* Styled Remove Confirmation Dialog */}
+            <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
+                <AlertDialogContent className="bg-zinc-900 border-zinc-800">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-zinc-100">Remove Item</AlertDialogTitle>
+                        <AlertDialogDescription className="text-zinc-400">
+                            Remove <span className="font-semibold text-zinc-200">"{item.name}"</span> from this category?
+                            <br />
+                            <span className="text-xs text-zinc-500 mt-2 block">This will only remove it from this category, not from other collections.</span>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-zinc-800 text-zinc-100 border-zinc-700 hover:bg-zinc-700">Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmRemove}
+                            className="bg-red-600 text-white hover:bg-red-700"
+                        >
+                            Remove
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     )
 }

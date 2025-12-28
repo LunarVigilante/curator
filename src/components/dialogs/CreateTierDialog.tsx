@@ -49,10 +49,17 @@ export function CreateTierDialog({ isOpen, onOpenChange, categoryId, onCreated, 
 
     useEffect(() => {
         if (isOpen) {
-            setName(existingRank?.name || "")
-            setColor(existingRank?.color || "")
-            setType(existingRank?.type || 'RANKED')
+            // Only update if values are different to avoid redundant updates/loops
+            const targetName = existingRank?.name || ""
+            const targetColor = existingRank?.color || ""
+            const targetType = existingRank?.type || 'RANKED'
+
+            if (name !== targetName) setName(targetName)
+            if (color !== targetColor) setColor(targetColor)
+            if (type !== targetType) setType(targetType)
         }
+        // ESLint warning is suppressed because we only want to sync on open/change of prop
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, existingRank])
 
     const handleSubmit = (e: React.FormEvent) => {

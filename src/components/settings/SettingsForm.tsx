@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { CardContent, CardFooter } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { updateSettings } from '@/lib/actions/settings'
 import { getModels } from '@/lib/actions/llm'
 import { Loader2, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
@@ -23,6 +24,13 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover"
+
+const LLM_PROVIDERS = [
+    { id: 'openrouter', name: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', defaultModel: 'mistralai/mistral-7b-instruct' },
+    { id: 'openai', name: 'OpenAI', endpoint: 'https://api.openai.com/v1', defaultModel: 'gpt-4o' },
+    { id: 'anthropic', name: 'Anthropic', endpoint: 'https://api.anthropic.com/v1', defaultModel: 'claude-3-sonnet-20240229' },
+    { id: 'custom', name: 'Custom Endpoint', endpoint: '', defaultModel: '' },
+] as const
 
 type SettingsFormProps = {
     initialSettings: {
@@ -48,7 +56,20 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
     const [provider, setProvider] = useState(initialSettings.llm_provider || 'openrouter')
     const [apiKey, setApiKey] = useState(initialSettings.llm_api_key || '')
     const [endpoint, setEndpoint] = useState(initialSettings.llm_endpoint || 'https://openrouter.ai/api/v1')
-    const [model, setModel] = useState(initialSettings.llm_model || 'openai/gpt-4o')
+    const [model, setModel] = useState(initialSettings.llm_model || 'mistralai/mistral-7b-instruct')
+
+    const handleProviderChange = (newProvider: string) => {
+        setProvider(newProvider)
+        const providerConfig = LLM_PROVIDERS.find(p => p.id === newProvider)
+        if (providerConfig && providerConfig.endpoint) {
+            setEndpoint(providerConfig.endpoint)
+            if (providerConfig.defaultModel) {
+                setModel(providerConfig.defaultModel)
+            }
+        }
+        // Clear fetched models when provider changes
+        setModels([])
+    }
 
     const handleFetchModels = async () => {
         if (!apiKey) {
@@ -95,14 +116,25 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
         <form action={handleSubmit}>
             <CardContent className="space-y-4">
                 <div className="grid gap-2">
-                    <Label htmlFor="llm_provider">Provider</Label>
-                    <Input
-                        id="llm_provider"
-                        name="llm_provider"
-                        value={provider}
-                        onChange={(e) => setProvider(e.target.value)}
-                        placeholder="e.g., openrouter"
-                    />
+                    <Label htmlFor="llm_provider">LLM Provider</Label>
+                    <Select value={provider} onValueChange={handleProviderChange}>
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {LLM_PROVIDERS.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                    {p.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <input type="hidden" name="llm_provider" value={provider} />
+                    {provider === 'openrouter' && (
+                        <p className="text-xs text-muted-foreground">
+                            OpenRouter provides access to many models. Get a key at <a href="https://openrouter.ai" target="_blank" className="text-blue-400 hover:underline">openrouter.ai</a>
+                        </p>
+                    )}
                 </div>
 
                 <div className="grid gap-2">

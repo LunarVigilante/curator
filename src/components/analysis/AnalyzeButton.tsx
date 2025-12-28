@@ -10,9 +10,10 @@ import { toast } from "sonner"
 interface AnalyzeButtonProps {
     categoryId?: string
     variant?: "outline" | "ghost" | "default" | "secondary" | "destructive" | "link"
+    canEdit?: boolean
 }
 
-export function AnalyzeButton({ categoryId, variant = "outline" }: AnalyzeButtonProps) {
+export function AnalyzeButton({ categoryId, variant = "outline", canEdit }: AnalyzeButtonProps) {
     const [isLoading, setIsLoading] = useState(false)
     const [isOpen, setIsOpen] = useState(false)
     const [data, setData] = useState<TasteAnalysis | null>(null)
@@ -57,6 +58,7 @@ export function AnalyzeButton({ categoryId, variant = "outline" }: AnalyzeButton
                 onOpenChange={setIsOpen}
                 data={data}
                 categoryId={categoryId}
+                canEdit={canEdit}
             />
         </>
     )

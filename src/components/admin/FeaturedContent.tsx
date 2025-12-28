@@ -6,13 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, Loader2, Star, X, Plus } from 'lucide-react';
+import { Search, Loader2, Star, X, Plus, Trophy } from 'lucide-react';
 import { getAllCategoriesWithOwners, toggleCategoryFeature } from '@/lib/actions/categories';
+import { toggleCategoryTemplate, toggleCategoryChallenge } from '@/lib/actions/challenges';
 
 interface CategoryWithOwner {
     id: string;
     name: string;
     isFeatured: boolean;
+    isTemplate: boolean;
+    isChallenge: boolean;
     isPublic: boolean;
     owner: {
         name: string;
@@ -33,7 +36,7 @@ export default function FeaturedContent() {
     const loadCategories = async () => {
         try {
             const data = await getAllCategoriesWithOwners();
-            setCategories(data as any); // Type assertion needed due to relational query return type
+            setCategories(data as any);
         } catch (error) {
             toast.error("Failed to load categories");
         } finally {
@@ -56,9 +59,42 @@ export default function FeaturedContent() {
         }
     };
 
+    const handleToggleTemplate = async (id: string, currentStatus: boolean) => {
+        setIsUpdating(id);
+        try {
+            await toggleCategoryTemplate(id, !currentStatus);
+            setCategories(prev => prev.map(cat =>
+                cat.id === id ? { ...cat, isTemplate: !currentStatus } : cat
+            ));
+            toast.success(currentStatus ? "Removed from templates" : "Marked as template");
+        } catch (error) {
+            toast.error("Failed to update template status");
+        } finally {
+            setIsUpdating(null);
+        }
+    };
+
+    const handleToggleChallenge = async (id: string, currentStatus: boolean) => {
+        setIsUpdating(id);
+        try {
+            await toggleCategoryChallenge(id, !currentStatus);
+            setCategories(prev => prev.map(cat =>
+                cat.id === id ? { ...cat, isChallenge: !currentStatus } : cat
+            ));
+            toast.success(currentStatus ? "Removed from challenges" : "Marked as challenge");
+        } catch (error) {
+            toast.error("Failed to update challenge status");
+        } finally {
+            setIsUpdating(null);
+        }
+    };
+
+
     const featuredCategories = categories.filter(c => c.isFeatured);
+    const challengeCategories = categories.filter(c => c.isChallenge);
     const availableCategories = categories.filter(c =>
         !c.isFeatured &&
+        !c.isChallenge &&
         c.isPublic &&
         c.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -72,102 +108,162 @@ export default function FeaturedContent() {
     }
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left Side: Current Featured */}
-            <Card className="border-white/10 bg-black/20 backdrop-blur-sm h-fit">
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Side: Current Featured */}
+                <Card className="border-white/10 bg-black/20 backdrop-blur-sm h-fit">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Star className="h-5 w-5 text-yellow-500" fill="currentColor" />
+                            Featured on Homepage
+                        </CardTitle>
+                        <CardDescription>
+                            These categories appear in the 'Featured' section.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        {featuredCategories.length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-lg border border-dashed border-white/10">
+                                No featured categories
+                            </div>
+                        ) : (
+                            featuredCategories.map(cat => (
+                                <div key={cat.id} className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/50 border border-white/10 group">
+                                    <div>
+                                        <div className="font-medium text-white flex items-center gap-2">
+                                            {cat.name}
+                                            {cat.isPublic && <Badge variant="secondary" className="text-[10px] h-4 bg-green-500/20 text-green-400 border-green-500/30">Live</Badge>}
+                                        </div>
+                                        <div className="text-xs text-zinc-400">
+                                            by {cat.owner?.name || 'Unknown'}
+                                        </div>
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                                        disabled={isUpdating === cat.id}
+                                        onClick={() => handleToggleFeature(cat.id, true)}
+                                    >
+                                        {isUpdating === cat.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                                    </Button>
+                                </div>
+                            ))
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Right Side: Search & Add */}
+                <Card className="border-white/10 bg-black/20 backdrop-blur-sm h-fit">
+                    <CardHeader>
+                        <CardTitle>Add Content</CardTitle>
+                        <CardDescription>
+                            Search public categories to feature.
+                        </CardDescription>
+                        <div className="relative mt-2">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-400" />
+                            <Input
+                                placeholder="Search by name..."
+                                className="pl-9 bg-zinc-900/50 border-white/10"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                        {searchQuery && availableCategories.length === 0 ? (
+                            <div className="text-center py-4 text-muted-foreground">
+                                No matching public categories found
+                            </div>
+                        ) : availableCategories.length === 0 && !searchQuery ? (
+                            <div className="text-center py-4 text-muted-foreground">
+                                Type to search public categories...
+                            </div>
+                        ) : (
+                            availableCategories.map(cat => (
+                                <div key={cat.id} className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/30 border border-white/5 hover:border-white/20 transition-colors">
+                                    <div>
+                                        <div className="font-medium text-zinc-200">
+                                            {cat.name}
+                                        </div>
+                                        <div className="text-xs text-zinc-500">
+                                            by {cat.owner?.name || 'Unknown'}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant={cat.isFeatured ? "default" : "secondary"}
+                                            className="h-8"
+                                            disabled={isUpdating === cat.id}
+                                            onClick={() => handleToggleFeature(cat.id, cat.isFeatured)}
+                                        >
+                                            {isUpdating === cat.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Star className="h-3 w-3" />}
+                                            {cat.isFeatured ? 'Featured' : 'Feature'}
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant={cat.isChallenge ? "outline" : "ghost"}
+                                            className={`h-8 ${cat.isChallenge ? 'border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10' : 'text-zinc-400'}`}
+                                            disabled={isUpdating === cat.id}
+                                            onClick={() => handleToggleChallenge(cat.id, cat.isChallenge)}
+                                        >
+                                            <Trophy className={`h-3 w-3 mr-1 ${cat.isChallenge ? 'text-yellow-400' : ''}`} />
+                                            {cat.isChallenge ? 'Active' : 'Challenge'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Bottom: Active Challenges */}
+            <Card className="border-white/10 bg-black/20 backdrop-blur-sm">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                        <Star className="h-5 w-5 text-yellow-500" fill="currentColor" />
-                        Featured on Homepage
+                        <Trophy className="h-5 w-5 text-yellow-400" />
+                        Active Community Challenges
                     </CardTitle>
                     <CardDescription>
-                        These categories appear in the 'Featured' section.
+                        These collections are currently active global challenges.
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                    {featuredCategories.length === 0 ? (
+                <CardContent>
+                    {challengeCategories.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-lg border border-dashed border-white/10">
-                            No featured categories
+                            No active challenges
                         </div>
                     ) : (
-                        featuredCategories.map(cat => (
-                            <div key={cat.id} className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/50 border border-white/10 group">
-                                <div>
-                                    <div className="font-medium text-white flex items-center gap-2">
-                                        {cat.name}
-                                        {cat.isPublic && <Badge variant="secondary" className="text-[10px] h-4 bg-green-500/20 text-green-400 border-green-500/30">Live</Badge>}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {challengeCategories.map(cat => (
+                                <div key={cat.id} className="flex items-center justify-between p-4 rounded-lg bg-yellow-500/5 border border-yellow-500/20 group">
+                                    <div>
+                                        <div className="font-medium text-yellow-100 flex items-center gap-2">
+                                            {cat.name}
+                                        </div>
+                                        <div className="text-xs text-yellow-500/70">
+                                            by {cat.owner?.name || 'Unknown'}
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-zinc-400">
-                                        by {cat.owner?.name || 'Unknown'}
-                                    </div>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-yellow-500/50 hover:text-red-400 hover:bg-red-500/10"
+                                        disabled={isUpdating === cat.id}
+                                        onClick={() => handleToggleChallenge(cat.id, true)}
+                                    >
+                                        {isUpdating === cat.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                                    </Button>
                                 </div>
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
-                                    disabled={isUpdating === cat.id}
-                                    onClick={() => handleToggleFeature(cat.id, true)}
-                                >
-                                    {isUpdating === cat.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                                </Button>
-                            </div>
-                        ))
-                    )}
-                </CardContent>
-            </Card>
-
-            {/* Right Side: Search & Add */}
-            <Card className="border-white/10 bg-black/20 backdrop-blur-sm h-fit">
-                <CardHeader>
-                    <CardTitle>Add Content</CardTitle>
-                    <CardDescription>
-                        Search public categories to feature.
-                    </CardDescription>
-                    <div className="relative mt-2">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-400" />
-                        <Input
-                            placeholder="Search by name..."
-                            className="pl-9 bg-zinc-900/50 border-white/10"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                    {searchQuery && availableCategories.length === 0 ? (
-                        <div className="text-center py-4 text-muted-foreground">
-                            No matching public categories found
+                            ))}
                         </div>
-                    ) : availableCategories.length === 0 && !searchQuery ? (
-                        <div className="text-center py-4 text-muted-foreground">
-                            Type to search public categories...
-                        </div>
-                    ) : (
-                        availableCategories.map(cat => (
-                            <div key={cat.id} className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/30 border border-white/5 hover:border-white/20 transition-colors">
-                                <div>
-                                    <div className="font-medium text-zinc-200">
-                                        {cat.name}
-                                    </div>
-                                    <div className="text-xs text-zinc-500">
-                                        by {cat.owner?.name || 'Unknown'}
-                                    </div>
-                                </div>
-                                <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    className="gap-1 h-8"
-                                    disabled={isUpdating === cat.id}
-                                    onClick={() => handleToggleFeature(cat.id, false)}
-                                >
-                                    {isUpdating === cat.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                                    Add
-                                </Button>
-                            </div>
-                        ))
                     )}
                 </CardContent>
             </Card>
         </div>
+
     );
 }
+

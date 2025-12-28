@@ -46,12 +46,12 @@ export default function RecommendationDialog({
 
         setAddingIndex(index)
         startTransition(async () => {
-            await createItem({
-                name: item.name,
-                description: item.description,
-                categoryId: categoryId,
-                image: ''
-            })
+            const formData = new FormData()
+            formData.append('name', item.name)
+            formData.append('description', item.description || '')
+            formData.append('categoryId', categoryId)
+            formData.append('image', '')
+            await createItem(formData)
             setAddingIndex(null)
         })
     }

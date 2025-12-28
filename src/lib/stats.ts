@@ -43,27 +43,41 @@ const TIER_COLORS: Record<string, string> = {
     'Unranked': '#71717a' // zinc-500
 }
 
-export function calculateTierDistribution(items: StatsItem[]): TierDistribution[] {
+export function calculateTierDistribution(items: any[]): TierDistribution[] {
     const counts: Record<string, number> = {}
-    let total = 0
+    let totalRated = 0
 
-    // Initialize
-    Object.keys(TIER_VALUES).forEach(t => counts[t] = 0)
-
-    items.forEach(item => {
-        const tier = item.ratings[0]?.tier || 'Unranked'
-        counts[tier] = (counts[tier] || 0) + 1
-        total++
+    // Initialize all tiers to 0 to ensure order
+    Object.keys(TIER_VALUES).forEach(t => {
+        if (t !== 'Unranked') counts[t] = 0
     })
 
-    if (total === 0) return []
+    items.forEach(item => {
+        // Robust tier extraction: check direct property, ratings array, or rank property
+        let rawTier = item.tier || item.rank || item.ratings?.[0]?.tier
+
+        if (!rawTier) {
+            rawTier = 'Unranked'
+        }
+
+        const tier = rawTier.toUpperCase()
+
+        if (TIER_VALUES.hasOwnProperty(tier) && tier !== 'Unranked') {
+            counts[tier] = (counts[tier] || 0) + 1
+            totalRated++
+        }
+    })
+
+    if (totalRated === 0) return []
 
     return Object.entries(counts)
-        .filter(([tier]) => tier !== 'Unranked' && counts[tier] > 0) // Optional: Hide unranked or empty tiers? spec says "S, A, B..."
+        .filter(([tier]) => counts[tier] > 0) // Only show tiers with items? Or show all? User said "No rated items yet" despite having items. 
+        // If I filter > 0, and I have items, it should work.
+        // The bug was likely `item.ratings[0]?.tier` accessing failing for items with direct `tier` prop.
         .map(([tier, count]) => ({
             tier,
             count,
-            percentage: Math.round((count / total) * 100),
+            percentage: Math.round((count / totalRated) * 100),
             color: TIER_COLORS[tier] || '#fff'
         }))
         .sort((a, b) => TIER_VALUES[b.tier] - TIER_VALUES[a.tier])

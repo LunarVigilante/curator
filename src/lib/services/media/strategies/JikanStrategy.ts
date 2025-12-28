@@ -1,19 +1,20 @@
-import { MediaResult, MediaStrategy } from "../types";
+import { MediaStrategy, MediaSearchResponse } from "../types";
 
 export class JikanStrategy implements MediaStrategy {
     name = "Anime & Manga";
 
-    async search(query: string): Promise<MediaResult[]> {
+    async search(query: string): Promise<MediaSearchResponse> {
         // Try searching anime first
         // Jikan API: https://api.jikan.moe/v4/anime?q=...
         // We could also mix manga? For now focusing on anime as primary visual media.
         try {
             const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=5`);
-            if (!res.ok) return [];
+            if (!res.ok) return { success: false, data: [], error: `Jikan API Error: ${res.statusText}` };
 
             const data = await res.json();
 
-            return (data.data || []).map((item: any) => ({
+            const results = (data.data || []).map((item: any) => ({
+                id: `kan-${item.mal_id}`, // Generate ID
                 title: item.title_english || item.title,
                 // Fallback to English title if available and preferred? Keep default title for now.
                 description: item.synopsis || "No description available.",
@@ -29,9 +30,10 @@ export class JikanStrategy implements MediaStrategy {
                     score: item.score
                 })
             }));
+            return { success: true, data: results };
         } catch (error) {
             console.error("Jikan API error:", error);
-            return [];
+            return { success: false, data: [], error: "Jikan API Unreachable" };
         }
     }
 }

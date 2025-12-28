@@ -8,13 +8,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
-import { ArrowLeft, Trash2, Save, Upload, Wand2, Crop } from 'lucide-react'
+import { ArrowLeft, Trash2, Save, Upload, Wand2, Crop, Search, Loader2 } from 'lucide-react'
 import { updateItem, deleteItem } from '@/lib/actions/items'
 import { rateItem } from '@/lib/actions/ratings'
 import TierSelector from '@/components/rating/TierSelector'
 import ImageCropper from '@/components/ImageCropper'
 import { Badge } from '@/components/ui/badge'
 import TagSelector from '@/components/tags/TagSelector'
+import { toast } from 'sonner'
 
 type Item = {
     id: string
@@ -34,6 +35,13 @@ export default function ItemDetailClient({ item }: { item: Item }) {
     const [imageToCrop, setImageToCrop] = useState<string | null>(null)
     const [imageUploadMode, setImageUploadMode] = useState<'url' | 'upload'>('url')
 
+    // Metadata search state
+    const [metadataQuery, setMetadataQuery] = useState('')
+    const [metadataResults, setMetadataResults] = useState<any[]>([])
+    const [isSearching, setIsSearching] = useState(false)
+    const [isGeneratingDescription, setIsGeneratingDescription] = useState(false)
+    const [isGeneratingTags, setIsGeneratingTags] = useState(false)
+
     // Initial user rating for this item (if any)
     const initialRating = item.ratings[0]
     const [activeTier, setActiveTier] = useState<string>(initialRating?.tier || '')
@@ -45,8 +53,117 @@ export default function ItemDetailClient({ item }: { item: Item }) {
         tags: item.tags.map(t => t.id)
     })
 
+    // Metadata search function
+    const handleMetadataSearch = async () => {
+        if (!metadataQuery.trim()) return
+        setIsSearching(true)
+        try {
+            const { searchMediaAction } = await import('@/lib/actions/media')
+            const response = await searchMediaAction(
+                metadataQuery,
+                item.category?.name || 'general',
+                null,
+                item.categoryId || undefined
+            )
+
+            if (response.success) {
+                setMetadataResults(response.data)
+            } else {
+                toast.error(response.error || 'Search failed')
+            }
+        } catch (error) {
+            console.error('Metadata search failed:', error)
+            toast.error('Search failed')
+        } finally {
+            setIsSearching(false)
+        }
+    }
+
+    // Handle metadata match selection
+    const handleMetadataMatch = async (result: any) => {
+        const providerDescription = result.description || ''
+
+        // 1. Immediate updates
+        setFormData(prev => ({
+            ...prev,
+            name: result.title,
+            image: result.imageUrl || prev.image,
+            description: '✨ Generating AI curated description...',
+            tags: []
+        }))
+        setMetadataResults([])
+        setMetadataQuery('')
+
+        // 2. Set loading states
+        setIsGeneratingDescription(true)
+        setIsGeneratingTags(true)
+
+        // 3. Call separate AI endpoints in parallel
+        const descriptionPromise = fetch('/api/ai/generate-description', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: result.title,
+                type: item.category?.name || 'general',
+                context: providerDescription
+            })
+        }).then(res => res.json())
+
+        const tagsPromise = fetch('/api/ai/generate-tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: result.title,
+                type: item.category?.name || 'general',
+                description: providerDescription
+            })
+        }).then(res => res.json())
+
+        // Handle description
+        descriptionPromise
+            .then(data => {
+                if (data.error) throw new Error(data.error)
+                setFormData(prev => ({ ...prev, description: data.description || '' }))
+            })
+            .catch(error => {
+                console.error('Description generation failed:', error)
+                toast.error('Description generation failed')
+                setFormData(prev => ({ ...prev, description: providerDescription }))
+            })
+            .finally(() => setIsGeneratingDescription(false))
+
+        // Handle tags
+        tagsPromise
+            .then(async data => {
+                if (data.error) throw new Error(data.error)
+                if (data.tags && data.tags.length > 0) {
+                    const { createTag } = await import('@/lib/actions/tags')
+                    const tagPromises = data.tags.map((tagName: string) =>
+                        createTag(tagName).catch(() => null)
+                    )
+                    const createdTags = await Promise.all(tagPromises)
+                    const validTags = createdTags.filter((t): t is { id: string, name: string } => t !== null)
+                    setFormData(prev => ({ ...prev, tags: validTags.map(t => t.id) }))
+                    toast.success(`Generated ${validTags.length} tags`)
+                }
+            })
+            .catch(error => {
+                console.error('Tag generation failed:', error)
+                toast.error('Tag generation failed')
+            })
+            .finally(() => setIsGeneratingTags(false))
+    }
+
     const handleSave = () => {
         startTransition(async () => {
+            // Debug: Log what's being saved
+            console.log('Saving item with data:', {
+                name: formData.name,
+                description: formData.description?.substring(0, 50) + '...',
+                image: formData.image?.substring(0, 50) + '...',
+                tags: formData.tags
+            })
+
             const formDataObj = new FormData()
             formDataObj.append('name', formData.name)
             formDataObj.append('description', formData.description)
@@ -62,6 +179,7 @@ export default function ItemDetailClient({ item }: { item: Item }) {
                 await rateItem(item.id, 0, 'TIER', activeTier)
             }
 
+            toast.success('Item saved successfully')
             router.refresh()
         })
     }
@@ -120,6 +238,76 @@ export default function ItemDetailClient({ item }: { item: Item }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Essential Details */}
                 <div className="lg:col-span-2 space-y-8">
+                    {/* Sync with Metadata Source Card */}
+                    <Card className="border-blue-500/20 bg-blue-500/5 backdrop-blur-sm">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Search className="h-4 w-4 text-blue-400" />
+                                Sync with Metadata Source
+                            </CardTitle>
+                            <CardDescription>Match this item with TMDB, RAWG, or other databases to auto-fill details.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder={`Search for "${formData.name}" or enter a different title...`}
+                                    value={metadataQuery}
+                                    onChange={e => setMetadataQuery(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleMetadataSearch()}
+                                    className="bg-white/[0.03] border-white/10"
+                                />
+                                <Button
+                                    variant="secondary"
+                                    onClick={handleMetadataSearch}
+                                    disabled={isSearching || !metadataQuery.trim()}
+                                    className="shrink-0"
+                                >
+                                    {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                                    Search
+                                </Button>
+                            </div>
+
+                            {/* Search Results */}
+                            {metadataResults.length > 0 && (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-1">
+                                    {metadataResults.map((result, idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => handleMetadataMatch(result)}
+                                            disabled={isGeneratingDescription || isGeneratingTags}
+                                            className="group relative aspect-[2/3] rounded-lg overflow-hidden border border-white/10 hover:border-blue-500/50 transition-all bg-zinc-900"
+                                        >
+                                            {result.imageUrl ? (
+                                                <img src={result.imageUrl} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">No Image</div>
+                                            )}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
+                                                <span className="text-xs font-medium text-white line-clamp-2">{result.title}</span>
+                                                {result.year && <span className="text-[10px] text-zinc-400">{result.year}</span>}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Loading States */}
+                            {(isGeneratingDescription || isGeneratingTags) && (
+                                <div className="flex items-center gap-2 text-sm text-blue-400 py-2">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>
+                                        {isGeneratingDescription && isGeneratingTags
+                                            ? 'Generating description and tags...'
+                                            : isGeneratingDescription
+                                                ? 'Generating description...'
+                                                : 'Generating tags...'}
+                                    </span>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     <Card className="border-white/[0.08] bg-black/40 backdrop-blur-sm">
                         <CardHeader>
                             <CardTitle className="text-2xl font-serif">Essential Details</CardTitle>

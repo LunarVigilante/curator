@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -18,9 +18,9 @@ import PageContainer from '@/components/PageContainer'
 import EmptyState from '@/components/EmptyState'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
-import { LayoutGrid, List, Search, ArrowUpDown, ChevronLeft, ChevronRight, Box, Eye, Settings2, Image as ImageIcon, Grid3X3 } from 'lucide-react'
+import { LayoutGrid, List, Search, ArrowUpDown, ChevronLeft, ChevronRight, Box, Eye, Settings2, Image as ImageIcon, Grid3X3, Rows } from 'lucide-react'
 import ItemGrid from '@/components/items/ItemGrid'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type Item = {
@@ -47,10 +47,56 @@ export default function ItemsPageClient({
     currentPage: number
 }) {
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
-    const [gridCols, setGridCols] = useState(5)
     const router = useRouter()
+    const searchParams = useSearchParams()
     const [query, setQuery] = useState(initialQuery || '')
     const [sortBy, setSortBy] = useState<'newest' | 'name' | 'rating'>('newest')
+
+    // Smart Grid State
+    const [cardMinWidth, setCardMinWidth] = useState(200) // 150-400px range
+    const [targetRows, setTargetRows] = useState(4) // 3-12 range
+    const [containerWidth, setContainerWidth] = useState(1200) // Default estimate
+    const gridContainerRef = useRef<HTMLDivElement>(null)
+
+    // Calculate columns and ideal limit
+    const columns = Math.max(1, Math.floor(containerWidth / cardMinWidth))
+    const idealLimit = columns * targetRows
+
+    // Debounced resize handler
+    useEffect(() => {
+        if (!gridContainerRef.current) return
+
+        let timeoutId: NodeJS.Timeout
+        const observer = new ResizeObserver((entries) => {
+            clearTimeout(timeoutId)
+            timeoutId = setTimeout(() => {
+                const width = entries[0]?.contentRect.width
+                if (width && width !== containerWidth) {
+                    setContainerWidth(width)
+                }
+            }, 300) // 300ms debounce
+        })
+
+        observer.observe(gridContainerRef.current)
+        // Set initial width
+        setContainerWidth(gridContainerRef.current.offsetWidth || 1200)
+
+        return () => {
+            clearTimeout(timeoutId)
+            observer.disconnect()
+        }
+    }, [])
+
+    // Refetch when idealLimit changes
+    const currentLimit = Number(searchParams.get('limit')) || 20
+    useEffect(() => {
+        if (idealLimit !== currentLimit && idealLimit > 0) {
+            const params = new URLSearchParams(searchParams.toString())
+            params.set('limit', String(idealLimit))
+            params.set('page', '1') // Reset to page 1 when limit changes
+            router.push(`/items?${params.toString()}`)
+        }
+    }, [idealLimit])
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault()
@@ -124,23 +170,50 @@ export default function ItemsPageClient({
                                         <h4 className="font-medium leading-none">View Settings</h4>
                                         <Grid3X3 className="h-4 w-4 text-muted-foreground" />
                                     </div>
+
+                                    {/* Card Size Slider */}
                                     <div className="space-y-2">
                                         <div className="flex items-center justify-between text-xs text-muted-foreground">
                                             <span>Card Size</span>
-                                            <span>{gridCols} columns</span>
+                                            <span>{cardMinWidth}px min width</span>
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <ImageIcon className="h-4 w-4 text-muted-foreground" />
                                             <Slider
-                                                value={[9 - gridCols]}
-                                                min={1}
-                                                max={7}
-                                                step={1}
-                                                onValueChange={([val]) => setGridCols(9 - val)}
-                                                className="flex-1 [&_.range-slider-track]:bg-zinc-700 [&_.range-slider-thumb]:bg-blue-600 [&_.range-slider-thumb]:border-blue-600"
+                                                value={[cardMinWidth]}
+                                                min={150}
+                                                max={400}
+                                                step={25}
+                                                onValueChange={([val]) => setCardMinWidth(val)}
+                                                className="flex-1"
                                             />
                                             <ImageIcon className="h-5 w-5 text-foreground" />
                                         </div>
+                                    </div>
+
+                                    {/* Rows per Page Slider */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                            <span>Rows per Page</span>
+                                            <span>{targetRows} rows</span>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <Rows className="h-4 w-4 text-muted-foreground" />
+                                            <Slider
+                                                value={[targetRows]}
+                                                min={3}
+                                                max={12}
+                                                step={1}
+                                                onValueChange={([val]) => setTargetRows(val)}
+                                                className="flex-1"
+                                            />
+                                            <Rows className="h-5 w-5 text-foreground" />
+                                        </div>
+                                    </div>
+
+                                    {/* Grid Info */}
+                                    <div className="text-xs text-muted-foreground pt-2 border-t border-border">
+                                        Showing {columns} cols × {targetRows} rows = {idealLimit} items
                                     </div>
                                 </div>
                             </PopoverContent>
@@ -202,7 +275,7 @@ export default function ItemsPageClient({
             ) : (
                 <>
                     {viewMode === 'grid' ? (
-                        <ItemGrid items={sortedItems} gridCols={gridCols} />
+                        <ItemGrid items={sortedItems} cardMinWidth={cardMinWidth} ref={gridContainerRef} />
                     ) : (
                         <div className="border rounded-md">
                             <Table>

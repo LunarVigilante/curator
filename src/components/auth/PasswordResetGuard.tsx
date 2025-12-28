@@ -21,8 +21,11 @@ export function PasswordResetGuard() {
             if (pathname !== '/change-password') {
                 // Prevent infinite redirect loops or redundant pushes
                 if (!isRedirecting) {
-                    setIsRedirecting(true);
-                    router.replace('/change-password');
+                    // Wrap in setTimeout to avoid setting state during render
+                    setTimeout(() => {
+                        setIsRedirecting(true);
+                        router.replace('/change-password');
+                    }, 0);
                 }
             }
         }

@@ -11,10 +11,14 @@ type Category = {
     description: string | null
     image: string | null
     metadata: string | null
+    isPublic: boolean
 }
+
+import { useRouter } from 'next/navigation'
 
 export default function EditCategoryButton({ category }: { category: Category }) {
     const [open, setOpen] = useState(false)
+    const router = useRouter()
 
     return (
         <>
@@ -31,6 +35,7 @@ export default function EditCategoryButton({ category }: { category: Category })
                 category={category}
                 open={open}
                 onOpenChange={setOpen}
+                onSuccess={() => router.refresh()}
             />
         </>
     )

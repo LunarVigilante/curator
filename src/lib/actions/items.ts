@@ -8,6 +8,7 @@ import { desc, eq, like, and, or, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { downloadImageFromUrl } from './upload'
 import { getGuestUserId } from '@/lib/actions/auth'
+import { parseItemMetadata } from '@/lib/types/metadata'
 // Fixed import path to be local active auth file, OR correct if it is in ../auth
 // Wait, I previously changed it to `../auth` and it failed. 
 // Let's check where `getGuestUserId` is defined. 
@@ -116,6 +117,88 @@ export async function getItem(id: string) {
 }
 
 
+import { z } from 'zod'
+
+// Zod Schemas
+const createItemSchema = z.object({
+    name: z.string().min(1),
+    description: z.string().optional().default(""),
+    categoryId: z.string().uuid(),
+    image: z.string().optional().default(""),
+    tags: z.array(z.string()).optional().default([]),
+    metadata: z.string().optional().nullable() // JSON string or null
+})
+
+const updateItemSchema = z.object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    categoryId: z.string().uuid().optional(),
+    image: z.string().optional(),
+    metadata: z.string().optional(), // JSON string
+    tags: z.array(z.string()).optional(),
+    notes: z.string().optional(),
+    tier: z.string().optional(),
+    rank: z.number().optional()
+})
+
+// Internal Logic (Pure Async Function)
+export async function createItemInternal(input: z.input<typeof createItemSchema>) {
+    const data = createItemSchema.parse(input)
+    const userId = await getGuestUserId()
+    let { name, description, categoryId, image, tags: tagIds, metadata } = data
+
+    // ... (rest of function) ...
+    // Note: I need to output the rest of the function content or just the top part if I use replace.
+    // I can't easily partially replace without restating logic if I change the variable name `data` to `input` and then parse.
+    // Actually, I can just do `const data = createItemSchema.parse(input)` and keeping the rest is fine if existing code used `data`.
+
+    // Auto-localize external images
+    if (image && image.startsWith('http')) {
+        const localPath = await downloadImageFromUrl(image)
+        if (localPath) {
+            image = localPath
+        }
+    }
+
+    // Upsert GlobalItem first
+    let externalId: string | null = null
+    if (metadata) {
+        const parsedMeta = parseItemMetadata(typeof metadata === 'string' ? metadata : JSON.stringify(metadata))
+        externalId = parsedMeta?.externalId || null
+    }
+
+    const globalItem = await upsertGlobalItem({
+        externalId,
+        title: name,
+        description,
+        imageUrl: image,
+        metadata: typeof metadata === 'string' ? metadata : (metadata ? JSON.stringify(metadata) : null)
+    })
+
+    const [newItem] = await db.insert(items).values({
+        globalItemId: globalItem.id,
+        userId,
+        categoryId,
+        eloScore: 1200,
+    }).returning()
+
+    if (tagIds && tagIds.length > 0) {
+        await db.insert(itemsToTags).values(
+            tagIds.map(tagId => ({
+                itemId: newItem.id,
+                tagId
+            }))
+        )
+    }
+
+    revalidatePath('/items')
+    if (categoryId) {
+        revalidatePath(`/categories/${categoryId}`)
+    }
+    return newItem
+}
+
+// Global Item Logic (Helper)
 async function upsertGlobalItem(data: {
     externalId?: string | null
     title: string
@@ -152,136 +235,93 @@ async function upsertGlobalItem(data: {
     return newItem
 }
 
-export async function createItem(data: FormData | {
-    name: string
-    description: string
-    categoryId: string
-    image: string
-    tags?: string[]
-}) {
-    const userId = await getGuestUserId()
-    let name: string
-    let description: string
-    let categoryId: string
-    let image: string
-    let metadata: string | null = null
-    let tagIds: string[] = []
 
-    if (data instanceof FormData) {
-        name = data.get('name') as string
-        description = data.get('description') as string
-        categoryId = data.get('category') as string
-        image = data.get('image') as string
-        metadata = data.get('metadata') as string
-        const tagsJson = data.get('tags') as string
-        if (tagsJson) {
-            tagIds = JSON.parse(tagsJson)
+import { zfd } from 'zod-form-data'
+
+// FormData schemas using zod-form-data
+const createItemFormSchema = zfd.formData({
+    name: zfd.text(z.string().min(1)),
+    description: zfd.text(z.string().optional().default("")),
+    category: zfd.text(z.string().uuid()),
+    image: zfd.text(z.string().optional().default("")),
+    metadata: zfd.text(z.string().optional().nullable()),
+    tags: zfd.text(z.string().optional()) // JSON string that we'll parse
+})
+
+export async function createItem(formData: FormData) {
+    // Safe parsing with zod-form-data
+    const result = createItemFormSchema.safeParse(formData)
+
+    if (!result.success) {
+        console.error('createItem validation failed:', result.error.issues)
+        throw new Error('Invalid form data')
+    }
+
+    const { name, description, category, image, metadata, tags: tagsJson } = result.data
+
+    // Safely parse tags JSON
+    let tagIds: string[] = []
+    if (tagsJson) {
+        try {
+            const parsed = JSON.parse(tagsJson)
+            if (Array.isArray(parsed)) {
+                tagIds = parsed
+            }
+        } catch (e) {
+            console.warn('Failed to parse tags JSON:', e)
         }
-    } else {
-        name = data.name
-        description = data.description
-        categoryId = data.categoryId
-        image = data.image
-        tagIds = data.tags || []
+    }
+
+    await createItemInternal({
+        name,
+        description: description || "",
+        categoryId: category,
+        image: image || "",
+        metadata: metadata,
+        tags: tagIds
+    })
+}
+
+
+// Update Logic Internal
+export async function updateItemInternal(id: string, input: z.input<typeof updateItemSchema>) {
+    const data = updateItemSchema.parse(input)
+    const { name, description, categoryId, image, metadata, tags: tagIds, notes, tier, rank } = data
+
+    // Fetch existing item to get globalItemId
+    const existingItem = await db.query.items.findFirst({
+        where: eq(items.id, id),
+        with: { globalItem: true }
+    })
+
+    // ... rest of logic
+    if (!existingItem) {
+        throw new Error('Item not found')
     }
 
     // Auto-localize external images
-    if (image && image.startsWith('http')) {
-        const localPath = await downloadImageFromUrl(image)
+    let finalImage = image
+    if (finalImage && finalImage.startsWith('http')) {
+        const localPath = await downloadImageFromUrl(finalImage)
         if (localPath) {
-            image = localPath
+            finalImage = localPath
         }
     }
 
-    // Upsert GlobalItem first
-    let externalId: string | null = null
-    if (metadata) {
-        try {
-            const meta = JSON.parse(metadata)
-            externalId = meta.externalId || meta.id || null
-        } catch (e) { }
-    }
+    // Update GlobalItem if name/description/image changed
+    if (existingItem.globalItemId && (name || description !== undefined || finalImage)) {
+        const globalUpdateData: any = {}
+        if (name) globalUpdateData.title = name
+        if (description !== undefined) globalUpdateData.description = description
+        if (finalImage) globalUpdateData.imageUrl = finalImage
+        if (metadata) globalUpdateData.metadata = metadata
 
-    const globalItem = await upsertGlobalItem({
-        externalId,
-        title: name,
-        description,
-        imageUrl: image,
-        metadata
-    })
-
-    const [newItem] = await db.insert(items).values({
-        globalItemId: globalItem.id,
-        userId,
-        categoryId,
-        eloScore: 1200,
-    }).returning()
-
-    if (tagIds.length > 0) {
-        await db.insert(itemsToTags).values(
-            tagIds.map(tagId => ({
-                itemId: newItem.id,
-                tagId
-            }))
-        )
-    }
-
-    revalidatePath('/items')
-    if (categoryId) {
-        revalidatePath(`/categories/${categoryId}`)
-    }
-}
-
-export async function updateItem(id: string, data: FormData | {
-    name?: string
-    description?: string
-    categoryId?: string
-    image?: string
-    metadata?: string
-    tags?: string[]
-    notes?: string
-    tier?: string
-    rank?: number
-}) {
-    let name: string | undefined
-    let description: string | undefined
-    let categoryId: string | undefined
-    let image: string | undefined
-    let metadata: string | undefined
-    let tagIds: string[] | undefined
-    let notes: string | undefined
-    let tier: string | undefined
-    let rank: number | undefined
-
-    if (data instanceof FormData) {
-        name = data.get('name') as string
-        description = data.get('description') as string
-        categoryId = data.get('category') as string
-        image = data.get('image') as string
-        metadata = data.get('metadata') as string
-        notes = data.get('notes') as string
-        tier = data.get('tier') as string
-        rank = Number(data.get('rank')) || undefined
-        const tagsJson = data.get('tags') as string
-        if (tagsJson) {
-            tagIds = JSON.parse(tagsJson)
+        if (Object.keys(globalUpdateData).length > 0) {
+            await db.update(globalItems)
+                .set(globalUpdateData)
+                .where(eq(globalItems.id, existingItem.globalItemId))
         }
-    } else {
-        name = data.name
-        description = data.description
-        categoryId = data.categoryId
-        image = data.image
-        metadata = data.metadata
-        tagIds = data.tags
-        notes = data.notes
-        tier = data.tier
-        rank = data.rank
     }
-
-    // 1. Handle GlobalItem updates if name/image changed
-    // In a shared system, users shouldn't easily change global metadata unless they have permissions.
-    // However, for this MVP, we'll allow it or just update the current user's link.
-    // For now, let's keep GlobalItem as is and only update instance fields.
 
     // Prepare update object for instance fields
     const updateData: any = { updatedAt: new Date() }
@@ -290,9 +330,11 @@ export async function updateItem(id: string, data: FormData | {
     if (tier !== undefined) updateData.tier = tier
     if (rank !== undefined) updateData.rank = rank
 
-    await db.update(items)
-        .set(updateData)
-        .where(eq(items.id, id))
+    if (Object.keys(updateData).length > 1) { // >1 because updatedAt is always there
+        await db.update(items)
+            .set(updateData)
+            .where(eq(items.id, id))
+    }
 
     // Update tags if provided
     if (tagIds !== undefined) {
@@ -310,7 +352,60 @@ export async function updateItem(id: string, data: FormData | {
     revalidatePath(`/items/${id}`)
     revalidatePath('/items')
     if (categoryId) revalidatePath(`/categories/${categoryId}`)
+    if (existingItem.categoryId) revalidatePath(`/categories/${existingItem.categoryId}`)
 }
+
+const updateItemFormSchema = zfd.formData({
+    name: zfd.text(z.string().optional()),
+    description: zfd.text(z.string().optional()),
+    category: zfd.text(z.string().uuid().optional()),
+    image: zfd.text(z.string().optional()),
+    metadata: zfd.text(z.string().optional()),
+    notes: zfd.text(z.string().optional()),
+    tier: zfd.text(z.string().optional()),
+    rank: zfd.text(z.string().optional()), // Parse as string, convert to number
+    tags: zfd.text(z.string().optional()) // JSON string
+})
+
+export async function updateItem(id: string, formData: FormData) {
+    // Safe parsing with zod-form-data
+    const result = updateItemFormSchema.safeParse(formData)
+
+    if (!result.success) {
+        console.error('updateItem validation failed:', result.error.issues)
+        throw new Error('Invalid form data')
+    }
+
+    const { name, description, category, image, metadata, notes, tier, rank: rankStr, tags: tagsJson } = result.data
+
+    // Safely parse tags JSON
+    let tagIds: string[] | undefined = undefined
+    if (tagsJson) {
+        try {
+            const parsed = JSON.parse(tagsJson)
+            if (Array.isArray(parsed)) {
+                tagIds = parsed
+            }
+        } catch (e) {
+            console.warn('Failed to parse tags JSON:', e)
+        }
+    }
+
+    // Build clean data object (only include defined values)
+    const cleanData: Record<string, unknown> = {}
+    if (name) cleanData.name = name
+    if (description !== undefined) cleanData.description = description
+    if (category) cleanData.categoryId = category
+    if (image) cleanData.image = image
+    if (metadata) cleanData.metadata = metadata
+    if (notes !== undefined) cleanData.notes = notes
+    if (tier) cleanData.tier = tier
+    if (rankStr) cleanData.rank = Number(rankStr)
+    if (tagIds !== undefined) cleanData.tags = tagIds
+
+    await updateItemInternal(id, cleanData)
+}
+
 
 // Helper to apply AI suggestions (tags by name, description)
 import { tags as tagsSchema } from '@/db/schema'
@@ -347,17 +442,21 @@ export async function applyItemEnhancement(itemId: string, enhancement: { sugges
     const finalTagIds = Array.from(new Set([...currentTagIds, ...tagIds]))
 
     // 2. Update Item
-    await updateItem(itemId, {
+    await updateItemInternal(itemId, {
         description: enhancement.suggested_description,
         tags: finalTagIds
     })
 }
 
-export async function deleteItem(id: string) {
+export async function deleteItem(id: string, categoryId?: string) {
     await db.delete(items).where(eq(items.id, id))
 
+    // Revalidate the category page if we know which category
+    if (categoryId) {
+        revalidatePath(`/categories/${categoryId}`)
+    }
     revalidatePath('/items')
-    redirect('/items')
+    // Don't redirect - let the calling UI handle navigation
 }
 
 import { ChallengerItem } from './discovery'
@@ -404,6 +503,8 @@ export async function addChallengerItem(challenger: ChallengerItem, categoryId: 
 export async function ignoreItem(itemId: string) {
     const userId = await getGuestUserId()
 
+    if (!userId) return
+
     // Check if item exists in user library
     const existing = await db.query.items.findFirst({
         where: and(
@@ -434,5 +535,56 @@ import { TournamentService } from '@/lib/services/TournamentService'
 
 export async function getTournamentPool(categoryId: string, size: number = 20) {
     const userId = await getGuestUserId()
+    if (!userId) return []
     return await TournamentService.generateTournamentPool(userId, categoryId, size, true)
+}
+
+import { logActivity } from '@/lib/actions/activity'
+import { auth } from '@/lib/auth'
+import { headers } from 'next/headers'
+
+export async function submitMatchResult(winnerId: string, loserId: string) {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    })
+
+    if (!session) return
+
+    // helper to get name
+    const getName = async (id: string) => {
+        // If it looks like a temp id, we might not find it in DB unless it was just added.
+        // However, TournamentModal passes the objects in the *client*. 
+        // Ideally we pass names from client to avoid DB lookup for temp items?
+        // But verifying is better. 
+        // For MVP, passing names from client is acceptable if we treat this as a UI feed event.
+        // If we only pass IDs, we can't look up "temp-xyz" items.
+        // Let's change signature to accept names to support Challenger items that aren't persisted yet.
+        const item = await db.query.items.findFirst({
+            where: eq(items.id, id),
+            with: { globalItem: true }
+        })
+        return item?.globalItem?.title || item?.name || 'Unknown Item'
+    }
+
+    // Since we might be voting on challengers that don't exist in DB yet, 
+    // we should really pass the context (Category?) or Names from the client.
+    // Let's stick to IDs and only log if they exist? 
+    // No, "Alice ranked Dune (Challenger) above Star Wars" is a valid event.
+    // I will overload this function or change it to accept metadata.
+}
+
+export async function submitMatchActivity(payload: {
+    winnerId: string, winnerName: string,
+    loserId: string, loserName: string
+}) {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    })
+
+    if (!session) return
+
+    await logActivity(session.user.id, 'RANKED_ITEM', {
+        winnerName: payload.winnerName,
+        loserName: payload.loserName
+    })
 }
