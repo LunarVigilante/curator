@@ -1,6 +1,6 @@
 'use server'
 
-import { auth } from "@/lib/auth"
+import { getSession } from '@/lib/auth'
 import {
     calculateAlignmentScore,
     getMetricDelta,
@@ -12,12 +12,9 @@ import {
     RadarChartPayload,
     CohortType
 } from "@/lib/services/TasteAnalyticsService"
-import { headers } from "next/headers"
 
 async function getUserId(): Promise<string> {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    })
+    const session = await getSession()
     if (!session?.user?.id) {
         throw new Error("Unauthorized")
     }

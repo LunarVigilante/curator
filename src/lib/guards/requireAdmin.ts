@@ -1,7 +1,6 @@
 'use server'
 
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
 type AdminCheckResult =
@@ -13,14 +12,14 @@ type AdminCheckResult =
  * Returns the user if authorized, or an error if not.
  */
 export async function requireAdmin(): Promise<AdminCheckResult> {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
 
     if (!session) {
         return { authorized: false, error: 'Unauthorized - Please sign in' }
     }
 
-    const role = (session.user as any).role
-    if (role !== 'ADMIN' && role !== 'admin') {
+    const role = session.profile?.role
+    if (role !== 'ADMIN') {
         return { authorized: false, error: 'Forbidden - Admin access required' }
     }
 
@@ -28,8 +27,8 @@ export async function requireAdmin(): Promise<AdminCheckResult> {
         authorized: true,
         user: {
             id: session.user.id,
-            email: session.user.email,
-            name: session.user.name,
+            email: session.user.email || '',
+            name: session.profile?.name || '',
             role: role
         }
     }
@@ -51,7 +50,7 @@ export async function assertAdminOrRedirect(): Promise<{ id: string; email: stri
 /**
  * Check if current user is admin (non-throwing version for conditional rendering)
  */
-export async function isAdmin(): Promise<boolean> {
+export async function isAdminGuard(): Promise<boolean> {
     const result = await requireAdmin()
     return result.authorized
 }

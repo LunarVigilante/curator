@@ -53,8 +53,8 @@ export default function CreateCategoryDialog({
             }
 
             // Navigate to the new category
-            if (result?.id) {
-                router.push(`/categories/${result.id}`)
+            if ((result as any)?.id) {
+                router.push(`/categories/${(result as any).id}`)
             } else {
                 router.refresh()
             }

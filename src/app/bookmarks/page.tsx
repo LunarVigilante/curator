@@ -1,11 +1,10 @@
 import { getSavedCollections, getBatchLikeCounts, getBatchInteractionStatus } from '@/lib/actions/interactions';
 import { BookmarksClient } from '../../components/browse/BookmarksClient';
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSession } from '@/lib/auth';
 
 export default async function BookmarksPage() {
-    const session = await auth.api.getSession({ headers: await headers() });
+    const session = await getSession();
 
     if (!session?.user?.id) {
         redirect('/login');

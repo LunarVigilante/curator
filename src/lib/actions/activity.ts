@@ -1,38 +1,33 @@
-'use server';
+'use server'
 
-import { db } from '@/lib/db';
-import { activities } from '@/db/schema';
-import { desc, eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { Database } from '@/lib/types/database'
 
-export type ActivityType = 'RANKED_ITEM' | 'CREATED_LIST' | 'FOLLOWED_USER';
+export type ActivityType = 'RANKED_ITEM' | 'CREATED_LIST' | 'FOLLOWED_USER'
 
 export async function logActivity(userId: string, type: ActivityType, data: any) {
     try {
-        await db.insert(activities).values({
-            userId,
+        const supabase = await createClient() as SupabaseClient<Database>
+        await (supabase.from('activities') as any).insert({
             type,
-            data: JSON.stringify(data),
-        });
-        // We generally don't need to revalidate immediately for this as it's a feed, 
-        // effectively passive, but good to keep in mind.
+            data,
+        } as any)
     } catch (error) {
-        console.error("Failed to log activity:", error);
+        console.error("Failed to log activity:", error)
         // Fail silently to not block main user action
     }
 }
 
 export async function getRecentActivities(limit: number = 20) {
-    const results = await db.query.activities.findMany({
-        orderBy: [desc(activities.createdAt)],
-        limit: limit,
-        with: {
-            user: true
-        }
-    });
+    const supabase = await createClient() as SupabaseClient<Database>
 
-    return results.map(activity => ({
-        ...activity,
-        data: JSON.parse(activity.data)
-    }));
+    const { data, error } = await (supabase.from('activities') as any)
+        .select('*, user:profiles(*)')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+    if (error) throw error
+    return data || []
 }

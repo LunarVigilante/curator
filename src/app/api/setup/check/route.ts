@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { users } from '@/db/schema'
-import { count } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
-    // Only allow internal middleware checks
-    const isMiddlewareCheck = request.headers.get('x-middleware-check') === 'true'
-
     try {
-        const result = await db.select({ count: count() }).from(users)
-        const setupRequired = result[0].count === 0
+        const supabase = await createClient()
+
+        const { count, error } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+
+        const setupRequired = (count ?? 0) === 0
 
         return NextResponse.json({ setupRequired })
     } catch (error) {

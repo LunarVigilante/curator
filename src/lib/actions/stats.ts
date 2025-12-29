@@ -1,8 +1,6 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { items, tags, itemsToTags, globalItems } from '@/db/schema'
-import { eq, count, sql, isNotNull, desc, and, inArray } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 import { getGuestUserId } from '@/lib/actions/auth'
 
 // Re-export types from shared file
@@ -11,23 +9,11 @@ import type { TierCount, TagCount, TopRatedItem, StatsData } from '@/lib/types/s
 
 // Standard tier colors and order
 const TIER_ORDER = ['S', 'A', 'B', 'C', 'D', 'F']
-const TIER_COLORS: Record<string, string> = {
-    'S': '#FF7F7F',
-    'A': '#FFBF7F',
-    'B': '#FFDF7F',
-    'C': '#7FFF7F',
-    'D': '#7FBFFF',
-    'F': '#BF7FFF'
-}
 
-/**
- * Get aggregated stats from the database using SQL queries.
- * This is more efficient than fetching all items and calculating on the client.
- */
 export async function getStatsAnalytics(categoryId?: string): Promise<StatsData> {
     const userId = await getGuestUserId()
+    const supabase = await createClient()
 
-    // Return empty stats if no user
     if (!userId) {
         return {
             totalRated: 0,
@@ -37,107 +23,87 @@ export async function getStatsAnalytics(categoryId?: string): Promise<StatsData>
         }
     }
 
-    // Build base WHERE condition
-    const baseConditions = [
-        eq(items.userId, userId),
-        isNotNull(items.tier)
-    ]
+    // Build query for items with tiers
+    let itemsQuery = (supabase.from('items') as any)
+        .select('id, tier, category_id, elo_score, global_item:global_items(title, image_url)')
+        .eq('user_id', userId)
+        .not('tier', 'is', null)
 
     if (categoryId) {
-        baseConditions.push(eq(items.categoryId, categoryId))
+        itemsQuery = itemsQuery.eq('category_id', categoryId)
     }
 
-    // 1. Tier Distribution - COUNT(*) GROUP BY tier
-    const tierResults = await db
-        .select({
-            tier: items.tier,
-            count: count()
-        })
-        .from(items)
-        .where(and(...baseConditions))
-        .groupBy(items.tier)
+    const { data: tieredItems, error } = await itemsQuery
 
-    // Map to include colors and ensure order
-    const tierDistribution: TierCount[] = TIER_ORDER.map(tier => {
-        const found = tierResults.find(r => r.tier === tier)
-        return {
-            tier,
-            count: found?.count ?? 0
-        }
-    }).filter(t => t.count > 0)
+    if (error) throw error
 
-    // Include any custom tiers not in standard order
-    const customTiers = tierResults.filter(r => r.tier && !TIER_ORDER.includes(r.tier))
-    for (const custom of customTiers) {
-        if (custom.tier) {
-            tierDistribution.push({
-                tier: custom.tier,
-                count: custom.count
-            })
+    const items = tieredItems || []
+
+    // 1. Tier Distribution
+    const tierCounts: Record<string, number> = {}
+    for (const item of items) {
+        if (item.tier) {
+            tierCounts[item.tier] = (tierCounts[item.tier] || 0) + 1
         }
     }
 
-    // Calculate total rated
-    const totalRated = tierResults.reduce((acc, curr) => acc + curr.count, 0)
+    const tierDistribution: TierCount[] = TIER_ORDER.map(tier => ({
+        tier,
+        count: tierCounts[tier] || 0
+    })).filter(t => t.count > 0)
 
-    // 2. Top Tags - COUNT(*) GROUP BY tagId (with JOIN)
-    // First get item IDs that match our criteria
-    const itemIdsResult = await db
-        .select({ id: items.id })
-        .from(items)
-        .where(and(...baseConditions))
+    // Include custom tiers
+    for (const [tier, count] of Object.entries(tierCounts)) {
+        if (!TIER_ORDER.includes(tier)) {
+            tierDistribution.push({ tier, count })
+        }
+    }
 
-    const itemIds = itemIdsResult.map(i => i.id)
+    const totalRated = items.length
 
+    // 2. Top Tags
+    const itemIds = items.map((i: any) => i.id)
     let topTags: TagCount[] = []
 
     if (itemIds.length > 0) {
-        const tagResults = await db
-            .select({
-                tagId: tags.id,
-                tagName: tags.name,
-                count: count()
-            })
-            .from(itemsToTags)
-            .innerJoin(tags, eq(itemsToTags.tagId, tags.id))
-            .where(inArray(itemsToTags.itemId, itemIds))
-            .groupBy(tags.id, tags.name)
-            .orderBy(desc(count()))
-            .limit(10)
+        const { data: tagData } = await (supabase.from('items_to_tags') as any)
+            .select('tag:tags(id, name)')
+            .in('item_id', itemIds)
 
-        topTags = tagResults.map(r => ({
-            tagId: r.tagId,
-            tagName: r.tagName,
-            count: r.count
-        }))
+        // Count tags
+        const tagCounts: Record<string, { name: string; count: number }> = {}
+        for (const item of tagData || []) {
+            const tag = item.tag as any
+            if (tag) {
+                if (!tagCounts[tag.id]) {
+                    tagCounts[tag.id] = { name: tag.name, count: 0 }
+                }
+                tagCounts[tag.id].count++
+            }
+        }
+
+        topTags = Object.entries(tagCounts)
+            .map(([tagId, data]) => ({
+                tagId,
+                tagName: data.name,
+                count: data.count
+            }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10)
     }
 
-    // 3. Top Rated (Hall of Fame) - Items with tier 'S' or top ELO
-    const topRatedResults = await db
-        .select({
-            id: items.id,
-            name: sql<string>`COALESCE(${globalItems.title}, ${items.name})`,
-            image: sql<string | null>`COALESCE(${globalItems.imageUrl}, ${items.image})`,
-            tier: items.tier,
-            categoryId: items.categoryId
-        })
-        .from(items)
-        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
-        .where(and(
-            eq(items.userId, userId),
-            eq(items.tier, 'S'),
-            categoryId ? eq(items.categoryId, categoryId) : sql`1=1`
-        ))
-        .orderBy(desc(items.eloScore))
-        .limit(4)
-
-    const topRated: TopRatedItem[] = topRatedResults.map(r => ({
-        id: r.id,
-        name: r.name || 'Untitled',
-        image: r.image,
-        tier: r.tier,
-        categoryId: r.categoryId
-    }))
+    // 3. Top Rated (S tier items)
+    const topRated: TopRatedItem[] = items
+        .filter((item: any) => item.tier === 'S')
+        .sort((a: any, b: any) => (b.elo_score || 0) - (a.elo_score || 0))
+        .slice(0, 4)
+        .map((item: any) => ({
+            id: item.id,
+            name: (item.global_item as any)?.title || 'Untitled',
+            image: (item.global_item as any)?.image_url,
+            tier: item.tier,
+            categoryId: item.category_id
+        }))
 
     return {
         totalRated,
@@ -146,4 +112,3 @@ export async function getStatsAnalytics(categoryId?: string): Promise<StatsData>
         topRated
     }
 }
-

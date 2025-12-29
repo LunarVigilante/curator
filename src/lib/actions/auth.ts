@@ -1,93 +1,206 @@
-'use server';
+'use server'
 
-import { auth } from '@/lib/auth'; // BetterAuth Server Instance
-import { db } from '@/lib/db';
-import { users, invites } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
-import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 
 /**
- * Marks the user's password change as complete by ensuring the flag is false.
+ * Sign in with email and password
  */
-export async function completeForcePasswordChange() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+export async function signIn(formData: FormData) {
+    const supabase = await createClient()
 
-    if (!session) {
-        throw new Error("Unauthorized");
+    const email = formData.get('email') as string
+    const password = formData.get('password') as string
+
+    const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    })
+
+    if (error) {
+        return { error: error.message }
     }
 
-    // Update the flag in the database
-    await db.update(users)
-        .set({ requiredPasswordChange: false })
-        .where(eq(users.id, session.user.id));
-
-    return { success: true };
+    revalidatePath('/', 'layout')
+    redirect('/')
 }
 
-export async function getGuestUserId() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    return session?.user?.id;
-}
-
+/**
+ * Sign up with email and password (invite-only)
+ */
 export async function register(prevState: any, formData: FormData) {
-    const name = formData.get('username') as string;
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const inviteCode = formData.get('inviteCode') as string;
+    const supabase = await createClient()
+
+    const name = formData.get('username') as string
+    const email = formData.get('email') as string
+    const password = formData.get('password') as string
+    const inviteCode = formData.get('inviteCode') as string
 
     if (!email || !password || !name || !inviteCode) {
-        return { message: 'All fields are required' };
+        return { message: 'All fields are required' }
     }
 
     try {
         // 1. Validate Invite
-        const invite = await db.query.invites.findFirst({
-            where: and(
-                eq(invites.code, inviteCode),
-                eq(invites.isUsed, false)
-            )
-        });
+        const { data: invite, error: inviteError } = await (supabase.from('invites') as any)
+            .select('*')
+            .eq('code', inviteCode)
+            .eq('is_used', false)
+            .single()
 
-        if (!invite) {
-            return { errors: { inviteCode: 'Invalid or expired invite code' } };
+        if (inviteError || !invite) {
+            return { errors: { inviteCode: 'Invalid or expired invite code' } }
         }
 
         // 2. Create User
-        // Note: auth.api.signUpEmail returns data on success, throws on error usually
-        const response = await auth.api.signUpEmail({
-            body: {
-                email,
-                password,
-                name,
-            }
-        });
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    name,
+                },
+            },
+        })
 
-        if (!response || !response.user) {
-            return { message: 'Failed to create user' };
+        if (signUpError || !authData.user) {
+            return { message: signUpError?.message || 'Failed to create user' }
         }
 
         // 3. Consume Invite
-        await db.update(invites)
-            .set({
-                isUsed: true,
-                usedBy: response.user.id,
-                usedAt: new Date()
+        await (supabase.from('invites') as any)
+            .update({
+                is_used: true,
+                used_by: authData.user.id,
+                used_at: new Date().toISOString(),
             })
-            .where(eq(invites.id, invite.id));
+            .eq('id', invite.id)
 
     } catch (error: any) {
-        console.error("Registration error:", error);
-        // Handle BetterAuth errors
-        if (error.body?.message) {
-            return { message: error.body.message };
-        }
-        return { message: error.message || 'Something went wrong during registration' };
+        console.error('Registration error:', error)
+        return { message: error.message || 'Something went wrong during registration' }
     }
 
-    redirect('/login?registered=true');
+    redirect('/login?registered=true')
+}
+
+/**
+ * Sign out the current user
+ */
+export async function signOut() {
+    const supabase = await createClient()
+    await supabase.auth.signOut()
+    revalidatePath('/', 'layout')
+    redirect('/login')
+}
+
+/**
+ * Get the current user ID (for backwards compatibility)
+ */
+export async function getGuestUserId() {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    return user?.id
+}
+
+/**
+ * Marks the user's password change as complete (no-op for Supabase)
+ * Kept for backwards compatibility
+ */
+export async function completeForcePasswordChange() {
+    // Supabase handles password change completion automatically
+    return { success: true }
+}
+
+/**
+ * Update user password
+ */
+export async function updatePassword(formData: FormData) {
+    const supabase = await createClient()
+
+    const password = formData.get('password') as string
+
+    const { error } = await supabase.auth.updateUser({
+        password,
+    })
+
+    if (error) {
+        return { error: error.message }
+    }
+
+    return { success: true }
+}
+
+/**
+ * Request password reset email
+ */
+export async function resetPassword(formData: FormData) {
+    const supabase = await createClient()
+
+    const email = formData.get('email') as string
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/change-password`,
+    })
+
+    if (error) {
+        return { error: error.message }
+    }
+
+    return { success: true, message: 'Check your email for a password reset link' }
+}
+
+/**
+ * Update user profile
+ */
+export async function updateProfile(formData: FormData) {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Not authenticated' }
+    }
+
+    const name = formData.get('name') as string
+    const displayName = formData.get('displayName') as string
+    const bio = formData.get('bio') as string
+
+    const { error } = await (supabase.from('profiles') as any)
+        .update({
+            name,
+            display_name: displayName,
+            bio,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+
+    if (error) {
+        return { error: error.message }
+    }
+
+    revalidatePath('/settings')
+    return { success: true }
+}
+
+/**
+ * Sign in with OAuth provider
+ */
+export async function signInWithProvider(provider: 'google' | 'github' | 'discord') {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+            redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        },
+    })
+
+    if (error) {
+        return { error: error.message }
+    }
+
+    if (data.url) {
+        redirect(data.url)
+    }
 }

@@ -1,11 +1,10 @@
 import { getLikedCollections, getBatchLikeCounts, getBatchInteractionStatus } from '@/lib/actions/interactions';
 import { LikedClient } from '@/components/browse/LikedClient';
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSession } from '@/lib/auth';
 
 export default async function LikedPage() {
-    const session = await auth.api.getSession({ headers: await headers() });
+    const session = await getSession();
 
     if (!session?.user?.id) {
         redirect('/login');

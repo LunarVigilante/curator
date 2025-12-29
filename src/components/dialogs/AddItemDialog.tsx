@@ -260,7 +260,8 @@ export default function AddItemDialog({
                                                                     const tagPromises = uniqueTags.map((tagName: string) =>
                                                                         createTag(tagName).catch(() => null)
                                                                     )
-                                                                    const createdTags = await Promise.all(tagPromises)
+                                                                    // Explicitly define the type for Promise.all result to avoid 'null' inference
+                                                                    const createdTags: ({ id: string, name: string } | null)[] = await Promise.all(tagPromises)
                                                                     const validTags = createdTags.filter((t): t is { id: string, name: string } => t !== null)
 
                                                                     setFormData(prev => ({

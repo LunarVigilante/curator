@@ -1,8 +1,6 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { categories, items } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 import { callLLMWithConfig } from '@/lib/llm'
 
 export type Recommendation = {
@@ -17,40 +15,40 @@ export type RecommendationResult = {
 }
 
 export async function getRecommendation(categoryId: string): Promise<RecommendationResult> {
-    // 1. Get Category Name
-    const category = await db.query.categories.findFirst({
-        where: eq(categories.id, categoryId)
-    })
+    const supabase = await createClient()
 
-    if (!category) throw new Error('Category not found')
+    // 1. Get Category Name
+    const { data: category, error: categoryError } = await (supabase.from('categories') as any)
+        .select('id, name')
+        .eq('id', categoryId)
+        .single()
+
+    if (categoryError || !category) throw new Error('Category not found')
 
     // 2. Get User's Top Rated Items in this Category
     // We want items with high ratings (e.g. > 80 or S/A tier)
-    const userItems = await db.query.items.findMany({
-        where: eq(items.categoryId, categoryId),
-        with: {
-            ratings: true
-        },
-        limit: 20
-    })
+    const { data: userItems } = await (supabase.from('items') as any)
+        .select('id, name, ratings(*)')
+        .eq('category_id', categoryId)
+        .limit(20)
 
     // Filter for highly rated items
-    const likedItems = userItems.filter(item => {
-        const rating = item.ratings[0]
+    const likedItems = (userItems || []).filter((item: any) => {
+        const rating = item.ratings?.[0]
         if (!rating) return false
         if (rating.type === 'NUMERICAL') return rating.value > 75
         if (rating.type === 'TIER') return ['S', 'A', 'B'].includes(rating.tier || '')
         return false
-    }).map(item => item.name)
+    }).map((item: any) => item.name)
 
     // Filter for disliked items
-    const dislikedItems = userItems.filter(item => {
-        const rating = item.ratings[0]
+    const dislikedItems = (userItems || []).filter((item: any) => {
+        const rating = item.ratings?.[0]
         if (!rating) return false
         if (rating.type === 'NUMERICAL') return rating.value < 40
         if (rating.type === 'TIER') return ['F', 'D'].includes(rating.tier || '')
         return false
-    }).map(item => item.name)
+    }).map((item: any) => item.name)
 
     // 3. Construct Prompt
     const prompt = `

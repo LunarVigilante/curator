@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { invites } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
@@ -12,14 +10,16 @@ export async function GET(request: Request) {
     }
 
     try {
-        const invite = await db.query.invites.findFirst({
-            where: and(
-                eq(invites.code, code),
-                eq(invites.isUsed, false)
-            )
-        })
+        const supabase = await createClient()
 
-        if (!invite) {
+        const { data: invite, error } = await supabase
+            .from('invites')
+            .select('*')
+            .eq('code', code)
+            .eq('is_used', false)
+            .single()
+
+        if (error || !invite) {
             return NextResponse.json({ valid: false, message: 'Invalid or expired code' })
         }
 

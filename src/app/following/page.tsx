@@ -1,11 +1,10 @@
 import { getFollowing } from '@/lib/actions/interactions';
 import { FollowingClient } from '@/components/browse/FollowingClient';
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSession } from '@/lib/auth';
 
 export default async function FollowingPage() {
-    const session = await auth.api.getSession({ headers: await headers() });
+    const session = await getSession();
 
     if (!session?.user?.id) {
         redirect('/login');

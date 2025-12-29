@@ -1,6 +1,4 @@
-import { db } from '@/lib/db';
-import { systemSettings } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { createClient } from '@/lib/supabase/server';
 import { encrypt, decrypt } from '@/lib/encryption';
 import { unstable_noStore as noStore } from 'next/cache';
 import { cache } from 'react';
@@ -74,9 +72,13 @@ export type SystemSettings = Partial<Record<SystemSettingKey, string>>
  * Cached per-request so multiple calls return the same promise.
  */
 const fetchAllSettingsDecrypted = cache(async (): Promise<SystemSettings> => {
-    const allSettings = await db.query.systemSettings.findMany();
+    const supabase = await createClient();
+    const { data: allSettings } = await supabase
+        .from('system_settings')
+        .select('*');
+
     const config: SystemSettings = {};
-    for (const s of allSettings) {
+    for (const s of allSettings || []) {
         config[s.key as SystemSettingKey] = decrypt(s.value);
     }
     return config;
@@ -87,10 +89,14 @@ const fetchAllSettingsDecrypted = cache(async (): Promise<SystemSettings> => {
  * Cached per-request per-key.
  */
 const fetchSingleSettingDecrypted = cache(async (key: SystemSettingKey): Promise<string | null> => {
-    const setting = await db.query.systemSettings.findFirst({
-        where: eq(systemSettings.key, key),
-    });
-    if (!setting) return null;
+    const supabase = await createClient();
+    const { data: setting, error } = await supabase
+        .from('system_settings')
+        .select('*')
+        .eq('key', key)
+        .single();
+
+    if (error || !setting) return null;
     return decrypt(setting.value);
 });
 
@@ -121,16 +127,18 @@ export class SystemConfigService {
      */
     static async getAllSettings() {
         noStore();
-        const allSettings = await db.query.systemSettings.findMany({
-            orderBy: systemSettings.category,
-        });
+        const supabase = await createClient();
+        const { data: allSettings } = await supabase
+            .from('system_settings')
+            .select('*')
+            .order('category');
 
-        return allSettings.map(setting => ({
+        return (allSettings || []).map(setting => ({
             key: setting.key,
-            value: setting.isSecret ? '********' : decrypt(setting.value),
+            value: setting.is_secret ? '********' : decrypt(setting.value),
             category: setting.category,
-            isSecret: setting.isSecret,
-            updatedAt: setting.updatedAt,
+            isSecret: setting.is_secret,
+            updatedAt: setting.updated_at,
         }));
     }
 
@@ -143,29 +151,22 @@ export class SystemConfigService {
         category: string = 'GENERAL',
         isSecret: boolean = false
     ) {
+        const supabase = await createClient();
         // Encrypt immediately
         const encryptedValue = encrypt(rawValue);
 
         // Upsert logic
-        await db.insert(systemSettings)
-            .values({
+        await supabase
+            .from('system_settings')
+            .upsert({
                 key,
                 value: encryptedValue,
                 category,
-                isSecret,
-            })
-            .onConflictDoUpdate({
-                target: systemSettings.key,
-                set: {
-                    value: encryptedValue,
-                    category,
-                    isSecret,
-                    updatedAt: new Date(),
-                },
-            });
+                is_secret: isSecret,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'key' });
 
         // Return public view (masked if secret)
-
         return {
             key,
             value: isSecret ? '********' : rawValue,

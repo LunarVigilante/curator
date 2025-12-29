@@ -1,5 +1,4 @@
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSession } from '@/lib/auth';
 import { getFeaturedCategories, getUserCategories, checkAndSeedUserCategories } from '@/lib/actions/categories';
 import { getFollowedUsers } from '@/lib/actions/social';
 import { getChallengeTemplates } from '@/lib/actions/challenges';
@@ -11,9 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Lock } from 'lucide-react';
 
 export default async function LandingPage() {
-  const session = await auth.api.getSession({
-    headers: await headers()
-  });
+  const session = await getSession();
 
   const featuredCategories = await getFeaturedCategories();
 
@@ -34,7 +31,7 @@ export default async function LandingPage() {
         userCategories={userCategories as any}
         featuredCategories={featuredCategories as any}
         followedUsers={followedUsers as any}
-        userName={session.user.name}
+        userName={session.profile?.name || session.user.email || 'User'}
         currentChallenge={challenges[0] || null}
         activities={recentActivities as any}
       />
@@ -74,7 +71,7 @@ export default async function LandingPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {featuredCategories.length > 0 ? featuredCategories.slice(0, 4).map((collection) => (
+              {featuredCategories.length > 0 ? featuredCategories.slice(0, 4).map((collection: any) => (
                 <Link key={collection.id} href={`/categories/${collection.id}`} className="block">
                   <div className="group relative overflow-hidden rounded-xl bg-black/40 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all cursor-pointer hover:-translate-y-1 duration-300 shadow-2xl h-[320px]">
                     {/* Background Image */}

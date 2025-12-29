@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSession, isAdmin } from '@/lib/auth';
 
 // Provider-specific model fetching logic
 async function fetchModelsFromProvider(provider: string, apiKey: string): Promise<string[]> {
@@ -106,11 +105,9 @@ async function fetchAnannasModels(apiKey: string): Promise<string[]> {
 export async function POST(req: NextRequest) {
     try {
         // Auth check
-        const session = await auth.api.getSession({
-            headers: await headers()
-        });
+        const session = await getSession();
 
-        if (!session || (session.user as any).role !== 'ADMIN') {
+        if (!session || !(await isAdmin())) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

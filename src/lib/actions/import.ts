@@ -1,39 +1,20 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { categories, items, globalItems } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserId } from '@/lib/auth'
 import { getImportRouter, reconcileItems } from '@/lib/services/import'
 import type { ImportResult, ReconciledItem, ParsedImport } from '@/lib/types/import'
-
-// ============================================================================
-// AUTH HELPER
-// ============================================================================
-
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
 
 // ============================================================================
 // MAGIC IMPORT - MAIN ENTRY POINT
 // ============================================================================
 
-/**
- * Magic Import - Parse any input and create a collection
- * 
- * @param input - URL or unstructured text
- * @param options - Optional configuration
- * @returns ImportResult with created collection details
- */
 export async function magicImport(
     input: string,
     options?: {
-        autoReconcile?: boolean   // Match items with external APIs (default: true)
-        autoCreate?: boolean      // Create collection automatically (default: true)
-        collectionName?: string   // Override inferred collection name
+        autoReconcile?: boolean
+        autoCreate?: boolean
+        collectionName?: string
     }
 ): Promise<ImportResult> {
     const userId = await getCurrentUserId()
@@ -54,7 +35,6 @@ export async function magicImport(
     } = options || {}
 
     try {
-        // 1. Route and parse input
         const router = getImportRouter()
         const parsed = await router.route(input)
 
@@ -68,12 +48,10 @@ export async function magicImport(
             }
         }
 
-        // 2. Reconcile items with external APIs
         let reconciledItems: ReconciledItem[]
         if (autoReconcile) {
             reconciledItems = await reconcileItems(parsed.items, parsed.mediaType)
         } else {
-            // Skip reconciliation, use raw parsed items
             reconciledItems = parsed.items.map(item => ({
                 ...item,
                 matched: false,
@@ -81,7 +59,6 @@ export async function magicImport(
             }))
         }
 
-        // 3. Create collection if auto-create is enabled
         if (!autoCreate) {
             return {
                 success: true,
@@ -115,13 +92,9 @@ export async function magicImport(
 }
 
 // ============================================================================
-// PREVIEW IMPORT (Parse without creating)
+// PREVIEW IMPORT
 // ============================================================================
 
-/**
- * Preview an import without creating anything
- * Useful for showing the user what will be created
- */
 export async function previewImport(input: string): Promise<{
     success: boolean
     parsed?: ParsedImport
@@ -145,7 +118,6 @@ export async function previewImport(input: string): Promise<{
             }
         }
 
-        // Reconcile for preview
         const reconciled = await reconcileItems(parsed.items, parsed.mediaType)
 
         return {
@@ -172,82 +144,86 @@ async function createCollectionFromImport(
     reconciledItems: ReconciledItem[],
     mediaType: string
 ): Promise<ImportResult> {
+    const supabase = await createClient()
     const warnings: string[] = []
     let itemsCreated = 0
     let itemsSkipped = 0
 
-    // Create within a transaction
-    const result = await db.transaction(async (tx) => {
-        // 1. Create the category
-        const [category] = await tx.insert(categories)
-            .values({
-                name: collectionTitle,
-                description: collectionDescription,
-                userId,
-                isPublic: false,
-                sortOrder: 0
-            })
-            .returning()
+    // 1. Create the category
+    const { data: category, error: categoryError } = await (supabase.from('categories') as any)
+        .insert({
+            name: collectionTitle,
+            description: collectionDescription,
+            user_id: userId,
+            is_public: false,
+            sort_order: 0
+        })
+        .select()
+        .single()
 
-        // 2. Create items
-        for (const item of reconciledItems) {
-            try {
-                // Upsert global item if we have an external ID
-                let globalItemId: string | null = null
-                if (item.externalId && item.matched) {
-                    const existing = await tx.query.globalItems.findFirst({
-                        where: eq(globalItems.externalId, item.externalId)
-                    })
+    if (categoryError) throw categoryError
 
-                    if (existing) {
-                        globalItemId = existing.id
-                    } else {
-                        const [newGlobal] = await tx.insert(globalItems)
-                            .values({
-                                title: item.title,
-                                description: item.description,
-                                imageUrl: item.imageUrl,
-                                releaseYear: item.releaseYear,
-                                externalId: item.externalId
-                            })
-                            .returning()
+    // 2. Create items
+    for (const item of reconciledItems) {
+        try {
+            let globalItemId: string | null = null
+
+            if (item.externalId && item.matched) {
+                const { data: existing } = await (supabase.from('global_items') as any)
+                    .select('id')
+                    .eq('external_id', item.externalId)
+                    .single()
+
+                if (existing) {
+                    globalItemId = existing.id
+                } else {
+                    const { data: newGlobal, error: globalError } = await (supabase.from('global_items') as any)
+                        .insert({
+                            title: item.title,
+                            description: item.description,
+                            image_url: item.imageUrl,
+                            release_year: item.releaseYear,
+                            external_id: item.externalId
+                        })
+                        .select()
+                        .single()
+
+                    if (!globalError && newGlobal) {
                         globalItemId = newGlobal.id
                     }
                 }
-
-                // Create user item
-                await tx.insert(items).values({
-                    userId,
-                    categoryId: category.id,
-                    globalItemId,
-                    name: item.title,
-                    description: item.description,
-                    image: item.imageUrl,
-                    tier: null,  // User will set tier
-                    eloScore: 1200,
-                    rank: item.rank || itemsCreated
-                })
-
-                itemsCreated++
-
-                if (!item.matched) {
-                    warnings.push(`"${item.title}" was not matched with external database`)
-                }
-
-            } catch (error) {
-                console.error(`Failed to create item "${item.title}":`, error)
-                itemsSkipped++
-                warnings.push(`Failed to import "${item.title}"`)
             }
-        }
 
-        return category
-    })
+            // Create user item
+            await (supabase.from('items') as any).insert({
+                user_id: userId,
+                category_id: category.id,
+                global_item_id: globalItemId,
+                name: item.title,
+                description: item.description,
+                image: item.imageUrl,
+                tier: null,
+                elo_score: 1200,
+                rank: item.rank || itemsCreated
+            })
+
+            itemsCreated++
+
+            if (!item.matched) {
+                warnings.push(`"${item.title}" was not matched with external database`)
+            }
+
+        } catch (error) {
+            console.error(`Failed to create item "${item.title}":`, error)
+            itemsSkipped++
+            warnings.push(`Failed to import "${item.title}"`)
+        }
+    }
 
     return {
         success: true,
-        categoryId: result.id,
-        categoryName: result.name,
+        categoryId: category.id,
+        categoryName: category.name,
         itemsCreated,
         itemsSkipped,
         warnings,
@@ -256,12 +232,9 @@ async function createCollectionFromImport(
 }
 
 // ============================================================================
-// DETECT SOURCE (For UI hints)
+// DETECT SOURCE
 // ============================================================================
 
-/**
- * Detect the source type of an input for UI hints
- */
 export async function detectImportSourceType(input: string) {
     const router = getImportRouter()
     return router.detectSource(input)

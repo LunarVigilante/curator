@@ -114,7 +114,7 @@ export function VectorPreview({
                             </span>
                         )}
                         <span>Type: {categoryType || 'Unknown'}</span>
-                        <span>Updated: {formatDate(lastUpdated)}</span>
+                        <span>Updated: {formatDate(lastUpdated || null)}</span>
                     </div>
 
                     {/* Vector Text Code Block */}

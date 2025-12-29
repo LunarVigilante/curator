@@ -51,7 +51,7 @@ export default function CustomRanksDialog({
         setAnalyzing(true)
         try {
             const sentiment = await analyzeSentiment(newRankName)
-            setNewRankSentiment(sentiment)
+            setNewRankSentiment(sentiment.toLowerCase() as "positive" | "neutral" | "negative")
             toast.success(`Analyzed as ${sentiment}`)
         } catch (error) {
             toast.error('Failed to analyze sentiment')
@@ -70,14 +70,14 @@ export default function CustomRanksDialog({
             try {
                 const newRank = await createCustomRank(categoryId, {
                     name: newRankName,
-                    sentiment: newRankSentiment
+                    sentiment: newRankSentiment.toUpperCase() as "POSITIVE" | "NEGATIVE" | "NEUTRAL"
                 })
 
                 setRanks([...ranks, newRank as CustomRank])
                 setNewRankName('')
                 setNewRankSentiment('neutral')
                 setIsAdding(false)
-                toast.success(`Added "${newRank.name}" rank`)
+                toast.success(`Added "${(newRank as CustomRank).name}" rank`)
             } catch (error) {
                 toast.error('Failed to create custom rank')
             }

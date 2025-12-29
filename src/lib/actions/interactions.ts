@@ -1,45 +1,39 @@
 'use server'
 
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
-import { db } from '@/lib/db'
-import { collectionLikes, collectionSaves, categories, users } from '@/db/schema'
-import { eq, and, sql, desc, inArray } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
+import { getSession, getCurrentUserId } from '@/lib/auth'
 
 /**
  * Toggle Like on a collection (public upvote)
  */
 export async function toggleLike(categoryId: string) {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id) {
         return { success: false, error: 'Not authenticated' }
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
     // Check if already liked
-    const existing = await db.select()
-        .from(collectionLikes)
-        .where(and(
-            eq(collectionLikes.userId, userId),
-            eq(collectionLikes.categoryId, categoryId)
-        ))
-        .limit(1)
+    const { data: existing } = await (supabase.from('collection_likes') as any)
+        .select('*')
+        .eq('user_id', userId)
+        .eq('category_id', categoryId)
+        .single()
 
-    if (existing.length > 0) {
+    if (existing) {
         // Remove like
-        await db.delete(collectionLikes).where(
-            and(
-                eq(collectionLikes.userId, userId),
-                eq(collectionLikes.categoryId, categoryId)
-            )
-        )
+        await (supabase.from('collection_likes') as any)
+            .delete()
+            .eq('user_id', userId)
+            .eq('category_id', categoryId)
         return { success: true, liked: false }
     } else {
         // Add like
-        await db.insert(collectionLikes).values({
-            userId,
-            categoryId
+        await (supabase.from('collection_likes') as any).insert({
+            user_id: userId,
+            category_id: categoryId
         })
         return { success: true, liked: true }
     }
@@ -49,36 +43,33 @@ export async function toggleLike(categoryId: string) {
  * Toggle Save on a collection (private bookmark)
  */
 export async function toggleSave(categoryId: string) {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id) {
         return { success: false, error: 'Not authenticated' }
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
     // Check if already saved
-    const existing = await db.select()
-        .from(collectionSaves)
-        .where(and(
-            eq(collectionSaves.userId, userId),
-            eq(collectionSaves.categoryId, categoryId)
-        ))
-        .limit(1)
+    const { data: existing } = await (supabase.from('collection_saves') as any)
+        .select('*')
+        .eq('user_id', userId)
+        .eq('category_id', categoryId)
+        .single()
 
-    if (existing.length > 0) {
+    if (existing) {
         // Remove save
-        await db.delete(collectionSaves).where(
-            and(
-                eq(collectionSaves.userId, userId),
-                eq(collectionSaves.categoryId, categoryId)
-            )
-        )
+        await (supabase.from('collection_saves') as any)
+            .delete()
+            .eq('user_id', userId)
+            .eq('category_id', categoryId)
         return { success: true, saved: false }
     } else {
         // Add save
-        await db.insert(collectionSaves).values({
-            userId,
-            categoryId
+        await (supabase.from('collection_saves') as any).insert({
+            user_id: userId,
+            category_id: categoryId
         })
         return { success: true, saved: true }
     }
@@ -88,71 +79,75 @@ export async function toggleSave(categoryId: string) {
  * Get like count for a collection
  */
 export async function getLikeCount(categoryId: string) {
-    const result = await db.select({ count: sql<number>`count(*)` })
-        .from(collectionLikes)
-        .where(eq(collectionLikes.categoryId, categoryId))
+    const supabase = await createClient()
 
-    return result[0]?.count || 0
+    const { count, error } = await (supabase.from('collection_likes') as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('category_id', categoryId)
+
+    return count || 0
 }
 
 /**
  * Get save count for a collection
  */
 export async function getSaveCount(categoryId: string) {
-    const result = await db.select({ count: sql<number>`count(*)` })
-        .from(collectionSaves)
-        .where(eq(collectionSaves.categoryId, categoryId))
+    const supabase = await createClient()
 
-    return result[0]?.count || 0
+    const { count, error } = await (supabase.from('collection_saves') as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('category_id', categoryId)
+
+    return count || 0
 }
 
 /**
  * Check if current user has liked/saved a collection
  */
 export async function getInteractionStatus(categoryId: string) {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id) {
         return { liked: false, saved: false }
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
-    const [likedResult, savedResult] = await Promise.all([
-        db.select().from(collectionLikes)
-            .where(and(
-                eq(collectionLikes.userId, userId),
-                eq(collectionLikes.categoryId, categoryId)
-            ))
-            .limit(1),
-        db.select().from(collectionSaves)
-            .where(and(
-                eq(collectionSaves.userId, userId),
-                eq(collectionSaves.categoryId, categoryId)
-            ))
-            .limit(1)
+    const [{ data: likedResult }, { data: savedResult }] = await Promise.all([
+        (supabase.from('collection_likes') as any)
+            .select('*')
+            .eq('user_id', userId)
+            .eq('category_id', categoryId)
+            .single(),
+        (supabase.from('collection_saves') as any)
+            .select('*')
+            .eq('user_id', userId)
+            .eq('category_id', categoryId)
+            .single()
     ])
 
-    return { liked: likedResult.length > 0, saved: savedResult.length > 0 }
+    return { liked: !!likedResult, saved: !!savedResult }
 }
 
 /**
  * Get batch interaction status for multiple collections (for Browse page)
  */
 export async function getBatchInteractionStatus(categoryIds: string[]) {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id || categoryIds.length === 0) {
         return {}
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
-    const [likes, saves] = await Promise.all([
-        db.select().from(collectionLikes).where(eq(collectionLikes.userId, userId)),
-        db.select().from(collectionSaves).where(eq(collectionSaves.userId, userId))
+    const [{ data: likes }, { data: saves }] = await Promise.all([
+        (supabase.from('collection_likes') as any).select('category_id').eq('user_id', userId),
+        (supabase.from('collection_saves') as any).select('category_id').eq('user_id', userId)
     ])
 
-    const likedSet = new Set(likes.map(l => l.categoryId))
-    const savedSet = new Set(saves.map(s => s.categoryId))
+    const likedSet = new Set((likes || []).map((l: any) => l.category_id))
+    const savedSet = new Set((saves || []).map((s: any) => s.category_id))
 
     const result: Record<string, { liked: boolean; saved: boolean }> = {}
     for (const id of categoryIds) {
@@ -168,36 +163,29 @@ export async function getBatchInteractionStatus(categoryIds: string[]) {
  * Get saved collections (bookmarks) for current user
  */
 export async function getSavedCollections() {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id) {
         return { data: [], error: 'Not authenticated' }
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
-    // Get all saves for this user
-    const saves = await db.select()
-        .from(collectionSaves)
-        .where(eq(collectionSaves.userId, userId))
-        .orderBy(desc(collectionSaves.createdAt))
+    const { data: saves } = await (supabase.from('collection_saves') as any)
+        .select('category_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
 
-    if (saves.length === 0) {
+    if (!saves || saves.length === 0) {
         return { data: [] }
     }
 
-    // Fetch category details using query API
-    const categoryIds = saves.map(s => s.categoryId)
-    const categoryData = await db.query.categories.findMany({
-        where: inArray(categories.id, categoryIds),
-        with: {
-            owner: true,
-            items: {
-                columns: { id: true }
-            }
-        }
-    })
+    const categoryIds = saves.map((s: any) => s.category_id)
+    const { data: categoryData } = await (supabase.from('categories') as any)
+        .select('*, owner:profiles(*), items(id)')
+        .in('id', categoryIds)
 
-    return { data: categoryData }
+    return { data: categoryData || [] }
 }
 
 /**
@@ -206,17 +194,20 @@ export async function getSavedCollections() {
 export async function getBatchLikeCounts(categoryIds: string[]) {
     if (categoryIds.length === 0) return {}
 
-    const counts = await db.select({
-        categoryId: collectionLikes.categoryId,
-        count: sql<number>`count(*)`
-    })
-        .from(collectionLikes)
-        .where(inArray(collectionLikes.categoryId, categoryIds))
-        .groupBy(collectionLikes.categoryId)
+    const supabase = await createClient()
 
+    // Get all likes for these categories
+    const { data: likes } = await (supabase.from('collection_likes') as any)
+        .select('category_id')
+        .in('category_id', categoryIds)
+
+    // Count by category
     const result: Record<string, number> = {}
-    for (const { categoryId, count } of counts) {
-        result[categoryId] = count
+    for (const id of categoryIds) {
+        result[id] = 0
+    }
+    for (const like of (likes || []) as any[]) {
+        result[like.category_id] = (result[like.category_id] || 0) + 1
     }
     return result
 }
@@ -225,74 +216,56 @@ export async function getBatchLikeCounts(categoryIds: string[]) {
  * Get liked collections for current user
  */
 export async function getLikedCollections() {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id) {
         return { data: [], error: 'Not authenticated' }
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
-    // Get all likes for this user
-    const likes = await db.select()
-        .from(collectionLikes)
-        .where(eq(collectionLikes.userId, userId))
-        .orderBy(desc(collectionLikes.createdAt))
+    const { data: likes } = await (supabase.from('collection_likes') as any)
+        .select('category_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
 
-    if (likes.length === 0) {
+    if (!likes || likes.length === 0) {
         return { data: [] }
     }
 
-    // Fetch category details using query API
-    const categoryIds = likes.map(l => l.categoryId)
-    const categoryData = await db.query.categories.findMany({
-        where: inArray(categories.id, categoryIds),
-        with: {
-            owner: true,
-            items: {
-                columns: { id: true }
-            }
-        }
-    })
+    const categoryIds = likes.map((l: any) => l.category_id)
+    const { data: categoryData } = await (supabase.from('categories') as any)
+        .select('*, owner:profiles(*), items(id)')
+        .in('id', categoryIds)
 
-    return { data: categoryData }
+    return { data: categoryData || [] }
 }
 
 /**
  * Get users the current user is following
  */
-import { follows } from '@/db/schema'
-
 export async function getFollowing() {
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     if (!session?.user?.id) {
         return { data: [], error: 'Not authenticated' }
     }
 
     const userId = session.user.id
+    const supabase = await createClient()
 
-    // Get all follows for this user
-    const followList = await db.select()
-        .from(follows)
-        .where(eq(follows.followerId, userId))
-        .orderBy(desc(follows.createdAt))
+    const { data: followList } = await (supabase.from('follows') as any)
+        .select('following_id')
+        .eq('follower_id', userId)
+        .order('created_at', { ascending: false })
 
-    if (followList.length === 0) {
+    if (!followList || followList.length === 0) {
         return { data: [] }
     }
 
-    // Fetch user details
-    const followingIds = followList.map(f => f.followingId)
-    const userData = await db.query.users.findMany({
-        where: inArray(users.id, followingIds),
-        columns: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
-            bio: true,
-            createdAt: true
-        }
-    })
+    const followingIds = followList.map((f: any) => f.following_id)
+    const { data: userData } = await (supabase.from('profiles') as any)
+        .select('id, name, email, image, bio, created_at')
+        .in('id', followingIds)
 
-    return { data: userData }
+    return { data: userData || [] }
 }

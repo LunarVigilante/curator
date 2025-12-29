@@ -3,9 +3,8 @@
 // Auth is handled by Supabase auth.users - this schema is for business logic only
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  // URL is configured in prisma.config.ts for Prisma 7.x
 }
 
 generator client {

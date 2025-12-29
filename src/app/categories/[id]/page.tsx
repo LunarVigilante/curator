@@ -7,8 +7,7 @@ import { getChallengeStatus } from '@/lib/actions/challenges'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import CategoryView from './CategoryView'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { getSession } from '@/lib/auth'
 
 export default async function CategoryPage(props: { params: Promise<{ id: string }> }) {
     const params = await props.params
@@ -32,18 +31,18 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
     }
 
     // Check if current user is owner OR is admin
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     const userId = session?.user?.id
-    const userRole = (session?.user as any)?.role
+    const userRole = session?.profile?.role
 
     // Separate ownership and admin status for explicit permission handling
-    const isOwner = userId === category.userId
-    const isAdmin = userRole === 'ADMIN' || userRole === 'admin'
+    const isOwner = userId === (category as any).user_id
+    const isAdmin = userRole === 'ADMIN'
 
     // Fetch Category Owner for Share Card
     let categoryOwner = null;
-    if (category.userId) {
-        const owner = await getUserById(category.userId);
+    if ((category as any).user_id) {
+        const owner = await getUserById((category as any).user_id);
         if (owner) {
             categoryOwner = { id: owner.id, name: owner.name, image: owner.image };
         }
@@ -60,11 +59,11 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
     return (
         <>
             {/* Blended Overlay Layer (Local to Category) */}
-            {category.image && (
+            {(category as any).image && (
                 <div
                     className="fixed inset-0 z-[1] bg-cover bg-center opacity-40 mix-blend-overlay pointer-events-none transition-all duration-1000"
                     style={{
-                        backgroundImage: `url(${category.image})`,
+                        backgroundImage: `url(${(category as any).image})`,
                         maskImage: 'linear-gradient(to bottom, black 0%, transparent 90%)',
                         WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 90%)'
                     }}
@@ -87,5 +86,3 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
         </>
     )
 }
-
-

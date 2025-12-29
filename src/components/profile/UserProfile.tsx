@@ -1,7 +1,6 @@
 import { getUserById } from "@/lib/actions/users";
 import { calculateTasteMatch } from "@/lib/matchmaking";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getSession } from "@/lib/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TasteMatchBadge } from "./TasteMatchBadge";
 import { Calendar } from "lucide-react";
@@ -17,9 +16,7 @@ export async function UserProfile({ userId }: UserProfileProps) {
         return <div>User not found</div>;
     }
 
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    const session = await getSession();
 
     const isOwnProfile = session?.user?.id === userId;
     let matchScore: number | null = null;

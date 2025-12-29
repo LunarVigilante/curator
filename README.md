@@ -17,9 +17,9 @@
 
 | Layer | Technology |
 |-------|------------|
-| **Frontend** | Next.js 15, React, TypeScript, Tailwind CSS |
-| **Database** | Supabase (PostgreSQL) + Prisma ORM |
-| **Auth** | Supabase Native Auth (Email, OAuth, MFA, Passkeys) |
+| **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS |
+| **Database** | Supabase (PostgreSQL) |
+| **Auth** | Supabase Auth (Email, OAuth) |
 | **AI** | Anannas (LLM Gateway) |
 | **Analytics** | PostHog |
 | **APIs** | TMDB, AniList, Spotify, RAWG, BoardGameGeek, Google Books, ComicVine, iTunes |
@@ -36,9 +36,6 @@ npm install
 cp .env.example .env
 # Edit .env with your Supabase credentials and API keys
 
-# Run database migration
-npx prisma migrate dev
-
 # Start development server
 npm run dev
 ```
@@ -51,8 +48,7 @@ Required in `.env`:
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
-DATABASE_URL=postgres://...pooler:6543/postgres?pgbouncer=true
-DIRECT_URL=postgres://...pooler:5432/postgres
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # AI & Analytics
 ANANNAS_API_KEY=your-key
@@ -61,18 +57,16 @@ POSTHOG_KEY=your-key
 
 ## Supabase Setup
 
-After running Prisma migrations, execute the SQL in `supabase/auth_sync_and_rls.sql` to:
-1. Create auth sync triggers (auto-creates profile on signup)
-2. Enable Row Level Security policies
+1. Create a new Supabase project
+2. Execute the SQL in `supabase/schema.sql` to create all tables
+3. Configure auth providers in the Supabase dashboard
 
 ## Project Structure
 
 ```
 curator/
-├── prisma/                 # Database schema
-│   └── schema.prisma
-├── supabase/               # Supabase SQL scripts
-│   └── auth_sync_and_rls.sql
+├── supabase/               # Supabase SQL schema
+│   └── schema.sql
 ├── src/
 │   ├── app/                # Next.js App Router
 │   ├── components/         # React components
@@ -80,15 +74,12 @@ curator/
 │   │   ├── actions/        # Server actions
 │   │   ├── services/       # Business logic
 │   │   │   └── media/      # API strategies (TMDB, Spotify, etc.)
+│   │   ├── supabase/       # Supabase client configuration
 │   │   └── metadata/       # Vector text generator
 │   └── hooks/              # React hooks
 ├── scripts/                # Seed scripts
 └── docs/                   # Documentation
 ```
-
-## Documentation
-
-- [Supabase Auth Migration Guide](docs/SUPABASE_AUTH_MIGRATION.md)
 
 ## License
 

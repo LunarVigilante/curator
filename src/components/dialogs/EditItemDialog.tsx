@@ -68,7 +68,7 @@ export default function EditItemDialog({
     // Fetch all categories
     useEffect(() => {
         if (open) {
-            getCategories().then(cats => {
+            getCategories().then((cats: any[]) => {
                 setCategories(cats.map(c => ({
                     id: c.id,
                     name: c.name,
@@ -271,7 +271,8 @@ export default function EditItemDialog({
                                                                 const tagPromises = data.tags.map((tagName: string) =>
                                                                     createTag(tagName).catch(() => null)
                                                                 )
-                                                                const createdTags = await Promise.all(tagPromises)
+                                                                // Explicitly define the type for Promise.all result to avoid 'null' inference
+                                                                const createdTags: ({ id: string, name: string } | null)[] = await Promise.all(tagPromises)
                                                                 const validTags = createdTags.filter((t): t is { id: string, name: string } => t !== null)
                                                                 setFormData(prev => ({
                                                                     ...prev,

@@ -1,10 +1,7 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { categories, items, globalItems, users } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserId } from '@/lib/auth'
 import {
     CALIBRATION_QUESTIONS,
     STARTER_TEMPLATES,
@@ -16,25 +13,12 @@ import {
 } from '@/lib/types/onboarding'
 
 // ============================================================================
-// AUTH HELPER
-// ============================================================================
-
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
-
-// ============================================================================
 // TEMPLATE SELECTION
 // ============================================================================
 
-/**
- * Select the best starter templates based on calibration answers
- */
 export async function selectStarterTemplates(
     answers: CalibrationAnswer[]
 ): Promise<StarterTemplate[]> {
-    // Build score map
     const templateScores = new Map<string, number>()
 
     for (const answer of answers) {
@@ -51,12 +35,10 @@ export async function selectStarterTemplates(
         }
     }
 
-    // Sort by score and get top 2
     const sorted = [...templateScores.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 2)
 
-    // Return matched templates
     return sorted
         .map(([id]) => STARTER_TEMPLATES.find(t => t.id === id))
         .filter((t): t is StarterTemplate => t !== undefined)
@@ -66,9 +48,6 @@ export async function selectStarterTemplates(
 // APPLY STARTER TEMPLATE
 // ============================================================================
 
-/**
- * Apply a starter template to create a pre-populated collection
- */
 export async function applyStarterTemplate(
     template: StarterTemplate
 ): Promise<{ success: boolean; categoryId?: string; error?: string }> {
@@ -77,64 +56,67 @@ export async function applyStarterTemplate(
         return { success: false, error: 'Not authenticated' }
     }
 
+    const supabase = await createClient()
+
     try {
-        return await db.transaction(async (tx) => {
-            // 1. Create the category
-            const [category] = await tx.insert(categories)
-                .values({
-                    name: template.name,
-                    description: template.description,
-                    emoji: template.emoji,
-                    color: template.color,
-                    userId,
-                    isPublic: false,
-                    sortOrder: 0
-                })
-                .returning()
+        // 1. Create the category
+        const { data: category, error: categoryError } = await (supabase.from('categories') as any)
+            .insert({
+                name: template.name,
+                description: template.description,
+                emoji: template.emoji,
+                color: template.color,
+                user_id: userId,
+                is_public: false,
+                sort_order: 0
+            })
+            .select()
+            .single()
 
-            // 2. Create items from template
-            for (let i = 0; i < template.items.length; i++) {
-                const templateItem = template.items[i]
+        if (categoryError) throw categoryError
 
-                // Upsert global item if externalId provided
-                let globalItemId: string | null = null
-                if (templateItem.externalId) {
-                    const existing = await tx.query.globalItems.findFirst({
-                        where: eq(globalItems.externalId, templateItem.externalId)
-                    })
+        // 2. Create items from template
+        for (let i = 0; i < template.items.length; i++) {
+            const templateItem = template.items[i]
 
-                    if (existing) {
-                        globalItemId = existing.id
-                    } else {
-                        const [newGlobal] = await tx.insert(globalItems)
-                            .values({
-                                title: templateItem.name,
-                                description: templateItem.description,
-                                imageUrl: templateItem.imageUrl,
-                                releaseYear: templateItem.releaseYear,
-                                externalId: templateItem.externalId
-                            })
-                            .returning()
-                        globalItemId = newGlobal.id
-                    }
+            let globalItemId: string | null = null
+            if (templateItem.externalId) {
+                const { data: existing } = await (supabase.from('global_items') as any)
+                    .select('id')
+                    .eq('external_id', templateItem.externalId)
+                    .single()
+
+                if (existing) {
+                    globalItemId = existing.id
+                } else {
+                    const { data: newGlobal } = await (supabase.from('global_items') as any)
+                        .insert({
+                            title: templateItem.name,
+                            description: templateItem.description,
+                            image_url: templateItem.imageUrl,
+                            release_year: templateItem.releaseYear,
+                            external_id: templateItem.externalId
+                        })
+                        .select()
+                        .single()
+                    globalItemId = newGlobal?.id || null
                 }
-
-                // Create user item
-                await tx.insert(items).values({
-                    userId,
-                    categoryId: category.id,
-                    globalItemId,
-                    name: templateItem.name,
-                    description: templateItem.description,
-                    image: templateItem.imageUrl,
-                    tier: templateItem.defaultTier,
-                    eloScore: 1200,
-                    rank: i
-                })
             }
 
-            return { success: true, categoryId: category.id }
-        })
+            await (supabase.from('items') as any).insert({
+                user_id: userId,
+                category_id: category.id,
+                global_item_id: globalItemId,
+                name: templateItem.name,
+                description: templateItem.description,
+                image: templateItem.imageUrl,
+                tier: templateItem.defaultTier,
+                elo_score: 1200,
+                rank: i
+            })
+        }
+
+        return { success: true, categoryId: category.id }
     } catch (error) {
         console.error('Failed to apply starter template:', error)
         return { success: false, error: 'Failed to create collection' }
@@ -145,9 +127,6 @@ export async function applyStarterTemplate(
 // BINARY RATER VOTE
 // ============================================================================
 
-/**
- * Process a binary vote - creates collection and adds both items in one transaction
- */
 export async function processBinaryVote(
     payload: BinaryRaterVotePayload
 ): Promise<BinaryRaterResult> {
@@ -156,94 +135,106 @@ export async function processBinaryVote(
         throw new Error('Not authenticated')
     }
 
-    return await db.transaction(async (tx) => {
-        // 1. Create or find category
-        let category = await tx.query.categories.findFirst({
-            where: and(
-                eq(categories.userId, userId),
-                eq(categories.name, payload.theme)
-            )
+    const supabase = await createClient()
+
+    // 1. Create or find category
+    const { data: existingCategory } = await (supabase.from('categories') as any)
+        .select('*')
+        .eq('user_id', userId)
+        .eq('name', payload.theme)
+        .single()
+
+    let category = existingCategory
+
+    if (!category) {
+        const { data: newCategory, error } = await (supabase.from('categories') as any)
+            .insert({
+                name: payload.theme,
+                user_id: userId,
+                description: `Your ${payload.theme} ranking`,
+                is_public: false,
+                sort_order: 0
+            })
+            .select()
+            .single()
+        if (error) throw error
+        category = newCategory
+    }
+
+    // 2. Create or find GlobalItems
+    const globalA = await upsertGlobalItem(supabase, payload.optionA)
+    const globalB = await upsertGlobalItem(supabase, payload.optionB)
+
+    // 3. Create user items with initial ELO scores
+    const WINNER_ELO = 1300
+    const LOSER_ELO = 1100
+
+    const isAWinner = payload.winnerId === 'A'
+
+    const { data: winnerItem, error: winnerError } = await (supabase.from('items') as any)
+        .insert({
+            user_id: userId,
+            category_id: category.id,
+            global_item_id: isAWinner ? globalA.id : globalB.id,
+            name: isAWinner ? payload.optionA.name : payload.optionB.name,
+            image: isAWinner ? payload.optionA.imageUrl : payload.optionB.imageUrl,
+            description: isAWinner ? payload.optionA.description : payload.optionB.description,
+            elo_score: WINNER_ELO,
+            tier: 'A',
+            rank: 0
         })
+        .select()
+        .single()
 
-        if (!category) {
-            const [newCategory] = await tx.insert(categories)
-                .values({
-                    name: payload.theme,
-                    userId,
-                    description: `Your ${payload.theme} ranking`,
-                    isPublic: false,
-                    sortOrder: 0
-                })
-                .returning()
-            category = newCategory
-        }
+    if (winnerError) throw winnerError
 
-        // 2. Create or find GlobalItems
-        const globalA = await upsertGlobalItem(tx, payload.optionA)
-        const globalB = await upsertGlobalItem(tx, payload.optionB)
+    const { data: loserItem, error: loserError } = await (supabase.from('items') as any)
+        .insert({
+            user_id: userId,
+            category_id: category.id,
+            global_item_id: isAWinner ? globalB.id : globalA.id,
+            name: isAWinner ? payload.optionB.name : payload.optionA.name,
+            image: isAWinner ? payload.optionB.imageUrl : payload.optionA.imageUrl,
+            description: isAWinner ? payload.optionB.description : payload.optionA.description,
+            elo_score: LOSER_ELO,
+            tier: 'B',
+            rank: 1
+        })
+        .select()
+        .single()
 
-        // 3. Create user items with initial ELO scores
-        const WINNER_ELO = 1300
-        const LOSER_ELO = 1100
+    if (loserError) throw loserError
 
-        const isAWinner = payload.winnerId === 'A'
-
-        const [winnerItem] = await tx.insert(items)
-            .values({
-                userId,
-                categoryId: category.id,
-                globalItemId: isAWinner ? globalA.id : globalB.id,
-                name: isAWinner ? payload.optionA.name : payload.optionB.name,
-                image: isAWinner ? payload.optionA.imageUrl : payload.optionB.imageUrl,
-                description: isAWinner ? payload.optionA.description : payload.optionB.description,
-                eloScore: WINNER_ELO,
-                tier: 'A',
-                rank: 0
-            })
-            .returning()
-
-        const [loserItem] = await tx.insert(items)
-            .values({
-                userId,
-                categoryId: category.id,
-                globalItemId: isAWinner ? globalB.id : globalA.id,
-                name: isAWinner ? payload.optionB.name : payload.optionA.name,
-                image: isAWinner ? payload.optionB.imageUrl : payload.optionA.imageUrl,
-                description: isAWinner ? payload.optionB.description : payload.optionA.description,
-                eloScore: LOSER_ELO,
-                tier: 'B',
-                rank: 1
-            })
-            .returning()
-
-        return {
-            success: true,
-            categoryId: category.id,
-            winnerItemId: winnerItem.id,
-            loserItemId: loserItem.id
-        }
-    })
+    return {
+        success: true,
+        categoryId: category.id,
+        winnerItemId: winnerItem.id,
+        loserItemId: loserItem.id
+    }
 }
 
 // Helper: Upsert global item
-async function upsertGlobalItem(tx: any, item: BinaryRaterItem) {
+async function upsertGlobalItem(supabase: any, item: BinaryRaterItem) {
     if (item.externalId) {
-        const existing = await tx.query.globalItems.findFirst({
-            where: eq(globalItems.externalId, item.externalId)
-        })
+        const { data: existing } = await (supabase.from('global_items') as any)
+            .select('*')
+            .eq('external_id', item.externalId)
+            .single()
         if (existing) return existing
     }
 
-    const [newGlobal] = await tx.insert(globalItems)
-        .values({
+    const { data: newGlobal, error } = await (supabase.from('global_items') as any)
+        .insert({
             title: item.name,
             description: item.description,
-            imageUrl: item.imageUrl,
-            releaseYear: item.releaseYear,
-            externalId: item.externalId
+            image_url: item.imageUrl,
+            release_year: item.releaseYear,
+            external_id: item.externalId
         })
-        .returning()
+        .select()
+        .single()
 
+    if (error) throw error
     return newGlobal
 }
 
@@ -251,9 +242,6 @@ async function upsertGlobalItem(tx: any, item: BinaryRaterItem) {
 // ONBOARDING STATE MANAGEMENT
 // ============================================================================
 
-/**
- * Save calibration answers and mark calibration complete
- */
 export async function saveCalibrationAnswers(
     answers: CalibrationAnswer[]
 ): Promise<{ success: boolean; templates: StarterTemplate[] }> {
@@ -262,10 +250,8 @@ export async function saveCalibrationAnswers(
         return { success: false, templates: [] }
     }
 
-    // Get matching templates
     const templates = await selectStarterTemplates(answers)
 
-    // Apply each template
     for (const template of templates) {
         await applyStarterTemplate(template)
     }
@@ -273,9 +259,6 @@ export async function saveCalibrationAnswers(
     return { success: true, templates }
 }
 
-/**
- * Check if user has completed onboarding
- */
 export async function checkOnboardingStatus(): Promise<{
     isComplete: boolean
     hasCollections: boolean
@@ -285,13 +268,14 @@ export async function checkOnboardingStatus(): Promise<{
         return { isComplete: false, hasCollections: false }
     }
 
-    // Check if user has any collections
-    const userCategories = await db.query.categories.findMany({
-        where: eq(categories.userId, userId),
-        limit: 1
-    })
+    const supabase = await createClient()
 
-    const hasCollections = userCategories.length > 0
+    const { data: userCategories } = await (supabase.from('categories') as any)
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1)
+
+    const hasCollections = (userCategories?.length || 0) > 0
 
     return {
         isComplete: hasCollections,
@@ -299,16 +283,11 @@ export async function checkOnboardingStatus(): Promise<{
     }
 }
 
-/**
- * Mark onboarding as complete
- */
 export async function completeOnboarding(): Promise<{ success: boolean }> {
     const userId = await getCurrentUserId()
     if (!userId) {
         return { success: false }
     }
 
-    // Could update a user flag here if needed
-    // For now, we consider onboarding complete if they have at least one collection
     return { success: true }
 }

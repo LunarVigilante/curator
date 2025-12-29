@@ -1,20 +1,8 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { shareCards, categories, items, globalItems, users } from '@/db/schema'
-import { eq, desc, and, sql } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserId } from '@/lib/auth'
 import { nanoid } from 'nanoid'
-
-// ============================================================================
-// Auth Helper
-// ============================================================================
-
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
 
 // ============================================================================
 // Share Card Types
@@ -65,56 +53,60 @@ export async function generateShareCard(
         return { success: false, error: 'Not authenticated' }
     }
 
-    // Verify category ownership
-    const category = await db.query.categories.findFirst({
-        where: eq(categories.id, categoryId),
-        columns: {
-            id: true,
-            name: true,
-            emoji: true,
-            color: true,
-            userId: true,
-        }
-    })
+    const supabase = await createClient()
 
-    if (!category) {
+    // Verify category ownership
+    const { data: category, error: categoryError } = await (supabase.from('categories') as any)
+        .select('id, name, emoji, color, user_id')
+        .eq('id', categoryId)
+        .single()
+
+    if (categoryError || !category) {
         return { success: false, error: 'Collection not found' }
     }
 
-    if (category.userId !== userId) {
+    if (category.user_id !== userId) {
         return { success: false, error: 'Only the collection owner can create share cards' }
     }
 
     // Check for existing share card with same template
-    const existing = await db.query.shareCards.findFirst({
-        where: and(
-            eq(shareCards.categoryId, categoryId),
-            eq(shareCards.template, template)
-        )
-    })
+    const { data: existing } = await (supabase.from('share_cards') as any)
+        .select('*')
+        .eq('category_id', categoryId)
+        .eq('template', template)
+        .single()
 
     // Get curator info
-    const curator = await db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { id: true, name: true, displayName: true, image: true }
-    })
+    const { data: curator } = await (supabase.from('profiles') as any)
+        .select('id, name, display_name, image')
+        .eq('id', userId)
+        .single()
 
     // Get top 3 items (S tier or highest ELO)
-    const topItems = await db
-        .select({
-            id: items.id,
-            name: sql<string>`COALESCE(${globalItems.title}, ${items.name})`,
-            image: sql<string | null>`COALESCE(${globalItems.imageUrl}, ${items.image})`,
-            tier: items.tier,
+    // Note: This uses a simpler approach since Supabase doesn't support complex SQL in select
+    const { data: topItemsRaw } = await (supabase.from('items') as any)
+        .select('id, name, image, tier, elo_score, global_item:global_items(title, image_url)')
+        .eq('category_id', categoryId)
+        .order('elo_score', { ascending: false })
+        .limit(10) // Get more and filter client-side for tier priority
+
+    // Sort by tier priority (S > A > others) then ELO
+    const tierPriority: Record<string, number> = { 'S': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'F': 5 }
+    const sortedItems = (topItemsRaw || [])
+        .sort((a: any, b: any) => {
+            const aPriority = tierPriority[a.tier || ''] ?? 99
+            const bPriority = tierPriority[b.tier || ''] ?? 99
+            if (aPriority !== bPriority) return aPriority - bPriority
+            return (b.elo_score || 0) - (a.elo_score || 0)
         })
-        .from(items)
-        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
-        .where(eq(items.categoryId, categoryId))
-        .orderBy(
-            sql`CASE WHEN ${items.tier} = 'S' THEN 0 WHEN ${items.tier} = 'A' THEN 1 ELSE 2 END`,
-            desc(items.eloScore)
-        )
-        .limit(3)
+        .slice(0, 3)
+
+    const topItems = sortedItems.map((item: any) => ({
+        id: item.id,
+        name: (item.global_item as any)?.title || item.name || 'Untitled',
+        image: (item.global_item as any)?.image_url || item.image,
+        tier: item.tier,
+    }))
 
     if (existing) {
         // Return existing share card with fresh data
@@ -122,11 +114,11 @@ export async function generateShareCard(
             success: true,
             shareCard: {
                 id: existing.id,
-                shareHash: existing.shareHash,
+                shareHash: existing.share_hash,
                 template: existing.template,
-                imageUrl: existing.imageUrl,
-                viewCount: existing.viewCount,
-                createdAt: existing.createdAt,
+                imageUrl: existing.image_url,
+                viewCount: existing.view_count,
+                createdAt: new Date(existing.created_at),
                 category: {
                     id: category.id,
                     name: category.name,
@@ -136,15 +128,10 @@ export async function generateShareCard(
                 curator: {
                     id: curator!.id,
                     name: curator!.name,
-                    displayName: curator!.displayName,
+                    displayName: curator!.display_name,
                     image: curator!.image,
                 },
-                topItems: topItems.map(item => ({
-                    id: item.id,
-                    name: item.name || 'Untitled',
-                    image: item.image,
-                    tier: item.tier,
-                })),
+                topItems,
             }
         }
     }
@@ -153,31 +140,34 @@ export async function generateShareCard(
     try {
         const shareHash = nanoid(10) // Short unique ID for URL
         const metadata = JSON.stringify({
-            top3ItemIds: topItems.map(i => i.id),
+            top3ItemIds: topItems.map((i: any) => i.id),
             title: category.name,
-            curatorName: curator?.displayName || curator?.name,
+            curatorName: curator?.display_name || curator?.name,
             generatedAt: new Date().toISOString(),
         })
 
-        const [newCard] = await db.insert(shareCards)
-            .values({
-                categoryId,
-                userId,
-                shareHash,
+        const { data: newCard, error: insertError } = await (supabase.from('share_cards') as any)
+            .insert({
+                category_id: categoryId,
+                user_id: userId,
+                share_hash: shareHash,
                 template,
                 metadata,
             })
-            .returning()
+            .select()
+            .single()
+
+        if (insertError || !newCard) throw insertError
 
         return {
             success: true,
             shareCard: {
                 id: newCard.id,
-                shareHash: newCard.shareHash,
+                shareHash: newCard.share_hash,
                 template: newCard.template,
-                imageUrl: newCard.imageUrl,
-                viewCount: newCard.viewCount,
-                createdAt: newCard.createdAt,
+                imageUrl: newCard.image_url,
+                viewCount: newCard.view_count,
+                createdAt: new Date(newCard.created_at),
                 category: {
                     id: category.id,
                     name: category.name,
@@ -187,15 +177,10 @@ export async function generateShareCard(
                 curator: {
                     id: curator!.id,
                     name: curator!.name,
-                    displayName: curator!.displayName,
+                    displayName: curator!.display_name,
                     image: curator!.image,
                 },
-                topItems: topItems.map(item => ({
-                    id: item.id,
-                    name: item.name || 'Untitled',
-                    image: item.image,
-                    tier: item.tier,
-                })),
+                topItems,
             }
         }
     } catch (error) {
@@ -208,57 +193,67 @@ export async function generateShareCard(
  * Get share card by hash (public, no auth required)
  */
 export async function getShareCardByHash(shareHash: string): Promise<ShareCardData | null> {
-    const card = await db.query.shareCards.findFirst({
-        where: eq(shareCards.shareHash, shareHash)
-    })
+    const supabase = await createClient()
 
-    if (!card) return null
+    const { data: card, error } = await (supabase.from('share_cards') as any)
+        .select('*')
+        .eq('share_hash', shareHash)
+        .single()
+
+    if (error || !card) return null
 
     // Increment view count
-    await db.update(shareCards)
-        .set({ viewCount: sql`${shareCards.viewCount} + 1` })
-        .where(eq(shareCards.id, card.id))
+    await (supabase.from('share_cards') as any)
+        .update({ view_count: card.view_count + 1 })
+        .eq('id', card.id)
 
     // Get category
-    const category = await db.query.categories.findFirst({
-        where: eq(categories.id, card.categoryId),
-        columns: { id: true, name: true, emoji: true, color: true }
-    })
+    const { data: category } = await (supabase.from('categories') as any)
+        .select('id, name, emoji, color')
+        .eq('id', card.category_id)
+        .single()
 
     if (!category) return null
 
     // Get curator
-    const curator = await db.query.users.findFirst({
-        where: eq(users.id, card.userId),
-        columns: { id: true, name: true, displayName: true, image: true }
-    })
+    const { data: curator } = await (supabase.from('profiles') as any)
+        .select('id, name, display_name, image')
+        .eq('id', card.user_id)
+        .single()
 
     if (!curator) return null
 
     // Get top items
-    const topItems = await db
-        .select({
-            id: items.id,
-            name: sql<string>`COALESCE(${globalItems.title}, ${items.name})`,
-            image: sql<string | null>`COALESCE(${globalItems.imageUrl}, ${items.image})`,
-            tier: items.tier,
+    const { data: topItemsRaw } = await (supabase.from('items') as any)
+        .select('id, name, image, tier, elo_score, global_item:global_items(title, image_url)')
+        .eq('category_id', card.category_id)
+        .order('elo_score', { ascending: false })
+        .limit(10)
+
+    const tierPriority: Record<string, number> = { 'S': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'F': 5 }
+    const sortedItems = (topItemsRaw || [])
+        .sort((a: any, b: any) => {
+            const aPriority = tierPriority[a.tier || ''] ?? 99
+            const bPriority = tierPriority[b.tier || ''] ?? 99
+            if (aPriority !== bPriority) return aPriority - bPriority
+            return (b.elo_score || 0) - (a.elo_score || 0)
         })
-        .from(items)
-        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
-        .where(eq(items.categoryId, card.categoryId))
-        .orderBy(
-            sql`CASE WHEN ${items.tier} = 'S' THEN 0 WHEN ${items.tier} = 'A' THEN 1 ELSE 2 END`,
-            desc(items.eloScore)
-        )
-        .limit(3)
+        .slice(0, 3)
+
+    const topItems = sortedItems.map((item: any) => ({
+        id: item.id,
+        name: (item.global_item as any)?.title || item.name || 'Untitled',
+        image: (item.global_item as any)?.image_url || item.image,
+        tier: item.tier,
+    }))
 
     return {
         id: card.id,
-        shareHash: card.shareHash,
+        shareHash: card.share_hash,
         template: card.template,
-        imageUrl: card.imageUrl,
-        viewCount: card.viewCount + 1,
-        createdAt: card.createdAt,
+        imageUrl: card.image_url,
+        viewCount: card.view_count + 1,
+        createdAt: new Date(card.created_at),
         category: {
             id: category.id,
             name: category.name,
@@ -268,15 +263,10 @@ export async function getShareCardByHash(shareHash: string): Promise<ShareCardDa
         curator: {
             id: curator.id,
             name: curator.name,
-            displayName: curator.displayName,
+            displayName: curator.display_name,
             image: curator.image,
         },
-        topItems: topItems.map(item => ({
-            id: item.id,
-            name: item.name || 'Untitled',
-            image: item.image,
-            tier: item.tier,
-        })),
+        topItems,
     }
 }
 
@@ -289,17 +279,19 @@ export async function deleteShareCard(shareHash: string): Promise<{ success: boo
         return { success: false, error: 'Not authenticated' }
     }
 
-    const card = await db.query.shareCards.findFirst({
-        where: eq(shareCards.shareHash, shareHash),
-        columns: { id: true, userId: true }
-    })
+    const supabase = await createClient()
 
-    if (!card || card.userId !== userId) {
+    const { data: card } = await (supabase.from('share_cards') as any)
+        .select('id, user_id')
+        .eq('share_hash', shareHash)
+        .single()
+
+    if (!card || card.user_id !== userId) {
         return { success: false, error: 'Share card not found or not authorized' }
     }
 
     try {
-        await db.delete(shareCards).where(eq(shareCards.id, card.id))
+        await (supabase.from('share_cards') as any).delete().eq('id', card.id)
         return { success: true }
     } catch (error) {
         console.error('Failed to delete share card:', error)

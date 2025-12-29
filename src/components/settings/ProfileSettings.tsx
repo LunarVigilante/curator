@@ -24,14 +24,8 @@ export default function ProfileSettings() {
     // Fetch sessions on mount
     useEffect(() => {
         const fetchSessions = async () => {
-            try {
-                const result = await authClient.listSessions();
-                if (result.data) {
-                    setSessions(result.data);
-                }
-            } catch (err) {
-                console.error('Failed to fetch sessions:', err);
-            }
+            // Mock for Supabase migration
+            setSessions([{ id: 'current', isCurrent: true, userAgent: navigator.userAgent, updatedAt: new Date().toISOString() }]);
         };
         fetchSessions();
 
@@ -93,14 +87,7 @@ export default function ProfileSettings() {
     };
 
     const handleRevokeSession = async (token: string) => {
-        try {
-            await authClient.revokeSession({ token });
-            setSessions(prev => prev.filter(s => s.token !== token));
-            toast.success('Session revoked');
-        } catch (err) {
-            console.error('Failed to revoke session:', err);
-            toast.error('Failed to revoke session');
-        }
+        toast.error("Session management is currently managed by Supabase");
     };
 
     return (

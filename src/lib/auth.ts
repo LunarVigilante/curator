@@ -1,78 +1,79 @@
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "@/lib/db";
-import * as schema from "@/db/schema";
-import { seedDefaultCategories } from "./actions/categories";
-import { sendPasswordResetEmail, sendVerificationEmail } from './emailAdapter';
-import { hash, compare } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+/**
+ * Supabase Auth Helper
+ * 
+ * This module provides authentication helpers for Supabase Auth.
+ * It replaces the previous BetterAuth implementation.
+ */
 
-export const auth = betterAuth({
-    database: drizzleAdapter(db, {
-        provider: "sqlite",
-        schema: {
-            ...schema,
-            user: schema.users,
-            session: schema.sessions,
-            account: schema.accounts,
-            verification: schema.verifications
-        }
-    }),
-    databaseHooks: {
-        user: {
-            create: {
-                after: async (user) => {
-                    await seedDefaultCategories(user.id);
-                }
-            }
-        },
-        session: {
-            create: {
-                before: async (session) => {
-                    // Check if user is locked out
-                    const user = await db.query.users.findFirst({
-                        where: eq(schema.users.id, session.userId)
-                    });
-                    if (user?.isLockedOut) {
-                        throw new Error('This account has been locked. Please contact an administrator.');
-                    }
-                    // Return undefined to proceed normally
-                    return;
-                }
-            }
-        }
-    },
-    emailAndPassword: {
-        enabled: true,
-        // Use bcrypt for password hashing (compatible with seed script)
-        password: {
-            hash: async (password: string) => {
-                return await hash(password, 10);
-            },
-            verify: async ({ password, hash: storedHash }) => {
-                return await compare(password, storedHash);
-            }
-        },
-        // Injected email adapter - no direct SystemConfigService dependency
-        sendResetPassword: sendPasswordResetEmail,
-    },
-    emailVerification: {
-        enabled: true,
-        autoSignInAfterVerification: true,
-        sendOnSignUp: true,
-        // Injected email adapter - no direct SystemConfigService dependency
-        sendVerificationEmail: sendVerificationEmail,
-    },
-    user: {
-        additionalFields: {
-            role: {
-                type: "string",
-                defaultValue: "USER"
-            },
-            requiredPasswordChange: {
-                type: "boolean",
-                defaultValue: false
-            }
-        }
+import { createClient } from '@/lib/supabase/server'
+import type { User } from '@supabase/supabase-js'
+import type { Profile } from '@/lib/types/database'
+
+export interface AuthSession {
+    user: User
+    profile: Profile | null
+}
+
+/**
+ * Get the current authenticated user and their profile
+ * Use this in Server Components and Server Actions
+ */
+export async function getSession(): Promise<AuthSession | null> {
+    const supabase = await createClient()
+
+    const { data: { user }, error } = await supabase.auth.getUser()
+
+    if (error || !user) {
+        return null
     }
-});
+
+    // Fetch the user's profile
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+
+    return {
+        user,
+        profile: profile as Profile | null
+    }
+}
+
+/**
+ * Get the current user ID (shorthand)
+ */
+export async function getCurrentUserId(): Promise<string | null> {
+    const session = await getSession()
+    return session?.user?.id ?? null
+}
+
+/**
+ * Check if current user is an admin
+ */
+export async function isAdmin(): Promise<boolean> {
+    const session = await getSession()
+    return session?.profile?.role === 'ADMIN'
+}
+
+/**
+ * Require authentication - throws if not authenticated
+ */
+export async function requireAuth(): Promise<AuthSession> {
+    const session = await getSession()
+    if (!session) {
+        throw new Error('Authentication required')
+    }
+    return session
+}
+
+/**
+ * Require admin role - throws if not admin
+ */
+export async function requireAdmin(): Promise<AuthSession> {
+    const session = await requireAuth()
+    if (session.profile?.role !== 'ADMIN') {
+        throw new Error('Admin access required')
+    }
+    return session
+}

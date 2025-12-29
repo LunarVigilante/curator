@@ -255,7 +255,7 @@ export function RegisteredUsersTable() {
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-zinc-400 text-sm">
-                                                {formatDate(user.createdAt)}
+                                                {formatDate(new Date(user.createdAt))}
                                             </TableCell>
                                             <TableCell>
                                                 <DropdownMenu>

@@ -1,8 +1,6 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { users, accounts } from '@/db/schema'
-import { count, eq } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 import { hash } from 'bcryptjs'
 import { seedDefaultCategories } from './categories'
 
@@ -10,8 +8,14 @@ import { seedDefaultCategories } from './categories'
  * Check if the application needs initial setup (no users exist).
  */
 export async function isSetupRequired(): Promise<boolean> {
-    const result = await db.select({ count: count() }).from(users)
-    return result[0].count === 0
+    const supabase = await createClient()
+
+    const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+
+    if (error) return true
+    return count === 0
 }
 
 /**
@@ -41,28 +45,37 @@ export async function completeSetup(
         return { error: 'Setup has already been completed' }
     }
 
+    const supabase = await createClient()
+
     try {
-        // Hash password
-        const hashedPassword = await hash(password, 10)
-
-        // Create admin user
-        const [newUser] = await db.insert(users).values({
+        // Create admin user via Supabase Auth
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({
             email,
-            name,
-            role: 'admin',
-            emailVerified: true, // Admin doesn't need email verification
-        }).returning()
-
-        // Create account for password login
-        await db.insert(accounts).values({
-            accountId: newUser.id,
-            userId: newUser.id,
-            providerId: 'credential',
-            password: hashedPassword,
+            password,
+            options: {
+                data: {
+                    name,
+                    role: 'ADMIN',
+                },
+            },
         })
 
+        if (signUpError || !authData.user) {
+            return { error: signUpError?.message || 'Failed to create user' }
+        }
+
+        // Update the profile to be admin (the trigger should create it, but let's ensure)
+        await supabase
+            .from('profiles')
+            .update({
+                name,
+                role: 'ADMIN',
+                email_verified: true,
+            })
+            .eq('id', authData.user.id)
+
         // Seed default categories for admin
-        await seedDefaultCategories(newUser.id)
+        await seedDefaultCategories(authData.user.id)
 
         return { success: true }
     } catch (error: any) {

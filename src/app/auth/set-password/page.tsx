@@ -30,14 +30,12 @@ export default function SetPasswordPage() {
         try {
             const result = await setPasswordAction(password);
 
-            if (!result.success) {
-                toast.error(result.error || "Failed to set password");
-            } else {
+            if (result.success) {
                 toast.success("Password set successfully!");
                 router.push('/');
             }
-        } catch (err) {
-            toast.error("Something went wrong");
+        } catch (err: any) {
+            toast.error(err.message || "Failed to set password");
         } finally {
             setIsLoading(false);
         }

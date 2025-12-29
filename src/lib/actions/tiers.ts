@@ -1,27 +1,28 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { items, ratings, users } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import bcrypt from 'bcryptjs'
-import { getGuestUserId } from './auth'
 
 export async function assignItemToTier(itemId: string, tier: string, categoryId: string) {
     console.log(`[assignItemToTier] Item: ${itemId}, Tier: "${tier}"`)
+    const supabase = await createClient()
 
-    await db.update(items)
-        .set({ tier })
-        .where(eq(items.id, itemId))
+    const { error } = await (supabase.from('items') as any)
+        .update({ tier })
+        .eq('id', itemId)
 
+    if (error) throw error
     revalidatePath(`/categories/${categoryId}`)
 }
 
 export async function removeItemTier(itemId: string, categoryId: string) {
-    await db.update(items)
-        .set({ tier: null })
-        .where(eq(items.id, itemId))
+    const supabase = await createClient()
 
+    const { error } = await (supabase.from('items') as any)
+        .update({ tier: null })
+        .eq('id', itemId)
+
+    if (error) throw error
     revalidatePath(`/categories/${categoryId}`)
 }
 

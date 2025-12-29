@@ -1,6 +1,4 @@
-import { db } from '@/lib/db';
-import { items } from '@/db/schema';
-import { eq, and, not, isNotNull, inArray } from 'drizzle-orm';
+import { createClient } from '@/lib/supabase/server';
 
 /**
  * Calculates a "Taste Match" percentage between two users based on their item ratings.
@@ -13,40 +11,31 @@ import { eq, and, not, isNotNull, inArray } from 'drizzle-orm';
  * @returns number (0-100) or null if insufficient data (< 5 shared items).
  */
 export async function calculateTasteMatch(userIdA: string, userIdB: string): Promise<number | null> {
+    const supabase = await createClient();
+
     // 1. Get User A's rated items
-    const userAItems = await db.select({
-        globalItemId: items.globalItemId,
-        eloScore: items.eloScore,
-        name: items.name, // Fallback for matching if globalItemId is missing in some legacy data
-    })
-        .from(items)
-        .where(
-            and(
-                eq(items.userId, userIdA),
-                not(eq(items.eloScore, 1200)), // Ignore default score
-                isNotNull(items.globalItemId) // We need global ID for accurate matching
-            )
-        );
+    const { data: userAItems } = await supabase
+        .from('items')
+        .select('global_item_id, elo_score, name')
+        .eq('user_id', userIdA)
+        .neq('elo_score', 1200) // Ignore default score
+        .not('global_item_id', 'is', null);
 
-    if (userAItems.length === 0) return null;
+    if (!userAItems || userAItems.length === 0) return null;
 
-    const userAGlobalIds = userAItems.map(i => i.globalItemId).filter(Boolean) as string[];
+    const userAGlobalIds = userAItems.map(i => i.global_item_id).filter(Boolean) as string[];
 
     if (userAGlobalIds.length === 0) return null;
 
     // 2. Get User B's rated items that match User A's global IDs
-    const userBItems = await db.select({
-        globalItemId: items.globalItemId,
-        eloScore: items.eloScore,
-    })
-        .from(items)
-        .where(
-            and(
-                eq(items.userId, userIdB),
-                not(eq(items.eloScore, 1200)),
-                inArray(items.globalItemId, userAGlobalIds)
-            )
-        );
+    const { data: userBItems } = await supabase
+        .from('items')
+        .select('global_item_id, elo_score')
+        .eq('user_id', userIdB)
+        .neq('elo_score', 1200)
+        .in('global_item_id', userAGlobalIds);
+
+    if (!userBItems) return null;
 
     // 3. Match them up
     let totalDiff = 0;
@@ -55,15 +44,15 @@ export async function calculateTasteMatch(userIdA: string, userIdB: string): Pro
     // Create a map for User A's scores for O(1) lookup
     const userAScoreMap = new Map<string, number>();
     userAItems.forEach(item => {
-        if (item.globalItemId) userAScoreMap.set(item.globalItemId, item.eloScore);
+        if (item.global_item_id) userAScoreMap.set(item.global_item_id, item.elo_score);
     });
 
     for (const itemB of userBItems) {
-        if (!itemB.globalItemId) continue;
+        if (!itemB.global_item_id) continue;
 
-        const scoreA = userAScoreMap.get(itemB.globalItemId);
+        const scoreA = userAScoreMap.get(itemB.global_item_id);
         if (scoreA !== undefined) {
-            totalDiff += Math.abs(scoreA - itemB.eloScore);
+            totalDiff += Math.abs(scoreA - itemB.elo_score);
             matchCount++;
         }
     }

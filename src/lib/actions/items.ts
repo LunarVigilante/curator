@@ -1,22 +1,13 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { items, itemsToTags, users, globalItems } from '@/db/schema'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
-import { desc, eq, like, and, or, sql } from 'drizzle-orm'
-import bcrypt from 'bcryptjs'
 import { downloadImageFromUrl } from './upload'
 import { getGuestUserId } from '@/lib/actions/auth'
 import { parseItemMetadata } from '@/lib/types/metadata'
-// Fixed import path to be local active auth file, OR correct if it is in ../auth
-// Wait, I previously changed it to `../auth` and it failed. 
-// Let's check where `getGuestUserId` is defined. 
-// It is likely in `src/lib/actions/auth.ts` or `src/lib/auth.ts`?
-// I see `src/lib/actions/auth.ts` was edited in earlier turns.
-// I will check `src/lib/actions/auth.ts` content first.
-
-
+import { z } from 'zod'
+import { zfd } from 'zod-form-data'
+import { getSession } from '@/lib/auth'
 
 export async function getItems(
     query?: string,
@@ -25,99 +16,85 @@ export async function getItems(
     categoryId?: string
 ) {
     const userId = await getGuestUserId()
+    const supabase = await createClient()
     const offset = (page - 1) * limit
 
-    const whereClause = and(
-        categoryId ? eq(items.categoryId, categoryId) : undefined,
-        query ? or(
-            like(globalItems.title, `%${query}%`),
-            like(items.name, `%${query}%`) // Fallback for migration
-        ) : undefined
-    )
+    // Build query
+    let queryBuilder = (supabase.from('items') as any)
+        .select(`
+            *,
+            global_item:global_items(*),
+            tags:items_to_tags(tag:tags(*)),
+            ratings(*)
+        `, { count: 'exact' })
 
-    const [totalCountResult] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(items)
-        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
-        .where(whereClause)
+    if (categoryId) {
+        queryBuilder = queryBuilder.eq('category_id', categoryId)
+    }
 
-    const totalCount = totalCountResult?.count || 0
+    if (query) {
+        // Search in both global_items title and items name
+        queryBuilder = queryBuilder.or(`name.ilike.%${query}%,global_item.title.ilike.%${query}%`)
+    }
 
-    const isUnlimited = limit === 0
-    const drizzleLimit = isUnlimited ? undefined : limit
-    const drizzleOffset = isUnlimited ? 0 : offset
+    queryBuilder = queryBuilder
+        .order('created_at', { ascending: false })
 
-    const result = await db.query.items.findMany({
-        where: whereClause,
-        orderBy: [desc(items.createdAt)],
-        limit: drizzleLimit,
-        offset: drizzleOffset,
-        with: {
-            tags: {
-                with: {
-                    tag: true
-                }
-            },
-            ratings: true,
-            globalItem: true
-        }
-    })
+    if (limit > 0) {
+        queryBuilder = queryBuilder.range(offset, offset + limit - 1)
+    }
 
-    // Transform to match UI expectation (flatten tags) and handle missing items
-    const transformedItems = result.map(item => ({
+    const { data, count, error } = await queryBuilder
+
+    if (error) throw error
+
+    const totalCount = count || 0
+
+    // Transform items
+    const transformedItems = (data || []).map((item: any) => ({
         ...item,
-        // Prioritize global data, fallback to old item data for migration
-        name: item.globalItem?.title || item.name || 'Untitled',
-        description: item.globalItem?.description || item.description,
-        image: item.globalItem?.imageUrl || item.image,
-        tags: item.tags.map(t => t.tag),
-        ratings: userId ? item.ratings.filter(r => r.userId === userId) : []
+        name: item.global_item?.title || item.name || 'Untitled',
+        description: item.global_item?.description || item.description,
+        image: item.global_item?.image_url || item.image,
+        tags: item.tags?.map((t: any) => t.tag) || [],
+        ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : []
     }))
 
     return {
         items: transformedItems,
         totalCount,
-        totalPages: isUnlimited ? 1 : Math.ceil(totalCount / limit)
+        totalPages: limit > 0 ? Math.ceil(totalCount / limit) : 1
     }
 }
 
 export async function getItem(id: string) {
     const userId = await getGuestUserId()
+    const supabase = await createClient()
 
-    const item = await db.query.items.findFirst({
-        where: eq(items.id, id),
-        with: {
-            tags: {
-                with: {
-                    tag: true
-                }
-            },
-            ratings: true,
-            globalItem: true,
-            category: {
-                with: {
-                    customRanks: true
-                }
-            }
-        }
-    })
+    const { data: item, error } = await (supabase.from('items') as any)
+        .select(`
+            *,
+            global_item:global_items(*),
+            tags:items_to_tags(tag:tags(*)),
+            ratings(*),
+            category:categories(*, custom_ranks:custom_ranks(*))
+        `)
+        .eq('id', id)
+        .single()
 
+    if (error && error.code !== 'PGRST116') throw error
     if (!item) return null
 
-    // Transform to match UI expectation
     return {
         ...item,
-        name: item.globalItem?.title || item.name || 'Untitled',
-        description: item.globalItem?.description || item.description,
-        image: item.globalItem?.imageUrl || item.image,
-        tags: item.tags.map(t => t.tag),
-        ratings: userId ? item.ratings.filter(r => r.userId === userId) : [],
+        name: item.global_item?.title || item.name || 'Untitled',
+        description: item.global_item?.description || item.description,
+        image: item.global_item?.image_url || item.image,
+        tags: item.tags?.map((t: any) => t.tag) || [],
+        ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : [],
         category: item.category
     }
 }
-
-
-import { z } from 'zod'
 
 // Zod Schemas
 const createItemSchema = z.object({
@@ -126,7 +103,7 @@ const createItemSchema = z.object({
     categoryId: z.string().uuid(),
     image: z.string().optional().default(""),
     tags: z.array(z.string()).optional().default([]),
-    metadata: z.string().optional().nullable() // JSON string or null
+    metadata: z.string().optional().nullable()
 })
 
 const updateItemSchema = z.object({
@@ -134,23 +111,18 @@ const updateItemSchema = z.object({
     description: z.string().optional(),
     categoryId: z.string().uuid().optional(),
     image: z.string().optional(),
-    metadata: z.string().optional(), // JSON string
+    metadata: z.string().optional(),
     tags: z.array(z.string()).optional(),
     notes: z.string().optional(),
     tier: z.string().optional(),
     rank: z.number().optional()
 })
 
-// Internal Logic (Pure Async Function)
 export async function createItemInternal(input: z.input<typeof createItemSchema>) {
     const data = createItemSchema.parse(input)
     const userId = await getGuestUserId()
+    const supabase = await createClient()
     let { name, description, categoryId, image, tags: tagIds, metadata } = data
-
-    // ... (rest of function) ...
-    // Note: I need to output the rest of the function content or just the top part if I use replace.
-    // I can't easily partially replace without restating logic if I change the variable name `data` to `input` and then parse.
-    // Actually, I can just do `const data = createItemSchema.parse(input)` and keeping the rest is fine if existing code used `data`.
 
     // Auto-localize external images
     if (image && image.startsWith('http')) {
@@ -175,18 +147,23 @@ export async function createItemInternal(input: z.input<typeof createItemSchema>
         metadata: typeof metadata === 'string' ? metadata : (metadata ? JSON.stringify(metadata) : null)
     })
 
-    const [newItem] = await db.insert(items).values({
-        globalItemId: globalItem.id,
-        userId,
-        categoryId,
-        eloScore: 1200,
-    }).returning()
+    const { data: newItem, error } = await (supabase.from('items') as any)
+        .insert({
+            global_item_id: globalItem.id,
+            user_id: userId,
+            category_id: categoryId,
+            elo_score: 1200,
+        })
+        .select()
+        .single()
+
+    if (error) throw error
 
     if (tagIds && tagIds.length > 0) {
-        await db.insert(itemsToTags).values(
+        await (supabase.from('items_to_tags') as any).insert(
             tagIds.map(tagId => ({
-                itemId: newItem.id,
-                tagId
+                item_id: newItem.id,
+                tag_id: tagId
             }))
         )
     }
@@ -206,37 +183,40 @@ async function upsertGlobalItem(data: {
     imageUrl?: string | null
     metadata?: string | null
 }) {
+    const supabase = await createClient()
+
     // 1. Check for existing GlobalItem by externalId
     if (data.externalId) {
-        const existing = await db.query.globalItems.findFirst({
-            where: eq(globalItems.externalId, data.externalId)
-        })
+        const { data: existing } = await (supabase.from('global_items') as any)
+            .select('*')
+            .eq('external_id', data.externalId)
+            .single()
         if (existing) return existing
     }
 
     // 2. Check for existing GlobalItem by exact title + image as fallback
-    const existing = await db.query.globalItems.findFirst({
-        where: and(
-            eq(globalItems.title, data.title),
-            eq(globalItems.imageUrl, data.imageUrl || '')
-        )
-    })
-    if (existing) return existing
+    const { data: existingByTitle } = await (supabase.from('global_items') as any)
+        .select('*')
+        .eq('title', data.title)
+        .eq('image_url', data.imageUrl || '')
+        .single()
+    if (existingByTitle) return existingByTitle
 
     // 3. Create new GlobalItem
-    const [newItem] = await db.insert(globalItems).values({
-        externalId: data.externalId,
-        title: data.title,
-        description: data.description,
-        imageUrl: data.imageUrl,
-        metadata: data.metadata,
-    }).returning()
+    const { data: newItem, error } = await (supabase.from('global_items') as any)
+        .insert({
+            external_id: data.externalId,
+            title: data.title,
+            description: data.description,
+            image_url: data.imageUrl,
+            metadata: data.metadata ? JSON.parse(data.metadata) : null,
+        })
+        .select()
+        .single()
 
+    if (error) throw error
     return newItem
 }
-
-
-import { zfd } from 'zod-form-data'
 
 // FormData schemas using zod-form-data
 const createItemFormSchema = zfd.formData({
@@ -245,11 +225,10 @@ const createItemFormSchema = zfd.formData({
     category: zfd.text(z.string().uuid()),
     image: zfd.text(z.string().optional().default("")),
     metadata: zfd.text(z.string().optional().nullable()),
-    tags: zfd.text(z.string().optional()) // JSON string that we'll parse
+    tags: zfd.text(z.string().optional())
 })
 
 export async function createItem(formData: FormData) {
-    // Safe parsing with zod-form-data
     const result = createItemFormSchema.safeParse(formData)
 
     if (!result.success) {
@@ -259,7 +238,6 @@ export async function createItem(formData: FormData) {
 
     const { name, description, category, image, metadata, tags: tagsJson } = result.data
 
-    // Safely parse tags JSON
     let tagIds: string[] = []
     if (tagsJson) {
         try {
@@ -282,20 +260,18 @@ export async function createItem(formData: FormData) {
     })
 }
 
-
-// Update Logic Internal
 export async function updateItemInternal(id: string, input: z.input<typeof updateItemSchema>) {
     const data = updateItemSchema.parse(input)
+    const supabase = await createClient()
     const { name, description, categoryId, image, metadata, tags: tagIds, notes, tier, rank } = data
 
     // Fetch existing item to get globalItemId
-    const existingItem = await db.query.items.findFirst({
-        where: eq(items.id, id),
-        with: { globalItem: true }
-    })
+    const { data: existingItem, error: fetchError } = await (supabase.from('items') as any)
+        .select('*, global_item:global_items(*)')
+        .eq('id', id)
+        .single()
 
-    // ... rest of logic
-    if (!existingItem) {
+    if (fetchError || !existingItem) {
         throw new Error('Item not found')
     }
 
@@ -309,41 +285,41 @@ export async function updateItemInternal(id: string, input: z.input<typeof updat
     }
 
     // Update GlobalItem if name/description/image changed
-    if (existingItem.globalItemId && (name || description !== undefined || finalImage)) {
+    if (existingItem.global_item_id && (name || description !== undefined || finalImage)) {
         const globalUpdateData: any = {}
         if (name) globalUpdateData.title = name
         if (description !== undefined) globalUpdateData.description = description
-        if (finalImage) globalUpdateData.imageUrl = finalImage
-        if (metadata) globalUpdateData.metadata = metadata
+        if (finalImage) globalUpdateData.image_url = finalImage
+        if (metadata) globalUpdateData.metadata = JSON.parse(metadata)
 
         if (Object.keys(globalUpdateData).length > 0) {
-            await db.update(globalItems)
-                .set(globalUpdateData)
-                .where(eq(globalItems.id, existingItem.globalItemId))
+            await (supabase.from('global_items') as any)
+                .update(globalUpdateData)
+                .eq('id', existingItem.global_item_id)
         }
     }
 
     // Prepare update object for instance fields
-    const updateData: any = { updatedAt: new Date() }
-    if (categoryId !== undefined) updateData.categoryId = categoryId
+    const updateData: any = { updated_at: new Date().toISOString() }
+    if (categoryId !== undefined) updateData.category_id = categoryId
     if (notes !== undefined) updateData.notes = notes
     if (tier !== undefined) updateData.tier = tier
     if (rank !== undefined) updateData.rank = rank
 
-    if (Object.keys(updateData).length > 1) { // >1 because updatedAt is always there
-        await db.update(items)
-            .set(updateData)
-            .where(eq(items.id, id))
+    if (Object.keys(updateData).length > 1) {
+        await (supabase.from('items') as any)
+            .update(updateData)
+            .eq('id', id)
     }
 
     // Update tags if provided
     if (tagIds !== undefined) {
-        await db.delete(itemsToTags).where(eq(itemsToTags.itemId, id))
+        await (supabase.from('items_to_tags') as any).delete().eq('item_id', id)
         if (tagIds.length > 0) {
-            await db.insert(itemsToTags).values(
+            await (supabase.from('items_to_tags') as any).insert(
                 tagIds.map(tagId => ({
-                    itemId: id,
-                    tagId
+                    item_id: id,
+                    tag_id: tagId
                 }))
             )
         }
@@ -352,7 +328,7 @@ export async function updateItemInternal(id: string, input: z.input<typeof updat
     revalidatePath(`/items/${id}`)
     revalidatePath('/items')
     if (categoryId) revalidatePath(`/categories/${categoryId}`)
-    if (existingItem.categoryId) revalidatePath(`/categories/${existingItem.categoryId}`)
+    if (existingItem.category_id) revalidatePath(`/categories/${existingItem.category_id}`)
 }
 
 const updateItemFormSchema = zfd.formData({
@@ -363,12 +339,11 @@ const updateItemFormSchema = zfd.formData({
     metadata: zfd.text(z.string().optional()),
     notes: zfd.text(z.string().optional()),
     tier: zfd.text(z.string().optional()),
-    rank: zfd.text(z.string().optional()), // Parse as string, convert to number
-    tags: zfd.text(z.string().optional()) // JSON string
+    rank: zfd.text(z.string().optional()),
+    tags: zfd.text(z.string().optional())
 })
 
 export async function updateItem(id: string, formData: FormData) {
-    // Safe parsing with zod-form-data
     const result = updateItemFormSchema.safeParse(formData)
 
     if (!result.success) {
@@ -378,7 +353,6 @@ export async function updateItem(id: string, formData: FormData) {
 
     const { name, description, category, image, metadata, notes, tier, rank: rankStr, tags: tagsJson } = result.data
 
-    // Safely parse tags JSON
     let tagIds: string[] | undefined = undefined
     if (tagsJson) {
         try {
@@ -391,7 +365,6 @@ export async function updateItem(id: string, formData: FormData) {
         }
     }
 
-    // Build clean data object (only include defined values)
     const cleanData: Record<string, unknown> = {}
     if (name) cleanData.name = name
     if (description !== undefined) cleanData.description = description
@@ -406,42 +379,34 @@ export async function updateItem(id: string, formData: FormData) {
     await updateItemInternal(id, cleanData)
 }
 
-
-// Helper to apply AI suggestions (tags by name, description)
-import { tags as tagsSchema } from '@/db/schema'
-
 export async function applyItemEnhancement(itemId: string, enhancement: { suggested_tags: string[], suggested_description: string }) {
-    // 1. Resolve Tags (Create if not exist)
+    const supabase = await createClient()
     const tagIds: string[] = []
 
-    // Get existing tags for the item first to merge? 
-    // Usually enhancements suggest *additional* or *refined* tags. 
-    // Let's assume we want to MERGE with existing tags to be safe, or replacing?
-    // The prompt implies "suggested tags", typically strictly better. 
-    // Let's Fetch existing tags first to be safe and Append unique new ones.
     const existingItem = await getItem(itemId)
-    const currentTagIds = existingItem?.tags.map(t => t.id) || []
+    const currentTagIds = existingItem?.tags?.map((t: any) => t.id) || []
 
-    // Process suggested tags
     for (const tagName of enhancement.suggested_tags) {
         // Check if tag exists
-        let tag = await db.query.tags.findFirst({
-            where: eq(tagsSchema.name, tagName)
-        })
+        let { data: tag } = await (supabase.from('tags') as any)
+            .select('*')
+            .eq('name', tagName)
+            .single()
 
         if (!tag) {
-            // Create new tag
-            const [newTag] = await db.insert(tagsSchema).values({ name: tagName }).returning()
+            const { data: newTag, error } = await (supabase.from('tags') as any)
+                .insert({ name: tagName })
+                .select()
+                .single()
+            if (error) throw error
             tag = newTag
         }
 
         tagIds.push(tag.id)
     }
 
-    // Merge with current tags (avoid duplicates)
     const finalTagIds = Array.from(new Set([...currentTagIds, ...tagIds]))
 
-    // 2. Update Item
     await updateItemInternal(itemId, {
         description: enhancement.suggested_description,
         tags: finalTagIds
@@ -449,38 +414,40 @@ export async function applyItemEnhancement(itemId: string, enhancement: { sugges
 }
 
 export async function deleteItem(id: string, categoryId?: string) {
-    await db.delete(items).where(eq(items.id, id))
+    const supabase = await createClient()
 
-    // Revalidate the category page if we know which category
+    const { error } = await (supabase.from('items') as any)
+        .delete()
+        .eq('id', id)
+
+    if (error) throw error
+
     if (categoryId) {
         revalidatePath(`/categories/${categoryId}`)
     }
     revalidatePath('/items')
-    // Don't redirect - let the calling UI handle navigation
 }
 
 import { ChallengerItem } from './discovery'
 
 export async function updateItemScores(updates: { id: string, elo: number }[]) {
-    // Process updates in batches or parallel
-    await db.transaction(async (tx) => {
-        for (const update of updates) {
-            await tx.update(items)
-                .set({ eloScore: update.elo })
-                .where(eq(items.id, update.id))
-        }
-    })
+    const supabase = await createClient()
 
-    // We don't know exactly which category was updated, so we might need to rely on revalidating specific paths or generic ones.
-    // For now, revalidate everything relevant.
+    for (const update of updates) {
+        const { error } = await (supabase.from('items') as any)
+            .update({ elo_score: update.elo })
+            .eq('id', update.id)
+        if (error) throw error
+    }
+
     revalidatePath('/items')
     revalidatePath('/categories')
 }
 
 export async function addChallengerItem(challenger: ChallengerItem, categoryId: string, initialElo: number) {
     const userId = await getGuestUserId()
+    const supabase = await createClient()
 
-    // 1. Upsert GlobalItem
     const globalItem = await upsertGlobalItem({
         externalId: challenger.id,
         title: challenger.name,
@@ -488,13 +455,17 @@ export async function addChallengerItem(challenger: ChallengerItem, categoryId: 
         imageUrl: challenger.image,
     })
 
-    // 2. Create local item instance
-    const [newItem] = await db.insert(items).values({
-        globalItemId: globalItem.id,
-        userId,
-        categoryId: categoryId,
-        eloScore: initialElo,
-    }).returning()
+    const { data: newItem, error } = await (supabase.from('items') as any)
+        .insert({
+            global_item_id: globalItem.id,
+            user_id: userId,
+            category_id: categoryId,
+            elo_score: initialElo,
+        })
+        .select()
+        .single()
+
+    if (error) throw error
 
     revalidatePath(`/categories/${categoryId}`)
     return newItem
@@ -502,36 +473,27 @@ export async function addChallengerItem(challenger: ChallengerItem, categoryId: 
 
 export async function ignoreItem(itemId: string) {
     const userId = await getGuestUserId()
-
     if (!userId) return
 
-    // Check if item exists in user library
-    const existing = await db.query.items.findFirst({
-        where: and(
-            eq(items.id, itemId),
-            eq(items.userId, userId)
-        )
-    })
+    const supabase = await createClient()
+
+    const { data: existing } = await (supabase.from('items') as any)
+        .select('id')
+        .eq('id', itemId)
+        .eq('user_id', userId)
+        .single()
 
     if (existing) {
-        // Update status
-        await db.update(items)
-            .set({ status: 'IGNORED', updatedAt: new Date() })
-            .where(eq(items.id, itemId))
-    } else {
-        // If it's a temp/challenger item not in DB, we'd need to add it as IGNORED.
-        // But temp items usually have ID 'temp-...', so we can't update them directly.
-        // Frontend handles ignoring temp items by just not showing them, 
-        // BUT if "Never Show" is clicked for a global/challenger, we SHOULD persist that ban.
-        // Current implementation assumes we only ignore things we track. 
-        // For "Discovery" items, we'd ideally blacklist the externalId.
-        // For MVP: We only support ignoring existing User Items.
+        await (supabase.from('items') as any)
+            .update({ status: 'IGNORED', updated_at: new Date().toISOString() })
+            .eq('id', itemId)
     }
 
     revalidatePath('/items')
 }
 
 import { TournamentService } from '@/lib/services/TournamentService'
+import { logActivity } from '@/lib/actions/activity'
 
 export async function getTournamentPool(categoryId: string, size: number = 20) {
     const userId = await getGuestUserId()
@@ -539,48 +501,17 @@ export async function getTournamentPool(categoryId: string, size: number = 20) {
     return await TournamentService.generateTournamentPool(userId, categoryId, size, true)
 }
 
-import { logActivity } from '@/lib/actions/activity'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
-
 export async function submitMatchResult(winnerId: string, loserId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    })
-
+    const session = await getSession()
     if (!session) return
-
-    // helper to get name
-    const getName = async (id: string) => {
-        // If it looks like a temp id, we might not find it in DB unless it was just added.
-        // However, TournamentModal passes the objects in the *client*. 
-        // Ideally we pass names from client to avoid DB lookup for temp items?
-        // But verifying is better. 
-        // For MVP, passing names from client is acceptable if we treat this as a UI feed event.
-        // If we only pass IDs, we can't look up "temp-xyz" items.
-        // Let's change signature to accept names to support Challenger items that aren't persisted yet.
-        const item = await db.query.items.findFirst({
-            where: eq(items.id, id),
-            with: { globalItem: true }
-        })
-        return item?.globalItem?.title || item?.name || 'Unknown Item'
-    }
-
-    // Since we might be voting on challengers that don't exist in DB yet, 
-    // we should really pass the context (Category?) or Names from the client.
-    // Let's stick to IDs and only log if they exist? 
-    // No, "Alice ranked Dune (Challenger) above Star Wars" is a valid event.
-    // I will overload this function or change it to accept metadata.
+    // Activity logging handled by submitMatchActivity
 }
 
 export async function submitMatchActivity(payload: {
     winnerId: string, winnerName: string,
     loserId: string, loserName: string
 }) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    })
-
+    const session = await getSession()
     if (!session) return
 
     await logActivity(session.user.id, 'RANKED_ITEM', {

@@ -1,8 +1,4 @@
-
-
-import { db } from '@/lib/db'
-import { items, ratings, categories, tasteMetrics, tasteSnapshots, cohortAverages, insightUnlocks, unlockConditions, globalItems } from '@/db/schema'
-import { eq, and, sql, desc, count, avg, isNotNull } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server';
 
 // =============================================================================
 // TYPES
@@ -95,71 +91,95 @@ export async function calculateAlignmentScore(
     cohortType: CohortType = 'global',
     categoryId?: string
 ): Promise<AlignmentResult> {
-    // 1. Get user's ratings (globalItemId -> tier)
-    const userRatings = await db
-        .select({
-            globalItemId: items.globalItemId,
-            tier: ratings.tier,
-        })
-        .from(ratings)
-        .innerJoin(items, eq(ratings.itemId, items.id))
-        .where(
-            categoryId
-                ? and(eq(ratings.userId, userId), eq(items.categoryId, categoryId), isNotNull(items.globalItemId))
-                : and(eq(ratings.userId, userId), isNotNull(items.globalItemId))
-        )
+    const supabase = await createClient();
 
-    if (userRatings.length < MIN_OVERLAP_FOR_ALIGNMENT) {
+    // 1. Get user's ratings (globalItemId -> tier)
+    let query = supabase
+        .from('ratings')
+        .select(`
+            tier,
+            items!inner(global_item_id, category_id)
+        `)
+        .eq('user_id', userId)
+        .not('items.global_item_id', 'is', null);
+
+    if (categoryId) {
+        query = query.eq('items.category_id', categoryId);
+    }
+
+    const { data: userRatings } = await query;
+
+    if (!userRatings || userRatings.length < MIN_OVERLAP_FOR_ALIGNMENT) {
         return {
             score: null,
             cohortType,
             cohortLabel: COHORT_LABELS[cohortType],
             sampleSize: 0,
-            overlappingItems: userRatings.length,
-            message: `Rate ${MIN_OVERLAP_FOR_ALIGNMENT - userRatings.length} more items to calculate alignment`,
+            overlappingItems: userRatings?.length || 0,
+            message: `Rate ${MIN_OVERLAP_FOR_ALIGNMENT - (userRatings?.length || 0)} more items to calculate alignment`,
         }
     }
 
-    // 2. Get cohort averages for these items
-    const globalItemIds = userRatings.map(r => r.globalItemId).filter(Boolean) as string[]
+    // Extract global item IDs
+    const globalItemIds = userRatings
+        .map(r => (r.items as any)?.global_item_id)
+        .filter(Boolean) as string[];
 
-    // Build cohort query based on type
-    let cohortQuery = db
-        .select({
-            globalItemId: items.globalItemId,
-            avgScore: avg(sql`CASE 
-                WHEN ${ratings.tier} = 'S' THEN 100 
-                WHEN ${ratings.tier} = 'A' THEN 80 
-                WHEN ${ratings.tier} = 'B' THEN 60 
-                WHEN ${ratings.tier} = 'C' THEN 40 
-                WHEN ${ratings.tier} = 'D' THEN 20 
-                ELSE 50 
-            END`).as('avgScore'),
-            raterCount: count(ratings.id).as('raterCount'),
-        })
-        .from(ratings)
-        .innerJoin(items, eq(ratings.itemId, items.id))
-        .where(and(
-            sql`${items.globalItemId} IN (${sql.join(globalItemIds.map(id => sql`${id}`), sql`, `)})`,
-            sql`${ratings.userId} != ${userId}` // Exclude self
-        ))
-        .groupBy(items.globalItemId)
+    if (globalItemIds.length === 0) {
+        return {
+            score: null,
+            cohortType,
+            cohortLabel: COHORT_LABELS[cohortType],
+            sampleSize: 0,
+            overlappingItems: 0,
+            message: 'No overlapping items with other users',
+        }
+    }
 
-    const cohortAveragesResult = await cohortQuery
+    // 2. Get cohort averages - fetch all ratings for these items from other users
+    const { data: cohortRatings } = await supabase
+        .from('ratings')
+        .select(`
+            tier,
+            items!inner(global_item_id)
+        `)
+        .neq('user_id', userId)
+        .in('items.global_item_id', globalItemIds);
+
+    // Build cohort averages map
+    const cohortMap = new Map<string, { total: number; count: number }>();
+    for (const rating of cohortRatings || []) {
+        const globalId = (rating.items as any)?.global_item_id;
+        const tier = rating.tier;
+        if (!globalId || !tier) continue;
+
+        const numericScore = TIER_TO_NUMERIC[tier] ?? 50;
+        const existing = cohortMap.get(globalId) || { total: 0, count: 0 };
+        existing.total += numericScore;
+        existing.count++;
+        cohortMap.set(globalId, existing);
+    }
+
+    // Calculate averages
+    const cohortAverages = new Map<string, number>();
+    for (const [id, { total, count }] of cohortMap) {
+        cohortAverages.set(id, total / count);
+    }
 
     // 3. Calculate alignment
-    const cohortMap = new Map(cohortAveragesResult.map(c => [c.globalItemId, Number(c.avgScore)]))
-
-    let totalDelta = 0
-    let overlappingCount = 0
+    let totalDelta = 0;
+    let overlappingCount = 0;
 
     for (const userRating of userRatings) {
-        if (!userRating.globalItemId || !userRating.tier) continue
-        const cohortAvg = cohortMap.get(userRating.globalItemId)
+        const globalId = (userRating.items as any)?.global_item_id;
+        const tier = userRating.tier;
+        if (!globalId || !tier) continue;
+
+        const cohortAvg = cohortAverages.get(globalId);
         if (cohortAvg !== undefined) {
-            const userScore = TIER_TO_NUMERIC[userRating.tier] ?? 50
-            totalDelta += Math.abs(userScore - cohortAvg)
-            overlappingCount++
+            const userScore = TIER_TO_NUMERIC[tier] ?? 50;
+            totalDelta += Math.abs(userScore - cohortAvg);
+            overlappingCount++;
         }
     }
 
@@ -168,37 +188,34 @@ export async function calculateAlignmentScore(
             score: null,
             cohortType,
             cohortLabel: COHORT_LABELS[cohortType],
-            sampleSize: cohortAveragesResult.length,
+            sampleSize: cohortRatings?.length || 0,
             overlappingItems: overlappingCount,
-            message: `Not enough overlapping items with other users`,
+            message: 'Not enough overlapping items with other users',
         }
     }
 
-    const maxPossibleDelta = overlappingCount * 100
-    const alignmentPercent = Math.round(100 - (totalDelta / maxPossibleDelta * 100))
+    const maxPossibleDelta = overlappingCount * 100;
+    const alignmentPercent = Math.round(100 - (totalDelta / maxPossibleDelta * 100));
 
-    // 4. Cache result in tasteMetrics
-    const metricKey = categoryId ? `alignment_${cohortType}_${categoryId}` : `alignment_${cohortType}`
-    await db.insert(tasteMetrics)
-        .values({
-            userId,
-            categoryId: categoryId || null,
-            metricType: metricKey,
+    // 4. Cache result in taste_metrics
+    const metricKey = categoryId ? `alignment_${cohortType}_${categoryId}` : `alignment_${cohortType}`;
+    await supabase
+        .from('taste_metrics')
+        .upsert({
+            user_id: userId,
+            category_id: categoryId || null,
+            metric_type: metricKey,
             value: alignmentPercent,
-        })
-        .onConflictDoUpdate({
-            target: [tasteMetrics.userId, tasteMetrics.metricType],
-            set: { value: alignmentPercent, computedAt: new Date() },
-        })
-        .catch(() => {
-            // Ignore conflict errors (unique constraint)
-        })
+            computed_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,metric_type' })
+        .then(() => { })
+        .catch(() => { });
 
     return {
         score: alignmentPercent,
         cohortType,
         cohortLabel: COHORT_LABELS[cohortType],
-        sampleSize: cohortAveragesResult.reduce((sum, c) => sum + Number(c.raterCount), 0),
+        sampleSize: cohortRatings?.length || 0,
         overlappingItems: overlappingCount,
     }
 }
@@ -215,13 +232,16 @@ export async function getMetricDelta(
     metricType: string,
     period: 'week' | 'month' = 'month'
 ): Promise<MetricDelta | null> {
-    const snapshots = await db.query.tasteSnapshots.findMany({
-        where: eq(tasteSnapshots.userId, userId),
-        orderBy: desc(tasteSnapshots.capturedAt),
-        limit: 5,
-    })
+    const supabase = await createClient();
 
-    if (snapshots.length < 2) {
+    const { data: snapshots } = await supabase
+        .from('taste_snapshots')
+        .select('*')
+        .eq('user_id', userId)
+        .order('captured_at', { ascending: false })
+        .limit(5);
+
+    if (!snapshots || snapshots.length < 2) {
         return null
     }
 
@@ -229,8 +249,8 @@ export async function getMetricDelta(
     const previous = snapshots[1]
 
     try {
-        const currentMetrics = JSON.parse(current.metricsJson)
-        const previousMetrics = JSON.parse(previous.metricsJson)
+        const currentMetrics = JSON.parse(current.metrics_json)
+        const previousMetrics = JSON.parse(previous.metrics_json)
 
         const currentValue = currentMetrics[metricType]
         const previousValue = previousMetrics[metricType]
@@ -255,37 +275,40 @@ export async function captureSnapshot(
     userId: string,
     snapshotType: 'weekly' | 'monthly' | 'milestone' = 'weekly'
 ): Promise<void> {
+    const supabase = await createClient();
+
     // Get all current metrics
-    const metrics = await db.query.tasteMetrics.findMany({
-        where: eq(tasteMetrics.userId, userId),
-    })
+    const { data: metrics } = await supabase
+        .from('taste_metrics')
+        .select('*')
+        .eq('user_id', userId);
 
     const metricsJson: Record<string, number> = {}
-    for (const m of metrics) {
-        metricsJson[m.metricType] = m.value
+    for (const m of metrics || []) {
+        metricsJson[m.metric_type] = m.value
     }
 
     // Count items
-    const itemCountResult = await db
-        .select({ count: count() })
-        .from(items)
-        .where(eq(items.userId, userId))
-
-    const itemCount = itemCountResult[0]?.count ?? 0
+    const { count: itemCount } = await supabase
+        .from('items')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
 
     // Get top genres (from categories)
-    const userCategories = await db.query.categories.findMany({
-        where: eq(categories.userId, userId),
-        limit: 5,
-    })
-    const topGenres = userCategories.map(c => c.name)
+    const { data: userCategories } = await supabase
+        .from('categories')
+        .select('name')
+        .eq('user_id', userId)
+        .limit(5);
 
-    await db.insert(tasteSnapshots).values({
-        userId,
-        snapshotType,
-        metricsJson: JSON.stringify(metricsJson),
-        itemCount,
-        topGenresJson: JSON.stringify(topGenres),
+    const topGenres = (userCategories || []).map(c => c.name)
+
+    await supabase.from('taste_snapshots').insert({
+        user_id: userId,
+        snapshot_type: snapshotType,
+        metrics_json: JSON.stringify(metricsJson),
+        item_count: itemCount || 0,
+        top_genres_json: JSON.stringify(topGenres),
     })
 }
 
@@ -300,22 +323,26 @@ export async function checkUnlockStatus(
     userId: string,
     insightKey: string
 ): Promise<UnlockStatus> {
+    const supabase = await createClient();
+
     // 1. Check if already unlocked
-    const existing = await db.query.insightUnlocks.findFirst({
-        where: and(
-            eq(insightUnlocks.userId, userId),
-            eq(insightUnlocks.insightKey, insightKey)
-        ),
-    })
+    const { data: existing } = await supabase
+        .from('insight_unlocks')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('insight_key', insightKey)
+        .single();
 
     if (existing) {
-        return { unlocked: true, unlockedAt: existing.unlockedAt }
+        return { unlocked: true, unlockedAt: new Date(existing.unlocked_at) }
     }
 
     // 2. Get condition requirements
-    const condition = await db.query.unlockConditions.findFirst({
-        where: eq(unlockConditions.insightKey, insightKey),
-    })
+    const { data: condition } = await supabase
+        .from('unlock_conditions')
+        .select('*')
+        .eq('insight_key', insightKey)
+        .single();
 
     if (!condition) {
         // No condition defined = always unlocked
@@ -325,22 +352,22 @@ export async function checkUnlockStatus(
     // 3. Evaluate condition
     let progress = 0
 
-    switch (condition.conditionType) {
+    switch (condition.condition_type) {
         case 'min_items_rated': {
-            const result = await db
-                .select({ count: count() })
-                .from(ratings)
-                .where(eq(ratings.userId, userId))
-            progress = result[0]?.count ?? 0
-            break
+            const { count } = await supabase
+                .from('ratings')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', userId);
+            progress = count || 0;
+            break;
         }
         case 'min_categories': {
-            const result = await db
-                .select({ count: count() })
-                .from(categories)
-                .where(eq(categories.userId, userId))
-            progress = result[0]?.count ?? 0
-            break
+            const { count } = await supabase
+                .from('categories')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', userId);
+            progress = count || 0;
+            break;
         }
         default:
             progress = 0
@@ -348,10 +375,10 @@ export async function checkUnlockStatus(
 
     // 4. If met, record unlock
     if (progress >= condition.threshold) {
-        await db.insert(insightUnlocks).values({
-            userId,
-            insightKey,
-            unlockContext: JSON.stringify({ triggered_by: condition.conditionType }),
+        await supabase.from('insight_unlocks').insert({
+            user_id: userId,
+            insight_key: insightKey,
+            unlock_context: JSON.stringify({ triggered_by: condition.condition_type }),
         })
         return { unlocked: true, unlockedAt: new Date() }
     }
@@ -360,7 +387,7 @@ export async function checkUnlockStatus(
         unlocked: false,
         progress,
         required: condition.threshold,
-        displayLabel: condition.displayLabel,
+        displayLabel: condition.display_label,
     }
 }
 
@@ -376,26 +403,29 @@ export async function buildRadarChartPayload(
     categoryId?: string,
     cohortType: CohortType = 'global'
 ): Promise<RadarChartPayload> {
+    const supabase = await createClient();
+
     // 1. Get user's items in this category
-    const userItems = await db
-        .select({
-            id: items.id,
-            tier: items.tier,
-            globalItemId: items.globalItemId,
-        })
-        .from(items)
-        .where(
-            categoryId
-                ? and(eq(items.userId, userId), eq(items.categoryId, categoryId))
-                : eq(items.userId, userId)
-        )
+    let query = supabase
+        .from('items')
+        .select('id, tier, global_item_id')
+        .eq('user_id', userId);
+
+    if (categoryId) {
+        query = query.eq('category_id', categoryId);
+    }
+
+    const { data: userItems } = await query;
 
     // 2. Determine category type for axes
     let categoryType = 'default'
     if (categoryId) {
-        const cat = await db.query.categories.findFirst({
-            where: eq(categories.id, categoryId),
-        })
+        const { data: cat } = await supabase
+            .from('categories')
+            .select('name')
+            .eq('id', categoryId)
+            .single();
+
         if (cat?.name) {
             // Try to match category name to known types
             for (const key of Object.keys(CATEGORY_AXES)) {
@@ -410,7 +440,7 @@ export async function buildRadarChartPayload(
     const axes = CATEGORY_AXES[categoryType] || CATEGORY_AXES['default']
 
     // 3. Check if enough items
-    if (userItems.length < MIN_ITEMS_FOR_RADAR) {
+    if (!userItems || userItems.length < MIN_ITEMS_FOR_RADAR) {
         return {
             axes,
             userScores: [],
@@ -418,13 +448,12 @@ export async function buildRadarChartPayload(
             cohort: { type: cohortType, label: COHORT_LABELS[cohortType], sampleSize: 0 },
             isValid: false,
             minItemsRequired: MIN_ITEMS_FOR_RADAR,
-            currentItemCount: userItems.length,
-            emptyStateMessage: `Rate ${MIN_ITEMS_FOR_RADAR - userItems.length} more items to unlock your taste profile`,
+            currentItemCount: userItems?.length || 0,
+            emptyStateMessage: `Rate ${MIN_ITEMS_FOR_RADAR - (userItems?.length || 0)} more items to unlock your taste profile`,
         }
     }
 
     // 4. Generate synthetic scores based on tier distribution
-    // For now, we generate scores based on the user's tier patterns
     const tierCounts: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, D: 0 }
     for (const item of userItems) {
         if (item.tier && tierCounts[item.tier] !== undefined) {
@@ -432,16 +461,15 @@ export async function buildRadarChartPayload(
         }
     }
 
-    // Generate user scores (placeholder - would be derived from tags in full implementation)
+    // Generate user scores
     const userScores = axes.map((_, i) => {
-        // Create varied scores based on tier distribution with some randomization
         const baseScore = (tierCounts['S'] * 100 + tierCounts['A'] * 80 + tierCounts['B'] * 60 + tierCounts['C'] * 40 + tierCounts['D'] * 20) / userItems.length
-        const variance = (i * 17) % 30 - 15 // Deterministic variance per axis
+        const variance = (i * 17) % 30 - 15
         return Math.max(10, Math.min(100, Math.round(baseScore + variance)))
     })
 
-    // 5. Get cohort averages (placeholder - would query cohortAverages table)
-    const cohortScores = axes.map(() => 50) // Default to 50 for global average
+    // 5. Get cohort averages (placeholder)
+    const cohortScores = axes.map(() => 50)
 
     return {
         axes,
@@ -450,7 +478,7 @@ export async function buildRadarChartPayload(
         cohort: {
             type: cohortType,
             label: COHORT_LABELS[cohortType],
-            sampleSize: 100, // Placeholder
+            sampleSize: 100,
         },
         isValid: true,
         minItemsRequired: MIN_ITEMS_FOR_RADAR,

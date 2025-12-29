@@ -1,11 +1,8 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { users, items, userTopPicks, globalItems, categories } from '@/db/schema'
-import { eq, desc, and, sql } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { getSession, getCurrentUserId } from '@/lib/auth'
 
 // ============================================================================
 // Profile Types
@@ -20,7 +17,7 @@ export type PublicProfile = {
     coverImage: string | null
     isPublic: boolean
     profileViews: number
-    createdAt: Date
+    createdAt: string
     topPicks: {
         id: string
         name: string
@@ -36,45 +33,34 @@ export type PublicProfile = {
 }
 
 // ============================================================================
-// Auth Helper
-// ============================================================================
-
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
-
-// ============================================================================
 // Profile Actions
 // ============================================================================
 
-/**
- * Get the current user's profile data for editing
- */
 export async function getMyProfile() {
     const userId = await getCurrentUserId()
     if (!userId) return null
 
-    const user = await db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: {
-            id: true,
-            name: true,
-            displayName: true,
-            bio: true,
-            image: true,
-            coverImage: true,
-            isPublic: true,
-            email: true,
-        }
-    })
+    const supabase = await createClient()
 
-    return user
+    const { data: user, error } = await (supabase.from('profiles') as any)
+        .select('id, name, display_name, bio, image, cover_image, is_public, email')
+        .eq('id', userId)
+        .single()
+
+    if (error || !user) return null
+
+    return {
+        id: user.id,
+        name: user.name,
+        displayName: user.display_name,
+        bio: user.bio,
+        image: user.image,
+        coverImage: user.cover_image,
+        isPublic: user.is_public,
+        email: user.email
+    }
 }
 
-/**
- * Update the current user's profile
- */
 export async function updateProfile(data: {
     displayName?: string
     bio?: string
@@ -87,16 +73,21 @@ export async function updateProfile(data: {
         return { success: false, error: 'Not authenticated' }
     }
 
+    const supabase = await createClient()
+
     try {
-        await db.update(users)
-            .set({
-                displayName: data.displayName,
+        const { error } = await (supabase.from('profiles') as any)
+            .update({
+                display_name: data.displayName,
                 bio: data.bio,
-                isPublic: data.isPublic,
+                is_public: data.isPublic,
                 image: data.image,
-                coverImage: data.coverImage,
+                cover_image: data.coverImage,
+                updated_at: new Date().toISOString()
             })
-            .where(eq(users.id, userId))
+            .eq('id', userId)
+
+        if (error) throw error
 
         revalidatePath('/profile')
         revalidatePath(`/profile/${userId}`)
@@ -107,9 +98,6 @@ export async function updateProfile(data: {
     }
 }
 
-/**
- * Update the current user's display name (direct action for settings page)
- */
 export async function updateUsername(name: string): Promise<{ success: boolean; error?: string }> {
     if (!name || name.trim().length < 2) {
         return { success: false, error: 'Name must be at least 2 characters' }
@@ -120,10 +108,14 @@ export async function updateUsername(name: string): Promise<{ success: boolean; 
         return { success: false, error: 'Not authenticated' }
     }
 
+    const supabase = await createClient()
+
     try {
-        await db.update(users)
-            .set({ name: name.trim() })
-            .where(eq(users.id, userId))
+        const { error } = await (supabase.from('profiles') as any)
+            .update({ name: name.trim(), updated_at: new Date().toISOString() })
+            .eq('id', userId)
+
+        if (error) throw error
 
         revalidatePath('/settings')
         revalidatePath('/profile')
@@ -134,242 +126,119 @@ export async function updateUsername(name: string): Promise<{ success: boolean; 
     }
 }
 
-import { verifications } from '@/db/schema'
-import { gt } from 'drizzle-orm'
-
-/**
- * Request email change - sends verification to new email
- */
 export async function requestEmailChange(newEmail: string): Promise<{ success: boolean; error?: string }> {
     if (!newEmail || !newEmail.includes('@')) {
         return { success: false, error: 'Please enter a valid email address' }
     }
 
-    const userId = await getCurrentUserId()
-    if (!userId) {
-        return { success: false, error: 'Not authenticated' }
+    const supabase = await createClient()
+
+    // Supabase Auth handles email change directly
+    const { error } = await supabase.auth.updateUser({ email: newEmail })
+
+    if (error) {
+        return { success: false, error: error.message }
     }
 
-    // Check if email is already in use
-    const existingUser = await db.query.users.findFirst({
-        where: eq(users.email, newEmail)
-    })
-
-    if (existingUser) {
-        return { success: false, error: 'This email is already in use' }
-    }
-
-    try {
-        // Generate 6-digit code
-        const code = Math.floor(100000 + Math.random() * 900000).toString()
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-
-        // Store pending email
-        await db.update(users)
-            .set({ pendingEmail: newEmail })
-            .where(eq(users.id, userId))
-
-        // Create verification record
-        await db.insert(verifications).values({
-            identifier: newEmail,
-            value: crypto.randomUUID(),
-            verificationCode: code,
-            expiresAt,
-        })
-
-        // Send verification email
-        const { sendEmailChangeVerification } = await import('@/lib/emailAdapter')
-        await sendEmailChangeVerification({ email: newEmail, code })
-
-        return { success: true }
-    } catch (error) {
-        console.error('Email change request error:', error)
-        return { success: false, error: 'Failed to send verification email' }
-    }
+    return { success: true }
 }
 
-/**
- * Confirm email change with verification code
- */
 export async function confirmEmailChange(code: string): Promise<{ success: boolean; error?: string }> {
-    if (!code || code.length !== 6) {
-        return { success: false, error: 'Please enter a valid 6-digit code' }
-    }
-
-    const userId = await getCurrentUserId()
-    if (!userId) {
-        return { success: false, error: 'Not authenticated' }
-    }
-
-    // Get user with pending email
-    const currentUser = await db.query.users.findFirst({
-        where: eq(users.id, userId)
-    })
-
-    if (!currentUser?.pendingEmail) {
-        return { success: false, error: 'No pending email change found' }
-    }
-
-    try {
-        // Find verification record
-        const verification = await db.query.verifications.findFirst({
-            where: and(
-                eq(verifications.identifier, currentUser.pendingEmail),
-                eq(verifications.verificationCode, code),
-                gt(verifications.expiresAt, new Date())
-            )
-        })
-
-        if (!verification) {
-            return { success: false, error: 'Invalid or expired verification code' }
-        }
-
-        // Update email and clear pending
-        await db.update(users)
-            .set({
-                email: currentUser.pendingEmail,
-                pendingEmail: null,
-                emailVerified: true
-            })
-            .where(eq(users.id, userId))
-
-        // Delete verification record
-        await db.delete(verifications)
-            .where(eq(verifications.id, verification.id))
-
-        revalidatePath('/settings')
-        return { success: true }
-    } catch (error) {
-        console.error('Confirm email change error:', error)
-        return { success: false, error: 'Failed to update email' }
-    }
+    // Supabase handles email confirmation via magic links, not codes
+    return { success: false, error: 'Email confirmation is handled via the link sent to your email' }
 }
 
-/**
- * Cancel pending email change
- */
 export async function cancelEmailChange(): Promise<{ success: boolean; error?: string }> {
-    const userId = await getCurrentUserId()
-    if (!userId) {
-        return { success: false, error: 'Not authenticated' }
-    }
-
-    try {
-        await db.update(users)
-            .set({ pendingEmail: null })
-            .where(eq(users.id, userId))
-
-        return { success: true }
-    } catch (error) {
-        return { success: false, error: 'Failed to cancel' }
-    }
+    // Not applicable with Supabase Auth
+    return { success: true }
 }
 
-/**
- * Get a public profile by user ID
- */
 export async function getPublicProfile(userId: string): Promise<PublicProfile | null> {
-    const user = await db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: {
-            id: true,
-            name: true,
-            displayName: true,
-            bio: true,
-            image: true,
-            coverImage: true,
-            isPublic: true,
-            profileViews: true,
-            createdAt: true,
-        }
-    })
+    const supabase = await createClient()
 
-    if (!user) return null
+    const { data: user, error } = await (supabase.from('profiles') as any)
+        .select('id, name, display_name, bio, image, cover_image, is_public, profile_views, created_at')
+        .eq('id', userId)
+        .single()
 
-    // Check if profile is public (or if viewer is the owner)
+    if (error || !user) return null
+
     const currentUserId = await getCurrentUserId()
-    if (!user.isPublic && currentUserId !== userId) {
+    if (!user.is_public && currentUserId !== userId) {
         return null
     }
 
     // Get top picks with item details
-    const topPicksData = await db
-        .select({
-            id: items.id,
-            name: sql<string>`COALESCE(${globalItems.title}, ${items.name})`,
-            image: sql<string | null>`COALESCE(${globalItems.imageUrl}, ${items.image})`,
-            tier: items.tier,
-            categoryName: categories.name,
-        })
-        .from(userTopPicks)
-        .innerJoin(items, eq(userTopPicks.itemId, items.id))
-        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
-        .leftJoin(categories, eq(items.categoryId, categories.id))
-        .where(eq(userTopPicks.userId, userId))
-        .orderBy(userTopPicks.sortOrder)
+    const { data: topPicksData } = await (supabase.from('user_top_picks') as any)
+        .select(`
+            item:items(
+                id,
+                name,
+                image,
+                tier,
+                global_item:global_items(title, image_url),
+                category:categories(name)
+            )
+        `)
+        .eq('user_id', userId)
+        .order('sort_order', { ascending: true })
         .limit(3)
 
     // Get stats
-    const itemCount = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(items)
-        .where(eq(items.userId, userId))
+    const { count: itemCount } = await (supabase.from('items') as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
 
-    const collectionCount = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(categories)
-        .where(eq(categories.userId, userId))
+    const { count: collectionCount } = await (supabase.from('categories') as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
 
     // Increment view count if not viewing own profile
     if (currentUserId !== userId) {
-        await db.update(users)
-            .set({ profileViews: sql`${users.profileViews} + 1` })
-            .where(eq(users.id, userId))
+        await (supabase.from('profiles') as any)
+            .update({ profile_views: (user.profile_views || 0) + 1 })
+            .eq('id', userId)
     }
+
+    const topPicks = (topPicksData || []).map((pick: any) => ({
+        id: pick.item?.id || '',
+        name: pick.item?.global_item?.title || pick.item?.name || 'Untitled',
+        image: pick.item?.global_item?.image_url || pick.item?.image,
+        tier: pick.item?.tier,
+        categoryName: pick.item?.category?.name || null,
+    }))
 
     return {
         id: user.id,
-        name: user.name,
-        displayName: user.displayName,
+        name: user.name || '',
+        displayName: user.display_name,
         bio: user.bio,
         image: user.image,
-        coverImage: user.coverImage,
-        isPublic: user.isPublic,
-        profileViews: user.profileViews,
-        createdAt: user.createdAt,
-        topPicks: topPicksData.map(p => ({
-            id: p.id,
-            name: p.name || 'Untitled',
-            image: p.image,
-            tier: p.tier,
-            categoryName: p.categoryName,
-        })),
+        coverImage: user.cover_image,
+        isPublic: user.is_public,
+        profileViews: user.profile_views || 0,
+        createdAt: user.created_at,
+        topPicks,
         stats: {
-            totalItems: itemCount[0]?.count || 0,
-            totalCollections: collectionCount[0]?.count || 0,
-            followerCount: 0, // TODO: Implement follows count
+            totalItems: itemCount || 0,
+            totalCollections: collectionCount || 0,
+            followerCount: 0,
         }
     }
 }
 
-/**
- * Get user's public collections for profile display
- */
 export async function getUserPublicCollections(userId: string) {
-    const collections = await db.query.categories.findMany({
-        where: and(
-            eq(categories.userId, userId),
-            eq(categories.isPublic, true)
-        ),
-        with: {
-            items: {
-                columns: { id: true }
-            }
-        },
-        orderBy: desc(categories.createdAt)
-    })
+    const supabase = await createClient()
 
-    return collections.map(c => ({
+    const { data: collections, error } = await (supabase.from('categories') as any)
+        .select('id, name, image, description, items(id)')
+        .eq('user_id', userId)
+        .eq('is_public', true)
+        .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    return (collections || []).map((c: any) => ({
         id: c.id,
         name: c.name,
         image: c.image,
@@ -382,121 +251,125 @@ export async function getUserPublicCollections(userId: string) {
 // Top Picks Actions
 // ============================================================================
 
-/**
- * Get current user's top picks
- */
 export async function getMyTopPicks() {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
-    const picks = await db
-        .select({
-            id: userTopPicks.id,
-            itemId: items.id,
-            name: sql<string>`COALESCE(${globalItems.title}, ${items.name})`,
-            image: sql<string | null>`COALESCE(${globalItems.imageUrl}, ${items.image})`,
-            tier: items.tier,
-            sortOrder: userTopPicks.sortOrder,
-        })
-        .from(userTopPicks)
-        .innerJoin(items, eq(userTopPicks.itemId, items.id))
-        .leftJoin(globalItems, eq(items.globalItemId, globalItems.id))
-        .where(eq(userTopPicks.userId, userId))
-        .orderBy(userTopPicks.sortOrder)
+    const supabase = await createClient()
 
-    return picks
+    const { data, error } = await (supabase.from('user_top_picks') as any)
+        .select(`
+            id,
+            sort_order,
+            item:items(
+                id,
+                name,
+                image,
+                tier,
+                global_item:global_items(title, image_url)
+            )
+        `)
+        .eq('user_id', userId)
+        .order('sort_order', { ascending: true })
+
+    if (error) throw error
+
+    return (data || []).map((pick: any) => ({
+        id: pick.id,
+        itemId: pick.item?.id,
+        name: pick.item?.global_item?.title || pick.item?.name || 'Untitled',
+        image: pick.item?.global_item?.image_url || pick.item?.image,
+        tier: pick.item?.tier,
+        sortOrder: pick.sort_order,
+    }))
 }
 
-/**
- * Get user's items available for top picks (excludes already picked items)
- */
 export async function getMyItemsForTopPicks() {
     const userId = await getCurrentUserId()
     if (!userId) return []
 
-    // Get current top pick item IDs
-    const currentPicks = await db
-        .select({ itemId: userTopPicks.itemId })
-        .from(userTopPicks)
-        .where(eq(userTopPicks.userId, userId))
+    const supabase = await createClient()
 
-    const pickedItemIds = currentPicks.map(p => p.itemId)
+    // Get current top pick item IDs
+    const { data: currentPicks } = await (supabase.from('user_top_picks') as any)
+        .select('item_id')
+        .eq('user_id', userId)
+
+    const pickedItemIds = (currentPicks || []).map((p: any) => p.item_id)
 
     // Get all user items with category info
-    const userItems = await db.query.items.findMany({
-        where: eq(items.userId, userId),
-        with: {
-            category: {
-                columns: { name: true }
-            },
-            globalItem: {
-                columns: { title: true, imageUrl: true }
-            }
-        },
-        orderBy: desc(items.createdAt)
-    })
+    const { data: userItems, error } = await (supabase.from('items') as any)
+        .select(`
+            id,
+            name,
+            image,
+            tier,
+            global_item:global_items(title, image_url),
+            category:categories(name)
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
 
-    // Filter out already picked items and format
-    return userItems
-        .filter(item => !pickedItemIds.includes(item.id))
-        .map(item => ({
+    if (error) throw error
+
+    return (userItems || [])
+        .filter((item: any) => !pickedItemIds.includes(item.id))
+        .map((item: any) => ({
             id: item.id,
-            name: item.globalItem?.title || item.name,
-            image: item.globalItem?.imageUrl || item.image,
+            name: item.global_item?.title || item.name,
+            image: item.global_item?.image_url || item.image,
             tier: item.tier,
             categoryName: item.category?.name || null
         }))
 }
 
-/**
- * Add an item to top picks (max 3)
- */
 export async function addTopPick(itemId: string): Promise<{ success: boolean; error?: string }> {
     const userId = await getCurrentUserId()
     if (!userId) {
         return { success: false, error: 'Not authenticated' }
     }
 
-    // Check current count
-    const existing = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(userTopPicks)
-        .where(eq(userTopPicks.userId, userId))
+    const supabase = await createClient()
 
-    if ((existing[0]?.count || 0) >= 3) {
+    // Check current count
+    const { count: existingCount } = await (supabase.from('user_top_picks') as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+
+    if ((existingCount || 0) >= 3) {
         return { success: false, error: 'Maximum 3 top picks allowed. Remove one first.' }
     }
 
     // Check if item already in top picks
-    const alreadyPicked = await db.query.userTopPicks.findFirst({
-        where: and(
-            eq(userTopPicks.userId, userId),
-            eq(userTopPicks.itemId, itemId)
-        )
-    })
+    const { data: alreadyPicked } = await (supabase.from('user_top_picks') as any)
+        .select('id')
+        .eq('user_id', userId)
+        .eq('item_id', itemId)
+        .single()
 
     if (alreadyPicked) {
         return { success: false, error: 'Item already in top picks' }
     }
 
     // Verify item belongs to user
-    const item = await db.query.items.findFirst({
-        where: and(
-            eq(items.id, itemId),
-            eq(items.userId, userId)
-        )
-    })
+    const { data: item } = await (supabase.from('items') as any)
+        .select('id')
+        .eq('id', itemId)
+        .eq('user_id', userId)
+        .single()
 
     if (!item) {
         return { success: false, error: 'Item not found or not owned by you' }
     }
 
     try {
-        await db.insert(userTopPicks).values({
-            userId,
-            itemId,
-            sortOrder: existing[0]?.count || 0,
+        const { error } = await (supabase.from('user_top_picks') as any).insert({
+            user_id: userId,
+            item_id: itemId,
+            sort_order: existingCount || 0,
         })
+
+        if (error) throw error
 
         revalidatePath('/profile')
         return { success: true }
@@ -506,33 +379,30 @@ export async function addTopPick(itemId: string): Promise<{ success: boolean; er
     }
 }
 
-/**
- * Remove an item from top picks
- */
 export async function removeTopPick(itemId: string): Promise<{ success: boolean; error?: string }> {
     const userId = await getCurrentUserId()
     if (!userId) {
         return { success: false, error: 'Not authenticated' }
     }
 
+    const supabase = await createClient()
+
     try {
-        await db.delete(userTopPicks)
-            .where(and(
-                eq(userTopPicks.userId, userId),
-                eq(userTopPicks.itemId, itemId)
-            ))
+        await (supabase.from('user_top_picks') as any)
+            .delete()
+            .eq('user_id', userId)
+            .eq('item_id', itemId)
 
         // Reorder remaining picks
-        const remaining = await db
-            .select({ id: userTopPicks.id })
-            .from(userTopPicks)
-            .where(eq(userTopPicks.userId, userId))
-            .orderBy(userTopPicks.sortOrder)
+        const { data: remaining } = await (supabase.from('user_top_picks') as any)
+            .select('id')
+            .eq('user_id', userId)
+            .order('sort_order', { ascending: true })
 
-        for (let i = 0; i < remaining.length; i++) {
-            await db.update(userTopPicks)
-                .set({ sortOrder: i })
-                .where(eq(userTopPicks.id, remaining[i].id))
+        for (let i = 0; i < (remaining || []).length; i++) {
+            await (supabase.from('user_top_picks') as any)
+                .update({ sort_order: i })
+                .eq('id', remaining![i].id)
         }
 
         revalidatePath('/profile')
@@ -543,9 +413,6 @@ export async function removeTopPick(itemId: string): Promise<{ success: boolean;
     }
 }
 
-/**
- * Reorder top picks
- */
 export async function reorderTopPicks(itemIds: string[]): Promise<{ success: boolean; error?: string }> {
     const userId = await getCurrentUserId()
     if (!userId) {
@@ -556,14 +423,14 @@ export async function reorderTopPicks(itemIds: string[]): Promise<{ success: boo
         return { success: false, error: 'Maximum 3 top picks allowed' }
     }
 
+    const supabase = await createClient()
+
     try {
         for (let i = 0; i < itemIds.length; i++) {
-            await db.update(userTopPicks)
-                .set({ sortOrder: i })
-                .where(and(
-                    eq(userTopPicks.userId, userId),
-                    eq(userTopPicks.itemId, itemIds[i])
-                ))
+            await (supabase.from('user_top_picks') as any)
+                .update({ sort_order: i })
+                .eq('user_id', userId)
+                .eq('item_id', itemIds[i])
         }
 
         revalidatePath('/profile')

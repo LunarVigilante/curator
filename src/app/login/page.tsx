@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import { signIn } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,24 +22,26 @@ export default function LoginPage() {
         setLoading(true);
         setError(null);
 
-        await authClient.signIn.email({
-            email,
-            password,
-        }, {
-            onSuccess: (ctx) => {
-                if (typeof window !== 'undefined' && (window as any).posthog) {
-                    if (ctx.data?.user) {
-                        (window as any).posthog.identify(ctx.data.user.id, { email: ctx.data.user.email });
-                    }
-                }
-                router.push('/');
-                router.refresh();
-            },
-            onError: (ctx) => {
-                setError(ctx.error.message);
+        try {
+            const { data, error: signInError } = await signIn(email, password);
+
+            if (signInError) {
+                setError(signInError.message);
                 setLoading(false);
+                return;
             }
-        });
+
+            if (typeof window !== 'undefined' && (window as any).posthog) {
+                if (data?.user) {
+                    (window as any).posthog.identify(data.user.id, { email: data.user.email });
+                }
+            }
+            router.push('/');
+            router.refresh();
+        } catch (err: any) {
+            setError(err.message || "An unexpected error occurred");
+            setLoading(false);
+        }
     };
 
     return (

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { authClient } from '@/lib/auth-client';
+import { updatePassword } from '@/lib/auth-client';
 import { completeForcePasswordChange } from '@/lib/actions/auth';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
@@ -22,30 +22,30 @@ export default function ChangePasswordPage() {
             return;
         }
 
+        if (newPassword.length < 8) {
+            toast.error("Password must be at least 8 characters.");
+            return;
+        }
+
         setIsLoading(true);
 
         try {
-            // 1. Change password via Client API (handles hashing and verification)
-            await authClient.changePassword({
-                currentPassword,
-                newPassword,
-                revokeOtherSessions: true
-            }, {
-                onSuccess: async () => {
-                    // 2. Server Action to clear the 'requiredPasswordChange' flag
-                    await completeForcePasswordChange();
+            // Update password via Supabase Auth
+            const { error } = await updatePassword(newPassword);
 
-                    toast.success("Password updated securely.");
-                    // 3. Redirect back to Home
-                    router.push('/');
-                    // Force refresh to update session context in Guard
-                    router.refresh();
-                },
-                onError: (ctx) => {
-                    toast.error(ctx.error.message || "Failed to update password.");
-                    setIsLoading(false);
-                }
-            });
+            if (error) {
+                toast.error(error.message || "Failed to update password.");
+                setIsLoading(false);
+                return;
+            }
+
+            // Server Action to clear the 'requiredPasswordChange' flag
+            await completeForcePasswordChange();
+
+            toast.success("Password updated securely.");
+            // Redirect back to Home
+            router.push('/');
+            router.refresh();
 
         } catch (err) {
             toast.error("An unexpected error occurred.");

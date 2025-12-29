@@ -1,7 +1,6 @@
 import { getPublicProfile, getUserPublicCollections } from '@/lib/actions/profile'
 import { getJoinedChallenges } from '@/lib/actions/challenges'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { getSession } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import { ProfileView } from './ProfileView'
 
@@ -22,9 +21,8 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     }
 
     // Check if current user is the owner
-    const session = await auth.api.getSession({ headers: await headers() })
+    const session = await getSession()
     const isOwner = session?.user?.id === userId
 
     return <ProfileView profile={profile} collections={collections} challenges={challenges} isOwner={isOwner} />
 }
-

@@ -2,9 +2,7 @@
 
 import { callLLM } from '@/lib/llm'
 import { SystemConfigService } from '@/lib/services/SystemConfigService'
-import { db } from '@/lib/db'
-import { globalItems } from '@/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
 const generateDescriptionSchema = z.object({
@@ -37,18 +35,15 @@ function sanitizeInput(input: string | undefined, maxLength = 200): string {
 export async function generateDescriptionAction(input: z.input<typeof generateDescriptionSchema>) {
     try {
         const { title, type, context } = generateDescriptionSchema.parse(input)
+        const supabase = await createClient()
 
         // 1. Check Cache
         const normalizedType = type.toUpperCase().replace(/\s+/g, '_');
-        const existingItem = await db.query.globalItems.findFirst({
-            where: and(
-                sql`lower(${globalItems.title}) = lower(${title})`,
-                // Try to match type if possible, but fallback to title-only match if fuzzy
-                // For now, strict type match to avoid cross-pollination (e.g. Game vs Movie)
-                // We use LIKE or just standard equality on normalized type
-                eq(globalItems.categoryType, normalizedType)
-            )
-        });
+        const { data: existingItem } = await (supabase.from('global_items') as any)
+            .select('*')
+            .ilike('title', title)
+            .eq('category_type', normalizedType)
+            .single()
 
         if (existingItem?.description) {
             console.log(`[AI Cache] Hit for description: "${title}"`);
@@ -116,16 +111,16 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
 
         // 2. Update Cache
         if (existingItem) {
-            await db.update(globalItems)
-                .set({ description })
-                .where(eq(globalItems.id, existingItem.id));
+            await (supabase.from('global_items') as any)
+                .update({ description })
+                .eq('id', existingItem.id)
         } else {
             // Note: We don't have externalId or image here usually, just title/desc
-            await db.insert(globalItems).values({
+            await (supabase.from('global_items') as any).insert({
                 title,
                 description,
-                categoryType: normalizedType
-            });
+                category_type: normalizedType
+            })
         }
 
         return { description }
@@ -139,19 +134,19 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
 export async function generateTagsAction(input: z.input<typeof generateTagsSchema>) {
     try {
         const { title, type, description } = generateTagsSchema.parse(input)
+        const supabase = await createClient()
 
         // 1. Check Cache
         const normalizedType = type.toUpperCase().replace(/\s+/g, '_');
-        const existingItem = await db.query.globalItems.findFirst({
-            where: and(
-                sql`lower(${globalItems.title}) = lower(${title})`,
-                eq(globalItems.categoryType, normalizedType)
-            )
-        });
+        const { data: existingItem } = await (supabase.from('global_items') as any)
+            .select('*')
+            .ilike('title', title)
+            .eq('category_type', normalizedType)
+            .single()
 
-        if (existingItem?.cachedTags) {
+        if (existingItem?.cached_tags) {
             try {
-                const cached = JSON.parse(existingItem.cachedTags);
+                const cached = JSON.parse(existingItem.cached_tags);
                 if (Array.isArray(cached) && cached.length > 0) {
                     console.log(`[AI Cache] Hit for tags: "${title}"`);
                     return { tags: cached };
@@ -220,15 +215,15 @@ ${description ? `Description: ${sanitizeInput(description, 300)}` : ''}`;
 
         // 2. Update Cache
         if (existingItem) {
-            await db.update(globalItems)
-                .set({ cachedTags: JSON.stringify(tags) })
-                .where(eq(globalItems.id, existingItem.id));
+            await (supabase.from('global_items') as any)
+                .update({ cached_tags: JSON.stringify(tags) })
+                .eq('id', existingItem.id)
         } else {
-            await db.insert(globalItems).values({
+            await (supabase.from('global_items') as any).insert({
                 title,
-                cachedTags: JSON.stringify(tags),
-                categoryType: normalizedType
-            });
+                cached_tags: JSON.stringify(tags),
+                category_type: normalizedType
+            })
         }
 
         return { tags }
@@ -255,7 +250,7 @@ export async function generateTags(title: string, description: string, type: str
             return tag
         })
         const tags = await Promise.all(tagPromises)
-        return tags.filter((t): t is { id: string; name: string } => t !== null)
+        return tags.filter((t: any): t is { id: string; name: string } => t !== null)
     }
     return []
 }

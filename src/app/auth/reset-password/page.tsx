@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { authClient } from "@/lib/auth-client";
-import { Loader2, Lock, ArrowLeft } from "lucide-react";
+import { updatePassword } from "@/lib/auth-client";
+import { Loader2, ArrowLeft } from "lucide-react";
 import Link from 'next/link';
 
 export default function ResetPasswordPage() {
@@ -38,10 +38,7 @@ export default function ResetPasswordPage() {
         setError('');
 
         try {
-            const { error } = await authClient.resetPassword({
-                newPassword,
-                token: token!,
-            });
+            const { error } = await updatePassword(newPassword);
 
             if (error) {
                 setError(error.message || "Failed to reset password");

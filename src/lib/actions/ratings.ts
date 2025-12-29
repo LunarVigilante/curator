@@ -1,27 +1,27 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { ratings } from '@/db/schema'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { and, eq } from 'drizzle-orm'
 import { getGuestUserId } from './auth'
 
 export async function rateItem(itemId: string, value: number, type: 'NUMERICAL' | 'TIER' | 'HYBRID', tier?: string) {
     const userId = await getGuestUserId()
     if (!userId) return
 
-    // Delete existing rating for this user/item to prevent duplicates
-    await db.delete(ratings).where(and(
-        eq(ratings.itemId, itemId),
-        eq(ratings.userId, userId)
-    ))
+    const supabase = await createClient()
 
-    await db.insert(ratings).values({
-        itemId,
+    // Delete existing rating for this user/item to prevent duplicates
+    await (supabase.from('ratings') as any)
+        .delete()
+        .eq('item_id', itemId)
+        .eq('user_id', userId)
+
+    await (supabase.from('ratings') as any).insert({
+        item_id: itemId,
         value,
         type,
         tier,
-        userId: userId
+        user_id: userId
     })
 
     revalidatePath(`/items/${itemId}`)

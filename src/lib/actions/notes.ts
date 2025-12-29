@@ -1,20 +1,8 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { curatorNotes, items, categories } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-
-// ============================================================================
-// Auth Helper
-// ============================================================================
-
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
+import { getSession, getCurrentUserId } from '@/lib/auth'
 
 // ============================================================================
 // Curator Notes Types
@@ -24,36 +12,33 @@ export type CuratorNote = {
     id: string
     content: string
     isPinned: boolean
-    createdAt: Date
-    updatedAt: Date
+    createdAt: string
+    updatedAt: string
 }
 
 // ============================================================================
 // Curator Notes Actions
 // ============================================================================
 
-/**
- * Get curator note for an item (if exists)
- */
 export async function getCuratorNote(itemId: string): Promise<CuratorNote | null> {
-    const note = await db.query.curatorNotes.findFirst({
-        where: eq(curatorNotes.itemId, itemId),
-        columns: {
-            id: true,
-            content: true,
-            isPinned: true,
-            createdAt: true,
-            updatedAt: true,
-        }
-    })
+    const supabase = await createClient()
 
-    return note || null
+    const { data, error } = await (supabase.from('curator_notes') as any)
+        .select('id, content, is_pinned, created_at, updated_at')
+        .eq('item_id', itemId)
+        .single()
+
+    if (error || !data) return null
+
+    return {
+        id: data.id,
+        content: data.content,
+        isPinned: data.is_pinned,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+    }
 }
 
-/**
- * Create or update a curator note on an item
- * Only the collection owner can add notes
- */
 export async function upsertCuratorNote(
     itemId: string,
     content: string
@@ -63,60 +48,76 @@ export async function upsertCuratorNote(
         return { success: false, error: 'Not authenticated' }
     }
 
+    const supabase = await createClient()
+
     // Get the item and verify ownership
-    const item = await db.query.items.findFirst({
-        where: eq(items.id, itemId),
-        columns: { id: true, categoryId: true }
-    })
+    const { data: item } = await (supabase.from('items') as any)
+        .select('id, category_id')
+        .eq('id', itemId)
+        .single()
 
     if (!item) {
         return { success: false, error: 'Item not found' }
     }
 
-    // Check if user owns the category (collection)
-    if (item.categoryId) {
-        const category = await db.query.categories.findFirst({
-            where: eq(categories.id, item.categoryId),
-            columns: { userId: true }
-        })
+    // Check if user owns the category
+    if (item.category_id) {
+        const { data: category } = await (supabase.from('categories') as any)
+            .select('user_id')
+            .eq('id', item.category_id)
+            .single()
 
-        if (category?.userId !== userId) {
+        if (category?.user_id !== userId) {
             return { success: false, error: 'Only the collection owner can add curator notes' }
         }
     }
 
     try {
         // Check if note already exists
-        const existing = await db.query.curatorNotes.findFirst({
-            where: eq(curatorNotes.itemId, itemId)
-        })
+        const { data: existing } = await (supabase.from('curator_notes') as any)
+            .select('*')
+            .eq('item_id', itemId)
+            .single()
 
         let note: CuratorNote
 
         if (existing) {
             // Update existing note
-            await db.update(curatorNotes)
-                .set({ content, updatedAt: new Date() })
-                .where(eq(curatorNotes.id, existing.id))
+            const { data: updated, error } = await (supabase.from('curator_notes') as any)
+                .update({ content, updated_at: new Date().toISOString() })
+                .eq('id', existing.id)
+                .select()
+                .single()
 
-            note = { ...existing, content, updatedAt: new Date() }
-        } else {
-            // Create new note
-            const newNote = await db.insert(curatorNotes)
-                .values({
-                    itemId,
-                    userId,
-                    content,
-                    isPinned: true,
-                })
-                .returning()
+            if (error) throw error
 
             note = {
-                id: newNote[0].id,
-                content: newNote[0].content,
-                isPinned: newNote[0].isPinned,
-                createdAt: newNote[0].createdAt,
-                updatedAt: newNote[0].updatedAt,
+                id: updated.id,
+                content: updated.content,
+                isPinned: updated.is_pinned,
+                createdAt: updated.created_at,
+                updatedAt: updated.updated_at
+            }
+        } else {
+            // Create new note
+            const { data: newNote, error } = await (supabase.from('curator_notes') as any)
+                .insert({
+                    item_id: itemId,
+                    user_id: userId,
+                    content,
+                    is_pinned: true,
+                })
+                .select()
+                .single()
+
+            if (error) throw error
+
+            note = {
+                id: newNote.id,
+                content: newNote.content,
+                isPinned: newNote.is_pinned,
+                createdAt: newNote.created_at,
+                updatedAt: newNote.updated_at
             }
         }
 
@@ -128,31 +129,30 @@ export async function upsertCuratorNote(
     }
 }
 
-/**
- * Delete a curator note
- */
 export async function deleteCuratorNote(noteId: string): Promise<{ success: boolean; error?: string }> {
     const userId = await getCurrentUserId()
     if (!userId) {
         return { success: false, error: 'Not authenticated' }
     }
 
+    const supabase = await createClient()
+
     // Verify ownership
-    const note = await db.query.curatorNotes.findFirst({
-        where: eq(curatorNotes.id, noteId),
-        columns: { userId: true }
-    })
+    const { data: note } = await (supabase.from('curator_notes') as any)
+        .select('user_id')
+        .eq('id', noteId)
+        .single()
 
     if (!note) {
         return { success: false, error: 'Note not found' }
     }
 
-    if (note.userId !== userId) {
+    if (note.user_id !== userId) {
         return { success: false, error: 'Not authorized to delete this note' }
     }
 
     try {
-        await db.delete(curatorNotes).where(eq(curatorNotes.id, noteId))
+        await (supabase.from('curator_notes') as any).delete().eq('id', noteId)
         revalidatePath('/categories')
         return { success: true }
     } catch (error) {
@@ -161,28 +161,27 @@ export async function deleteCuratorNote(noteId: string): Promise<{ success: bool
     }
 }
 
-/**
- * Toggle pin status of a note
- */
 export async function toggleNotePin(noteId: string): Promise<{ success: boolean; error?: string }> {
     const userId = await getCurrentUserId()
     if (!userId) {
         return { success: false, error: 'Not authenticated' }
     }
 
-    const note = await db.query.curatorNotes.findFirst({
-        where: eq(curatorNotes.id, noteId),
-        columns: { id: true, userId: true, isPinned: true }
-    })
+    const supabase = await createClient()
 
-    if (!note || note.userId !== userId) {
+    const { data: note } = await (supabase.from('curator_notes') as any)
+        .select('id, user_id, is_pinned')
+        .eq('id', noteId)
+        .single()
+
+    if (!note || note.user_id !== userId) {
         return { success: false, error: 'Note not found or not authorized' }
     }
 
     try {
-        await db.update(curatorNotes)
-            .set({ isPinned: !note.isPinned })
-            .where(eq(curatorNotes.id, noteId))
+        await (supabase.from('curator_notes') as any)
+            .update({ is_pinned: !note.is_pinned })
+            .eq('id', noteId)
 
         revalidatePath('/categories')
         return { success: true }
@@ -192,31 +191,31 @@ export async function toggleNotePin(noteId: string): Promise<{ success: boolean;
     }
 }
 
-/**
- * Get all curator notes for items in a category
- */
 export async function getCategoryNotes(categoryId: string): Promise<Map<string, CuratorNote>> {
-    const notes = await db
-        .select({
-            id: curatorNotes.id,
-            itemId: curatorNotes.itemId,
-            content: curatorNotes.content,
-            isPinned: curatorNotes.isPinned,
-            createdAt: curatorNotes.createdAt,
-            updatedAt: curatorNotes.updatedAt,
-        })
-        .from(curatorNotes)
-        .innerJoin(items, eq(curatorNotes.itemId, items.id))
-        .where(eq(items.categoryId, categoryId))
+    const supabase = await createClient()
+
+    const { data: notes, error } = await (supabase.from('curator_notes') as any)
+        .select(`
+            id,
+            item_id,
+            content,
+            is_pinned,
+            created_at,
+            updated_at,
+            items!inner(category_id)
+        `)
+        .eq('items.category_id', categoryId)
+
+    if (error) throw error
 
     const noteMap = new Map<string, CuratorNote>()
-    for (const note of notes) {
-        noteMap.set(note.itemId, {
+    for (const note of notes || []) {
+        noteMap.set(note.item_id, {
             id: note.id,
             content: note.content,
-            isPinned: note.isPinned,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
+            isPinned: note.is_pinned,
+            createdAt: note.created_at,
+            updatedAt: note.updated_at,
         })
     }
 

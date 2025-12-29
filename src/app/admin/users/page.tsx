@@ -1,7 +1,6 @@
-import { auth } from '@/lib/auth'
+import { getSession, isAdmin as checkIsAdmin } from '@/lib/auth'
 import { getInvites } from '@/lib/actions/admin'
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -9,8 +8,8 @@ import { TicketCheck, CheckCircle2, Clock } from 'lucide-react'
 import { RegisteredUsersTable } from '@/components/admin/RegisteredUsersTable'
 
 export default async function AdminUsersPage() {
-    const session = await auth.api.getSession({ headers: await headers() })
-    if (session?.user?.role !== 'ADMIN') {
+    const session = await getSession()
+    if (!session || !(await checkIsAdmin())) {
         redirect('/')
     }
 
@@ -93,4 +92,3 @@ export default async function AdminUsersPage() {
         </div>
     )
 }
-

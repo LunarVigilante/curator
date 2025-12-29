@@ -1,114 +1,109 @@
-'use server';
+'use server'
 
-import { auth } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { users } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { headers } from 'next/headers';
-import { revalidatePath } from 'next/cache';
-import { accounts } from '@/db/schema';
-import bcrypt from 'bcryptjs';
-
+import { createClient } from '@/lib/supabase/server'
+import { getSession, getCurrentUserId } from '@/lib/auth'
+import { revalidatePath } from 'next/cache'
 
 export async function updateUserProfile(data: {
-    name?: string;
-    email?: string;
-    bio?: string;
-    image?: string;
-    preferences?: any;
+    name?: string
+    email?: string
+    bio?: string
+    image?: string
+    preferences?: any
 }) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    const session = await getSession()
 
     if (!session) {
-        throw new Error("Unauthorized");
+        throw new Error("Unauthorized")
     }
 
-    const { name, email, bio, image, preferences } = data;
+    const supabase = await createClient()
+    const { name, email, bio, image, preferences } = data
 
-    // Serialize preferences if provided
-    const preferencesString = preferences ? JSON.stringify(preferences) : undefined;
+    const preferencesString = preferences ? JSON.stringify(preferences) : undefined
 
-    await db.update(users)
-        .set({
+    await supabase
+        .from('profiles')
+        .update({
             ...(name && { name }),
-            ...(email && { email }),
             ...(bio && { bio }),
             ...(image && { image }),
             ...(preferencesString && { preferences: preferencesString }),
+            updated_at: new Date().toISOString()
         })
-        .where(eq(users.id, session.user.id));
+        .eq('id', session.user.id)
 
-    revalidatePath('/settings');
-    revalidatePath('/'); // In case bio/name shows up elsewhere
-    return { success: true };
-}
-
-// TODO: Implement actual deletion logic if needed (cascading deletes usually handled by DB, but file cleanup might be needed)
-export async function deleteUserAccount() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-
-    if (!session) {
-        throw new Error("Unauthorized");
+    // If email change requested, use Supabase Auth
+    if (email && email !== session.user.email) {
+        await supabase.auth.updateUser({ email })
     }
 
-    // Since we have ON DELETE CASCADE in schema for related tables (items, sessions, etc.), 
-    // deleting the user row should clean up most things.
-    // However, we might want to soft-delete or anonymize. For now, strict deletion.
+    revalidatePath('/settings')
+    revalidatePath('/')
+    return { success: true }
+}
 
-    await db.delete(users).where(eq(users.id, session.user.id));
+export async function deleteUserAccount() {
+    const session = await getSession()
 
-    return { success: true };
+    if (!session) {
+        throw new Error("Unauthorized")
+    }
+
+    const supabase = await createClient()
+
+    // Delete profile (cascade will handle related data)
+    await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', session.user.id)
+
+    // Sign out
+    await supabase.auth.signOut()
+
+    return { success: true }
 }
 
 export async function getUserById(userId: string) {
-    const user = await db.query.users.findFirst({
-        where: eq(users.id, userId)
-    });
+    const supabase = await createClient()
 
-    if (!user) return null;
+    const { data: user, error } = await supabase
+        .from('profiles')
+        .select('id, name, image, bio, created_at')
+        .eq('id', userId)
+        .single()
 
-    // Remove sensitive fields if any (though schema seems mostly public safe, apart from email if privacy is concern)
-    // For now returning basic info
+    if (error || !user) return null
+
     return {
         id: user.id,
         name: user.name,
         image: user.image,
         bio: user.bio,
-        createdAt: user.createdAt
-    };
+        createdAt: user.created_at
+    }
 }
 
 export async function changePassword(data: {
-    currentPassword?: string;
-    newPassword: string;
+    currentPassword?: string
+    newPassword: string
 }) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    const session = await getSession()
 
     if (!session) {
-        throw new Error("Unauthorized");
+        throw new Error("Unauthorized")
     }
 
-    const { newPassword } = data;
+    const supabase = await createClient()
+    const { newPassword } = data
 
-    // 1. Hash the new password
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    // Update password via Supabase Auth
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
 
-    // 2. Update the account password
-    await db.update(accounts)
-        .set({ password: passwordHash })
-        .where(eq(accounts.userId, session.user.id));
+    if (error) {
+        throw new Error(error.message)
+    }
 
-    // 3. Clear the forced change flag
-    await db.update(users)
-        .set({ requiredPasswordChange: false })
-        .where(eq(users.id, session.user.id));
-
-    revalidatePath('/settings');
-    return { success: true };
+    revalidatePath('/settings')
+    return { success: true }
 }

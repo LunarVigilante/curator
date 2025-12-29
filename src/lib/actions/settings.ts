@@ -1,9 +1,7 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { systemSettings } from '@/db/schema'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-
 import { encrypt, decrypt } from '@/lib/encryption'
 import { SystemSettings, SystemSettingKey } from '@/lib/services/SystemConfigService'
 
@@ -16,15 +14,21 @@ const SENSITIVE_KEYS = [
 ]
 
 export async function getSettings(): Promise<SystemSettings> {
-  const allSettings = await db.select().from(systemSettings)
-  return allSettings.reduce((acc, setting) => {
+  const supabase = await createClient()
+
+  const { data: allSettings, error } = await (supabase.from('system_settings') as any)
+    .select('*')
+
+  if (error) throw error
+
+  return (allSettings || []).reduce((acc, setting) => {
     acc[setting.key as SystemSettingKey] = decrypt(setting.value)
     return acc
   }, {} as SystemSettings)
 }
 
 export async function updateSettings(formData: FormData) {
-  // TODO: Add middleware check here requiring role=ADMIN once auth is implemented.
+  const supabase = await createClient()
   const entries = Array.from(formData.entries())
 
   for (const [key, value] of entries) {
@@ -32,19 +36,16 @@ export async function updateSettings(formData: FormData) {
       const isSecret = SENSITIVE_KEYS.includes(key)
       const finalValue = isSecret ? encrypt(value) : value
 
-      await db.insert(systemSettings)
-        .values({
+      // Supabase upsert
+      await (supabase.from('system_settings') as any)
+        .upsert({
           key,
           value: finalValue,
-          category: 'GENERAL', // Default category for legacy updates
-          isSecret: isSecret
-        })
-        .onConflictDoUpdate({
-          target: systemSettings.key,
-          set: {
-            value: finalValue,
-            updatedAt: new Date()
-          }
+          category: 'GENERAL',
+          is_secret: isSecret,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'key'
         })
     }
   }

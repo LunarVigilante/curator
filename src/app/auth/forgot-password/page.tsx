@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { authClient } from "@/lib/auth-client"; // Your BetterAuth client
+import { resetPassword } from "@/lib/auth-client";
 import { Loader2, ArrowLeft, Mail } from "lucide-react";
 import Link from 'next/link';
 
@@ -17,10 +17,7 @@ export default function ForgotPasswordPage() {
         setError('');
 
         try {
-            const { error } = await authClient.requestPasswordReset({
-                email,
-                redirectTo: "/auth/reset-password",
-            });
+            const { error } = await resetPassword(email);
 
             if (error) {
                 setError(error.message || "Failed to send reset email");

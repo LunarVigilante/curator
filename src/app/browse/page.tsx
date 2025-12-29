@@ -2,8 +2,7 @@ import { getPublicCategories } from '@/lib/actions/categories';
 import { BrowseClient } from '@/components/browse/BrowseClient';
 import { getBatchInteractionStatus, getBatchLikeCounts } from '@/lib/actions/interactions';
 import { getBatchCollectionTags } from '@/lib/actions/communityTags';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSession, isAdmin } from '@/lib/auth';
 
 export default async function BrowsePage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; type?: string; sort?: string }> }) {
     const params = await searchParams;
@@ -13,8 +12,8 @@ export default async function BrowsePage({ searchParams }: { searchParams: Promi
     const sort = params.sort || 'newest';
 
     // Get session for admin check
-    const session = await auth.api.getSession({ headers: await headers() });
-    const isAdmin = (session?.user as any)?.role === 'ADMIN';
+    const session = await getSession();
+    const isAdminUser = session ? await isAdmin() : false;
 
     // Fetch categories
     const { data: categories, metadata } = await getPublicCategories(query, page, undefined, type, sort);
@@ -38,7 +37,7 @@ export default async function BrowsePage({ searchParams }: { searchParams: Promi
                 interactionStatus={interactionStatus}
                 likeCounts={likeCounts}
                 tagsMap={tagsMap}
-                isAdmin={isAdmin}
+                isAdmin={isAdminUser}
             />
         </div>
     );

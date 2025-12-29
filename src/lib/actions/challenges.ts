@@ -1,91 +1,95 @@
 'use server'
 
-import { db } from '@/lib/db';
-import { categories, items, globalItems, userChallenges, ratings } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
-import { revalidatePath } from 'next/cache';
+import { createClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/auth'
+import { revalidatePath } from 'next/cache'
 
 // ============================================================================
 // TEMPLATE LOGIC (Legacy/Cloning)
 // ============================================================================
 
 export async function getChallengeTemplates() {
-    return await db.query.categories.findMany({
-        where: eq(categories.isTemplate, true),
-        orderBy: (categories, { desc }) => [desc(categories.createdAt)]
-    });
+    const supabase = await createClient()
+
+    const { data, error } = await (supabase.from('categories') as any)
+        .select('*')
+        .eq('is_template', true)
+        .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return data || []
 }
 
 export async function acceptChallengeTemplate(templateId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    const userId = session.user.id;
+    const session = await getSession()
+    if (!session?.user?.id) throw new Error("Unauthorized")
+    const userId = session.user.id
+    const supabase = await createClient()
 
     // 1. Fetch Template
-    const template = await db.query.categories.findFirst({
-        where: eq(categories.id, templateId)
-    });
+    const { data: template } = await (supabase.from('categories') as any)
+        .select('*')
+        .eq('id', templateId)
+        .single()
 
-    if (!template || !template.isTemplate) throw new Error("Challenge template not found");
+    if (!template || !template.is_template) throw new Error("Challenge template not found")
 
     // 2. Create User Category (Clone)
-    const newCategoryId = crypto.randomUUID();
-    await db.insert(categories).values({
-        id: newCategoryId,
-        name: template.name,
-        description: template.description,
-        image: template.image,
-        color: template.color,
-        emoji: template.emoji,
-        metadata: template.metadata,
-        userId: userId,
-        isTemplate: false,
-        isPublic: true,
-    });
+    const { data: newCategory, error: insertError } = await (supabase.from('categories') as any)
+        .insert({
+            name: template.name,
+            description: template.description,
+            image: template.image,
+            color: template.color,
+            emoji: template.emoji,
+            metadata: template.metadata,
+            user_id: userId,
+            is_template: false,
+            is_public: true,
+        })
+        .select()
+        .single()
+
+    if (insertError) throw insertError
 
     // 3. Clone Items from Template
-    const templateItems = await db.query.items.findMany({
-        where: eq(items.categoryId, templateId)
-    });
+    const { data: templateItems } = await (supabase.from('items') as any)
+        .select('*')
+        .eq('category_id', templateId)
 
-    if (templateItems.length > 0) {
-        await db.insert(items).values(
-            templateItems.map(ti => ({
-                id: crypto.randomUUID(),
+    if (templateItems && templateItems.length > 0) {
+        await (supabase.from('items') as any).insert(
+            templateItems.map((ti: any) => ({
                 name: ti.name,
                 description: ti.description,
                 image: ti.image,
                 metadata: ti.metadata,
-                globalItemId: ti.globalItemId,
-                userId: userId,
-                categoryId: newCategoryId,
-                eloScore: 1200,
+                global_item_id: ti.global_item_id,
+                user_id: userId,
+                category_id: newCategory.id,
+                elo_score: 1200,
                 status: 'ACTIVE'
             }))
-        );
+        )
     }
 
-    revalidatePath('/');
-    revalidatePath(`/categories/${newCategoryId}`);
-    return { categoryId: newCategoryId };
+    revalidatePath('/')
+    revalidatePath(`/categories/${newCategory.id}`)
+    return { categoryId: newCategory.id }
 }
 
 export async function toggleCategoryTemplate(categoryId: string, isTemplate: boolean) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    if (session?.user?.role !== 'ADMIN') throw new Error("Admin access required");
+    const session = await getSession()
+    if (session?.profile?.role !== 'ADMIN') throw new Error("Admin access required")
 
-    await db.update(categories)
-        .set({ isTemplate })
-        .where(eq(categories.id, categoryId));
+    const supabase = await createClient()
 
-    revalidatePath('/admin');
-    revalidatePath(`/categories/${categoryId}`);
+    await (supabase.from('categories') as any)
+        .update({ is_template: isTemplate })
+        .eq('id', categoryId)
+
+    revalidatePath('/admin')
+    revalidatePath(`/categories/${categoryId}`)
 }
 
 // ============================================================================
@@ -93,150 +97,153 @@ export async function toggleCategoryTemplate(categoryId: string, isTemplate: boo
 // ============================================================================
 
 export async function toggleCategoryChallenge(categoryId: string, isChallenge: boolean) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    if (!session?.user?.id || session.user.role !== 'ADMIN') {
-        throw new Error("Unauthorized");
+    const session = await getSession()
+    if (!session?.user?.id || session.profile?.role !== 'ADMIN') {
+        throw new Error("Unauthorized")
     }
 
-    await db.update(categories)
-        .set({ isChallenge })
-        .where(eq(categories.id, categoryId));
+    const supabase = await createClient()
 
-    revalidatePath('/admin');
-    revalidatePath('/browse');
+    await (supabase.from('categories') as any)
+        .update({ is_challenge: isChallenge })
+        .eq('id', categoryId)
+
+    revalidatePath('/admin')
+    revalidatePath('/browse')
 }
 
 export async function joinChallenge(categoryId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const session = await getSession()
+    if (!session?.user?.id) throw new Error("Unauthorized")
 
-    const userId = session.user.id;
+    const userId = session.user.id
+    const supabase = await createClient()
 
-    const category = await db.query.categories.findFirst({
-        where: and(eq(categories.id, categoryId), eq(categories.isChallenge, true))
-    });
+    const { data: category } = await (supabase.from('categories') as any)
+        .select('*')
+        .eq('id', categoryId)
+        .eq('is_challenge', true)
+        .single()
 
-    if (!category) throw new Error("Challenge not available");
+    if (!category) throw new Error("Challenge not available")
 
-    // Initialize progress by checking existing ratings
-    const categoryItems = await db.query.items.findMany({
-        where: eq(items.categoryId, categoryId),
-        columns: { id: true, globalItemId: true }
-    });
+    // Get category items
+    const { data: categoryItems } = await (supabase.from('items') as any)
+        .select('id, global_item_id')
+        .eq('category_id', categoryId)
 
-    let progress = 0;
-    const globalIds = categoryItems.map(i => i.globalItemId).filter(Boolean) as string[];
+    const itemsList = categoryItems || []
+    let progress = 0
+    const globalIds = itemsList.map((i: any) => i.global_item_id).filter(Boolean) as string[]
 
     if (globalIds.length > 0) {
-        const userCompletedCount = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(items)
-            .innerJoin(ratings, eq(items.id, ratings.itemId))
-            .where(and(
-                eq(items.userId, userId),
-                sql`${items.globalItemId} IN ${globalIds}`
-            ))
-            .get();
-        progress = userCompletedCount?.count || 0;
+        // Count user's rated items with matching global IDs
+        const { data: userItems } = await (supabase.from('items') as any)
+            .select('id, global_item_id, ratings(id)')
+            .eq('user_id', userId)
+            .in('global_item_id', globalIds)
+
+        progress = (userItems || []).filter((i: any) => i.ratings && i.ratings.length > 0).length
     }
 
-    const status = (categoryItems.length > 0 && progress >= categoryItems.length) ? 'COMPLETED' : 'ACTIVE';
-    const completedAt = status === 'COMPLETED' ? new Date() : null;
+    const status = (itemsList.length > 0 && progress >= itemsList.length) ? 'COMPLETED' : 'ACTIVE'
+    const completedAt = status === 'COMPLETED' ? new Date().toISOString() : null
 
-    await db.insert(userChallenges).values({
-        userId,
-        categoryId,
-        status,
-        progress,
-        completedAt,
-        joinedAt: new Date(),
-    }).onConflictDoUpdate({
-        target: [userChallenges.userId, userChallenges.categoryId],
-        set: { status, progress, completedAt }
-    });
+    await (supabase.from('user_challenges') as any)
+        .upsert({
+            user_id: userId,
+            category_id: categoryId,
+            status,
+            progress,
+            completed_at: completedAt,
+            joined_at: new Date().toISOString(),
+        }, {
+            onConflict: 'user_id,category_id'
+        })
 
-    revalidatePath(`/categories/${categoryId}`);
-    revalidatePath('/profile');
+    revalidatePath(`/categories/${categoryId}`)
+    revalidatePath('/profile')
 }
 
 export async function leaveChallenge(categoryId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const session = await getSession()
+    if (!session?.user?.id) throw new Error("Unauthorized")
 
-    await db.delete(userChallenges)
-        .where(and(
-            eq(userChallenges.userId, session.user.id),
-            eq(userChallenges.categoryId, categoryId)
-        ));
+    const supabase = await createClient()
 
-    revalidatePath(`/categories/${categoryId}`);
-    revalidatePath('/profile');
+    await (supabase.from('user_challenges') as any)
+        .delete()
+        .eq('user_id', session.user.id)
+        .eq('category_id', categoryId)
+
+    revalidatePath(`/categories/${categoryId}`)
+    revalidatePath('/profile')
 }
 
 export async function updateChallengeProgress(userId: string, categoryId: string) {
-    const challenge = await db.query.userChallenges.findFirst({
-        where: and(eq(userChallenges.userId, userId), eq(userChallenges.categoryId, categoryId))
-    });
+    const supabase = await createClient()
 
-    if (!challenge) return;
+    const { data: challenge } = await (supabase.from('user_challenges') as any)
+        .select('*')
+        .eq('user_id', userId)
+        .eq('category_id', categoryId)
+        .single()
 
-    const categoryItems = await db.query.items.findMany({
-        where: eq(items.categoryId, categoryId),
-        columns: { globalItemId: true }
-    });
+    if (!challenge) return
 
-    const globalIds = categoryItems.map(i => i.globalItemId).filter(Boolean) as string[];
-    let progress = 0;
+    const { data: categoryItems } = await (supabase.from('items') as any)
+        .select('global_item_id')
+        .eq('category_id', categoryId)
+
+    const itemsList = categoryItems || []
+    const globalIds = itemsList.map((i: any) => i.global_item_id).filter(Boolean) as string[]
+    let progress = 0
 
     if (globalIds.length > 0) {
-        const userCompletedCount = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(items)
-            .innerJoin(ratings, eq(items.id, ratings.itemId))
-            .where(and(
-                eq(items.userId, userId),
-                sql`${items.globalItemId} IN ${globalIds}`
-            ))
-            .get();
-        progress = userCompletedCount?.count || 0;
+        const { data: userItems } = await (supabase.from('items') as any)
+            .select('id, global_item_id, ratings(id)')
+            .eq('user_id', userId)
+            .in('global_item_id', globalIds)
+
+        progress = (userItems || []).filter((i: any) => i.ratings && i.ratings.length > 0).length
     }
 
-    const status = (categoryItems.length > 0 && progress >= categoryItems.length) ? 'COMPLETED' : 'ACTIVE';
-    const completedAt = status === 'COMPLETED' ? new Date() : null;
+    const status = (itemsList.length > 0 && progress >= itemsList.length) ? 'COMPLETED' : 'ACTIVE'
+    const completedAt = status === 'COMPLETED' ? new Date().toISOString() : null
 
     if (challenge.progress !== progress || challenge.status !== status) {
-        await db.update(userChallenges)
-            .set({ progress, status, completedAt })
-            .where(and(eq(userChallenges.userId, userId), eq(userChallenges.categoryId, categoryId)));
+        await (supabase.from('user_challenges') as any)
+            .update({ progress, status, completed_at: completedAt })
+            .eq('user_id', userId)
+            .eq('category_id', categoryId)
 
-        revalidatePath('/profile');
+        revalidatePath('/profile')
     }
 }
 
 export async function getJoinedChallenges(userId: string) {
-    return await db.query.userChallenges.findMany({
-        where: eq(userChallenges.userId, userId),
-        with: {
-            category: {
-                with: {
-                    items: {
-                        columns: { id: true }
-                    }
-                }
-            }
-        }
-    });
+    const supabase = await createClient()
+
+    const { data, error } = await (supabase.from('user_challenges') as any)
+        .select(`
+            *,
+            category:categories(*, items(id))
+        `)
+        .eq('user_id', userId)
+
+    if (error) throw error
+    return data || []
 }
 
 export async function getChallengeStatus(userId: string, categoryId: string) {
-    return await db.query.userChallenges.findFirst({
-        where: and(eq(userChallenges.userId, userId), eq(userChallenges.categoryId, categoryId)),
-        columns: { status: true, progress: true }
-    });
+    const supabase = await createClient()
+
+    const { data } = await supabase
+        .from('user_challenges')
+        .select('status, progress')
+        .eq('user_id', userId)
+        .eq('category_id', categoryId)
+        .single()
+
+    return data
 }

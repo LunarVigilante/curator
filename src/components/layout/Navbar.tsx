@@ -1,10 +1,11 @@
 'use client';
 
 import Link from "next/link";
-import { authClient } from "@/lib/auth-client";
+import { useEffect, useState } from "react";
+import { supabase, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { User, Settings, Shield, LogOut, ChevronDown, List, Tag, Bookmark, Heart, Users } from "lucide-react";
+import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users } from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,21 +14,58 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { Session } from "@supabase/supabase-js";
 
 export function Navbar() {
-    const { data: session, isPending } = authClient.useSession();
+    const [session, setSession] = useState<Session | null>(null);
+    const [isPending, setIsPending] = useState(true);
+    const [userRole, setUserRole] = useState<string | null>(null);
     const router = useRouter();
-    const userImage = session?.user?.image as string | null | undefined;
-    const userRole = (session?.user as any)?.role;
 
-    const handleSignOut = async () => {
-        await authClient.signOut({
-            fetchOptions: {
-                onSuccess: () => {
-                    router.push('/login');
-                }
+    useEffect(() => {
+        // Get initial session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+            setIsPending(false);
+
+            // Fetch profile for role
+            if (session?.user?.id) {
+                supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', session.user.id)
+                    .single()
+                    .then(({ data }) => {
+                        setUserRole(data?.role || null);
+                    });
             }
         });
+
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+            if (session?.user?.id) {
+                supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', session.user.id)
+                    .single()
+                    .then(({ data }) => {
+                        setUserRole(data?.role || null);
+                    });
+            } else {
+                setUserRole(null);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const userImage = session?.user?.user_metadata?.avatar_url as string | null | undefined;
+
+    const handleSignOut = async () => {
+        await signOut();
+        router.push('/login');
     };
 
     return (

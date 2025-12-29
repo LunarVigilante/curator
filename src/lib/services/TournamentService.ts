@@ -1,6 +1,4 @@
-import { db } from '@/lib/db';
-import { items, globalItems, users, categories } from '@/db/schema';
-import { eq, and, not, inArray, desc } from 'drizzle-orm';
+import { createClient } from '@/lib/supabase/server';
 import { MediaService } from './media/mediaService';
 import { SystemConfigService } from './SystemConfigService';
 
@@ -43,22 +41,23 @@ export class TournamentService {
         poolSize: number = 20,
         includeUnseen: boolean = true
     ): Promise<TournamentPoolItem[]> {
+        const supabase = await createClient();
+
         // 1. Fetch active user items
-        const userItems = await db.select()
-            .from(items)
-            .where(and(
-                eq(items.userId, userId),
-                eq(items.categoryId, categoryId),
-                eq(items.status, 'ACTIVE')
-            ))
+        const { data: userItems } = await supabase
+            .from('items')
+            .select('id, name, image, elo_score, description')
+            .eq('user_id', userId)
+            .eq('category_id', categoryId)
+            .eq('status', 'ACTIVE')
             .limit(poolSize);
 
         // Map user items to slim DTO
-        const userPoolItems: TournamentPoolItem[] = userItems.map(i => ({
+        const userPoolItems: TournamentPoolItem[] = (userItems || []).map(i => ({
             id: i.id,
             name: i.name || 'Untitled',
             image: i.image,
-            eloScore: i.eloScore,
+            eloScore: i.elo_score,
             type: 'USER' as const,
             description: truncateDescription(i.description)
         }));
@@ -71,19 +70,20 @@ export class TournamentService {
         const needed = poolSize - userPoolItems.length;
 
         // 2. Fetch Global Popular Items (excluding ones user has interacted with)
-        const existingItems = await db.select({ globalId: items.globalItemId })
-            .from(items)
-            .where(and(
-                eq(items.userId, userId),
-                eq(items.categoryId, categoryId)
-            ));
+        const { data: existingItems } = await supabase
+            .from('items')
+            .select('global_item_id')
+            .eq('user_id', userId)
+            .eq('category_id', categoryId);
 
-        const existingGlobalIds = existingItems.map(i => i.globalId).filter(Boolean) as string[];
+        const existingGlobalIds = (existingItems || []).map(i => i.global_item_id).filter(Boolean) as string[];
 
         // 3. External Fallback (Discovery)
-        const category = await db.query.categories.findFirst({
-            where: eq(categories.id, categoryId)
-        });
+        const { data: category } = await supabase
+            .from('categories')
+            .select('id, name')
+            .eq('id', categoryId)
+            .single();
 
         if (!category) return userPoolItems;
 
@@ -121,4 +121,3 @@ export class TournamentService {
         ].sort(() => Math.random() - 0.5);
     }
 }
-

@@ -1,93 +1,82 @@
-'use server';
+'use server'
 
-import { auth } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { follows } from '@/db/schema'; // Ensure this export exists in schema.ts
-import { eq, and } from 'drizzle-orm';
-import { headers } from 'next/headers';
-import { revalidatePath } from 'next/cache';
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { getSession, getCurrentUserId } from '@/lib/auth'
+import { logActivity } from '@/lib/actions/activity'
 
 export async function toggleFollow(targetUserId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    const session = await getSession()
 
     if (!session) {
-        throw new Error("Unauthorized");
+        throw new Error("Unauthorized")
     }
 
-    const currentUserId = session.user.id;
+    const currentUserId = session.user.id
 
     if (currentUserId === targetUserId) {
-        throw new Error("Cannot follow yourself");
+        throw new Error("Cannot follow yourself")
     }
 
+    const supabase = await createClient()
+
     // Check if already following
-    const existing = await db.select().from(follows).where(
-        and(
-            eq(follows.followerId, currentUserId),
-            eq(follows.followingId, targetUserId)
-        )
-    ).get();
+    const { data: existing } = await (supabase.from('follows') as any)
+        .select('*')
+        .eq('follower_id', currentUserId)
+        .eq('following_id', targetUserId)
+        .single()
 
     if (existing) {
         // Unfollow
-        await db.delete(follows).where(
-            and(
-                eq(follows.followerId, currentUserId),
-                eq(follows.followingId, targetUserId)
-            )
-        );
-        revalidatePath('/');
-        return { isFollowing: false };
+        await (supabase.from('follows') as any)
+            .delete()
+            .eq('follower_id', currentUserId)
+            .eq('following_id', targetUserId)
+
+        revalidatePath('/')
+        return { isFollowing: false }
     } else {
         // Follow
-        await db.insert(follows).values({
-            followerId: currentUserId,
-            followingId: targetUserId,
-        });
+        await (supabase.from('follows') as any).insert({
+            follower_id: currentUserId,
+            following_id: targetUserId,
+        })
 
         // Log Activity
-        // Ideally we fetch the target user's name for richer display
-        // For MVP we can just log the ID and fetch later, OR fetch now.
-        // Let's rely on the Feed component to fetch or just log the ID if we want to be fast.
-        // But the plan said "stores item names". Let's try to pass the ID and let the UI resolve, 
-        // OR fetch the name here. Fetching name is cleaner for JSON data storage.
-        const targetUser = await db.query.users.findFirst({
-            where: eq(users.id, targetUserId),
-            columns: { name: true }
-        });
+        const { data: targetUser } = await (supabase.from('profiles') as any)
+            .select('name')
+            .eq('id', targetUserId)
+            .single()
 
         if (targetUser) {
-            await logActivity(currentUserId, 'FOLLOWED_USER', { targetUserName: targetUser.name, targetUserId });
+            await logActivity(currentUserId, 'FOLLOWED_USER', { targetUserName: targetUser.name, targetUserId })
         }
 
-        revalidatePath('/');
-        return { isFollowing: true };
+        revalidatePath('/')
+        return { isFollowing: true }
     }
 }
 
-import { logActivity } from '@/lib/actions/activity';
-import { users } from '@/db/schema';
-
 export async function getFollowedUsers(userId: string) {
-    const results = await db.query.follows.findMany({
-        where: eq(follows.followerId, userId),
-        with: {
-            following: true // This relies on the relation defined in schema.ts
-        }
-    });
+    const supabase = await createClient()
 
-    return results.map(r => r.following);
+    const { data, error } = await (supabase.from('follows') as any)
+        .select('following:profiles!follows_following_id_fkey(*)')
+        .eq('follower_id', userId)
+
+    if (error) throw error
+    return (data || []).map((r: any) => r.following)
 }
 
 export async function isFollowingUser(followerId: string, targetUserId: string) {
-    const existing = await db.select().from(follows).where(
-        and(
-            eq(follows.followerId, followerId),
-            eq(follows.followingId, targetUserId)
-        )
-    ).get();
+    const supabase = await createClient()
 
-    return !!existing;
+    const { data } = await (supabase.from('follows') as any)
+        .select('*')
+        .eq('follower_id', followerId)
+        .eq('following_id', targetUserId)
+        .single()
+
+    return !!data
 }

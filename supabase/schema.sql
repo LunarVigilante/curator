@@ -1,0 +1,396 @@
+-- ============================================================================
+-- CURATOR DATABASE SCHEMA FOR SUPABASE
+-- Run this in the Supabase SQL Editor to create all tables
+-- ============================================================================
+
+-- ============================================================================
+-- ENUMS
+-- ============================================================================
+
+CREATE TYPE user_role AS ENUM ('USER', 'ADMIN', 'MODERATOR');
+CREATE TYPE item_status AS ENUM ('ACTIVE', 'IGNORED', 'WISHLIST', 'SEEN');
+CREATE TYPE rating_type AS ENUM ('NUMERICAL', 'TIER', 'HYBRID');
+CREATE TYPE rank_sentiment AS ENUM ('POSITIVE', 'NEUTRAL', 'NEGATIVE');
+CREATE TYPE rank_type AS ENUM ('RANKED', 'UTILITY');
+
+-- ============================================================================
+-- USER PROFILES (Synced from auth.users)
+-- ============================================================================
+
+CREATE TABLE profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT,
+    display_name TEXT,
+    image TEXT,
+    bio TEXT,
+    cover_image TEXT,
+    is_public BOOLEAN DEFAULT FALSE,
+    profile_views INTEGER DEFAULT 0,
+    preferences JSONB,
+    role user_role DEFAULT 'USER',
+    is_locked_out BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- CATEGORIES
+-- ============================================================================
+
+CREATE TABLE categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT,
+    image TEXT,
+    color TEXT,
+    emoji TEXT,
+    sort_order INTEGER DEFAULT 0,
+    metadata JSONB,
+    is_template BOOLEAN DEFAULT FALSE,
+    is_challenge BOOLEAN DEFAULT FALSE,
+    is_public BOOLEAN DEFAULT FALSE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    cached_analysis JSONB,
+    analysis_hash TEXT,
+    user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- GLOBAL ITEMS (Master Item Store)
+-- ============================================================================
+
+CREATE TABLE global_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    external_id TEXT,
+    source TEXT, -- 'tmdb', 'anilist', 'spotify', etc.
+    title TEXT NOT NULL,
+    description TEXT,
+    image_url TEXT,
+    release_year INTEGER,
+    metadata JSONB,
+    cached_tags JSONB,
+    category_type TEXT,
+    vector_text TEXT,
+    last_metadata_update TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(source, external_id)
+);
+
+-- ============================================================================
+-- ITEMS (User's Item Instances)
+-- ============================================================================
+
+CREATE TABLE items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT,
+    description TEXT,
+    image TEXT,
+    metadata JSONB,
+    status item_status DEFAULT 'ACTIVE',
+    tier TEXT,
+    rank INTEGER,
+    notes TEXT,
+    elo_score FLOAT DEFAULT 1200,
+    global_item_id UUID REFERENCES global_items(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- TAGS
+-- ============================================================================
+
+CREATE TABLE tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE items_to_tags (
+    item_id UUID REFERENCES items(id) ON DELETE CASCADE,
+    tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (item_id, tag_id)
+);
+
+-- ============================================================================
+-- RATINGS
+-- ============================================================================
+
+CREATE TABLE ratings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    value FLOAT NOT NULL,
+    tier TEXT,
+    custom_rank TEXT,
+    type rating_type NOT NULL,
+    item_id UUID REFERENCES items(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- CUSTOM RANKS
+-- ============================================================================
+
+CREATE TABLE custom_ranks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    sentiment rank_sentiment NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    color TEXT,
+    type rank_type DEFAULT 'RANKED',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- INTERACTION LAYER
+-- ============================================================================
+
+CREATE TABLE user_challenges (
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    status TEXT DEFAULT 'ACTIVE',
+    progress INTEGER DEFAULT 0,
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    PRIMARY KEY (user_id, category_id)
+);
+
+CREATE TABLE curator_notes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id UUID REFERENCES items(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    content TEXT NOT NULL,
+    is_pinned BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE collection_comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    parent_id UUID REFERENCES collection_comments(id),
+    content TEXT NOT NULL,
+    is_creator_reply BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE share_cards (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    share_hash TEXT UNIQUE NOT NULL,
+    template TEXT DEFAULT 'default',
+    image_url TEXT,
+    metadata JSONB,
+    view_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE collection_likes (
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, category_id)
+);
+
+CREATE TABLE collection_saves (
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, category_id)
+);
+
+CREATE TABLE collection_tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
+    tag TEXT NOT NULL,
+    added_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    is_admin_only BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE user_top_picks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    item_id UUID REFERENCES items(id) ON DELETE CASCADE NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    pinned_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE follows (
+    follower_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    following_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (follower_id, following_id)
+);
+
+CREATE TABLE activities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    type TEXT NOT NULL,
+    data JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- ANALYTICS
+-- ============================================================================
+
+CREATE TABLE taste_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    metric_type TEXT NOT NULL,
+    value FLOAT NOT NULL,
+    computed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE taste_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    snapshot_type TEXT NOT NULL,
+    metrics_json JSONB NOT NULL,
+    item_count INTEGER NOT NULL,
+    top_genres_json JSONB,
+    captured_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE cohort_averages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cohort_type TEXT NOT NULL,
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    metric_type TEXT NOT NULL,
+    avg_value FLOAT NOT NULL,
+    stddev_value FLOAT,
+    sample_size INTEGER NOT NULL,
+    computed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE insight_unlocks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    insight_key TEXT NOT NULL,
+    unlocked_at TIMESTAMPTZ DEFAULT NOW(),
+    unlock_context JSONB
+);
+
+CREATE TABLE unlock_conditions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    insight_key TEXT NOT NULL,
+    condition_type TEXT NOT NULL,
+    threshold INTEGER NOT NULL,
+    category_scoped BOOLEAN DEFAULT FALSE,
+    display_label TEXT NOT NULL
+);
+
+-- ============================================================================
+-- SYSTEM
+-- ============================================================================
+
+CREATE TABLE system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    category TEXT NOT NULL,
+    is_secret BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE email_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    subject TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    variables JSONB,
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE invites (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code TEXT UNIQUE NOT NULL,
+    created_by UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    is_used BOOLEAN DEFAULT FALSE,
+    used_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    used_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- INDEXES
+-- ============================================================================
+
+CREATE INDEX idx_items_user_id ON items(user_id);
+CREATE INDEX idx_items_category_id ON items(category_id);
+CREATE INDEX idx_items_global_item_id ON items(global_item_id);
+CREATE INDEX idx_categories_user_id ON categories(user_id);
+CREATE INDEX idx_global_items_source_external ON global_items(source, external_id);
+CREATE INDEX idx_ratings_item_id ON ratings(item_id);
+CREATE INDEX idx_ratings_user_id ON ratings(user_id);
+CREATE INDEX idx_activities_user_id ON activities(user_id);
+CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
+
+-- ============================================================================
+-- AUTH SYNC TRIGGER (Creates profile when user signs up)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+    INSERT INTO public.profiles (id, email, name, created_at, updated_at)
+    VALUES (
+        NEW.id,
+        NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+        NOW(),
+        NOW()
+    );
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================================
+-- ROW LEVEL SECURITY
+-- ============================================================================
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+
+-- Profiles: Own profile + public profiles
+CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Public profiles are viewable" ON profiles FOR SELECT USING (is_public = true);
+CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+
+-- Categories: Own + public + featured
+CREATE POLICY "Users can view own categories" ON categories FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Public categories are viewable" ON categories FOR SELECT USING (is_public = true);
+CREATE POLICY "Featured categories are viewable" ON categories FOR SELECT USING (is_featured = true);
+CREATE POLICY "Users can manage own categories" ON categories FOR ALL USING (auth.uid() = user_id);
+
+-- Items: Own items
+CREATE POLICY "Users can manage own items" ON items FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Items in public categories are viewable" ON items FOR SELECT USING (
+    EXISTS (SELECT 1 FROM categories WHERE categories.id = items.category_id AND categories.is_public = true)
+);
+
+-- Ratings: Own ratings
+CREATE POLICY "Users can manage own ratings" ON ratings FOR ALL USING (auth.uid() = user_id);
+
+-- System settings: Admin only via service role
+CREATE POLICY "Service role can access settings" ON system_settings FOR ALL USING (auth.role() = 'service_role');

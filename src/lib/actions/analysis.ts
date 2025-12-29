@@ -1,16 +1,13 @@
 'use server'
 
-import { db } from '@/lib/db'
-import { items, ratings, categories, globalItems } from '@/db/schema'
-import { eq, and, isNotNull, sql } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserId } from '@/lib/auth'
 import { z } from 'zod'
 import {
     TasteAnalysisSchema,
     type TasteAnalysis,
     AnalysisFailedError
 } from '@/lib/types/analysis'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
 
 // Re-export for component usage
 export type { TasteAnalysis } from '@/lib/types/analysis'
@@ -66,11 +63,6 @@ function sanitizeWarning(warning: string): string {
     return warning
 }
 
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
-
 export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalysis> {
     // Get current user for tenant isolation
     const userId = await getCurrentUserId()
@@ -78,59 +70,52 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         throw new Error("Authentication required to analyze taste.")
     }
 
+    const supabase = await createClient()
+
     // 1. Fetch data with SQL-level filtering (no memory hog)
-    // Build WHERE conditions
     let targetUserId = userId;
 
     if (categoryId) {
-        // If analyzing a specific category, determining the target user is tricky because
-        // we might be looking at someone else's list.
-        // We should check who owns the category.
-        const category = await db.query.categories.findFirst({
-            where: eq(categories.id, categoryId),
-            columns: { userId: true, isPublic: true }
-        });
+        // If analyzing a specific category, check who owns it
+        const { data: category } = await (supabase.from('categories') as any)
+            .select('user_id, is_public')
+            .eq('id', categoryId)
+            .single()
 
         if (category) {
-            // If we found the category, use its owner as the target user.
-            // This allows analyzing public lists (or your own private ones).
-            // Security: If private and not yours, you shouldn't be here, but the page wouldn't load.
-            targetUserId = category.userId || userId;
+            targetUserId = category.user_id || userId;
         }
     }
 
-    const whereConditions = categoryId
-        ? and(
-            eq(items.userId, targetUserId),
-            isNotNull(items.tier),
-            eq(items.categoryId, categoryId)
-        )
-        : and(
-            eq(items.userId, userId),
-            isNotNull(items.tier)
-        )
+    // Fetch rated items with relations
+    let query = (supabase.from('items') as any)
+        .select(`
+            id, name, description, tier, elo_score, global_item_id, user_id,
+            category:categories(id, name),
+            ratings(*),
+            item_tags:item_tags(tag:tags(id, name))
+        `)
+        .eq('user_id', targetUserId)
+        .not('tier', 'is', null)
 
-    const ratedItems = await db.query.items.findMany({
-        where: whereConditions,
-        with: {
-            ratings: true,
-            category: true,
-            tags: {
-                with: {
-                    tag: true
-                }
-            }
-        }
-    })
+    if (categoryId) {
+        query = query.eq('category_id', categoryId)
+    }
+
+    const { data: ratedItems, error: itemsError } = await query
+
+    if (itemsError) throw itemsError
 
     // Fetch custom ranks
-    const allCustomRanks = await db.query.customRanks.findMany()
+    const { data: allCustomRanks } = await (supabase.from('custom_ranks') as any)
+        .select('name, type')
+
     const tierTypeMap = new Map<string, string>()
-    for (const r of allCustomRanks) {
+    for (const r of allCustomRanks || []) {
         tierTypeMap.set(r.name, r.type)
     }
 
-    if (ratedItems.length === 0) {
+    if (!ratedItems || ratedItems.length === 0) {
         throw new Error("No items found to analyze.")
     }
 
@@ -165,10 +150,11 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
 
     for (const item of itemsForPrompt) {
         const tier = item.tier || ''
-        const ratingValue = item.ratings[0]?.value || 0
+        const ratingValue = (item.ratings as any[])?.[0]?.value || 0
         // SECURITY: Sanitize all user-generated content to prevent prompt injection
-        const sanitizedTags = item.tags
-            .map((t: { tag: { name: string } }) => sanitizeForPrompt(t.tag.name, 30))
+        const sanitizedTags = ((item.item_tags as any[]) || [])
+            .map((t: any) => sanitizeForPrompt(t.tag?.name, 30))
+            .filter(Boolean)
             .join(', ')
 
         const type = tierTypeMap.get(tier) || 'RANKED'
@@ -181,7 +167,7 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         const sentiment = isNegative ? 'NEGATIVE' : 'POSITIVE'
         // SECURITY: Sanitize item name, category, and description
         const sanitizedName = sanitizeForPrompt(item.name, 100)
-        const sanitizedCategory = sanitizeForPrompt(item.category?.name, 50)
+        const sanitizedCategory = sanitizeForPrompt((item.category as any)?.name, 50)
         const sanitizedDesc = sanitizeForPrompt(item.description, 150)
 
         const line = `- ${sanitizedName} (${sanitizedCategory}): ${type === 'UTILITY' ? `Status: ${tier}` : `Tier ${tier} (${sentiment})`}. Tags: [${sanitizedTags}]. Desc: "${sanitizedDesc}" (ID: ${item.id})`
@@ -199,25 +185,22 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     const { createHash } = await import('crypto')
     const sortedForHash = [...ratedItems].sort((a, b) => a.id.localeCompare(b.id))
     const fingerprintString = sortedForHash.map(item => {
-        return `${item.id}:${item.tier}:${item.ratings[0]?.value || 0}`
+        return `${item.id}:${item.tier}:${(item.ratings as any[])?.[0]?.value || 0}`
     }).join('|')
 
     const currentHash = createHash('sha256').update(fingerprintString).digest('hex')
 
     // Check Cache
     if (categoryId) {
-        const category = await db.query.categories.findFirst({
-            where: eq(categories.id, categoryId),
-            columns: {
-                cachedAnalysis: true,
-                analysisHash: true
-            }
-        })
+        const { data: category } = await (supabase.from('categories') as any)
+            .select('cached_analysis, analysis_hash')
+            .eq('id', categoryId)
+            .single()
 
-        if (category?.cachedAnalysis && category?.analysisHash === currentHash) {
+        if (category?.cached_analysis && category?.analysis_hash === currentHash) {
             console.log("Returning cached analysis for category:", categoryId)
             // Validate cached data too, just in case schema changed
-            const cachedJson = JSON.parse(category.cachedAnalysis)
+            const cachedJson = JSON.parse(category.cached_analysis)
             const parsedCache = TasteAnalysisSchema.safeParse(cachedJson)
             if (parsedCache.success) {
                 return parsedCache.data
@@ -227,25 +210,24 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     }
 
     const context = categoryId
-        ? `Focus the analysis specifically on the category: ${ratedItems[0]?.category?.name || 'this category'}.`
+        ? `Focus the analysis specifically on the category: ${(ratedItems[0]?.category as any)?.name || 'this category'}.`
         : "Provide a comprehensive analysis of the user's taste across all categories."
-
-    // ==========================================================================
-    // PARALLEL EXECUTION: Split analysis into 3 concurrent LLM calls
-    // ==========================================================================
 
     // ==========================================================================
     // 4. FIND CONTROVERSIAL CANDIDATES (Anti-Recommendations)
     // ==========================================================================
 
     // A. Identify User's S-Tier Tags
-    const sTierItems = ratedItems.filter(i => ['S', 'A'].includes(i.tier || ''))
+    const sTierItems = (ratedItems as any[]).filter((i: any) => ['S', 'A'].includes(i.tier || ''))
     const tagCounts = new Map<string, number>()
 
-    sTierItems.forEach(item => {
-        item.tags.forEach(t => {
-            const count = tagCounts.get(t.tag.name) || 0
-            tagCounts.set(t.tag.name, count + 1)
+    sTierItems.forEach((item: any) => {
+        ((item.item_tags as any[]) || []).forEach(t => {
+            const tagName = t.tag?.name
+            if (tagName) {
+                const count = tagCounts.get(tagName) || 0
+                tagCounts.set(tagName, count + 1)
+            }
         })
     })
 
@@ -255,37 +237,20 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         .map(([name]) => name.toLowerCase())
 
     // B. Find High-Rated Global Items (excluding user's own items)
-    const userGlobalItemIds = new Set(ratedItems.map(i => i.globalItemId).filter(Boolean))
+    const userGlobalItemIds = new Set((ratedItems as any[]).map((i: any) => i.global_item_id).filter(Boolean))
 
-    // Get popular global items with > 7.5 average rating
-    // Note: Since we might not have enough ratings in a seeded DB, we also check rating count
-    const popularGlobalItems = await db
-        .select({
-            id: globalItems.id,
-            title: globalItems.title,
-            tags: globalItems.cachedTags,
-            releaseYear: globalItems.releaseYear,
-            avgRating: sql<number>`avg(${ratings.value})`,
-            ratingCount: sql<number>`count(${ratings.id})`
-        })
-        .from(globalItems)
-        .leftJoin(items, eq(globalItems.id, items.globalItemId))
-        .leftJoin(ratings, eq(items.id, ratings.itemId))
-        .groupBy(globalItems.id)
-        .having(({ avgRating, ratingCount }) =>
-            // In a real app this would be higher, but for seed data we'll be lenient
-            // Or avgRating > 7.5 OR ratingCount > 2
-            sql`${avgRating} >= 7.5 OR ${ratingCount} >= 2`
-        )
+    // Get popular global items - simplified query for Supabase
+    const { data: popularGlobalItems } = await (supabase.from('global_items') as any)
+        .select('id, title, cached_tags, release_year')
         .limit(50)
 
     // C. Filter for Incompatibility (Low Tag Overlap)
-    const candidates = popularGlobalItems
-        .filter(gItem => !userGlobalItemIds.has(gItem.id)) // Exclude seen
-        .map(gItem => {
+    const candidates = (popularGlobalItems || [])
+        .filter((gItem: any) => !userGlobalItemIds.has(gItem.id)) // Exclude seen
+        .map((gItem: any) => {
             let itemTags: string[] = []
             try {
-                itemTags = gItem.tags ? JSON.parse(gItem.tags) : []
+                itemTags = gItem.cached_tags ? JSON.parse(gItem.cached_tags) : []
             } catch (e) { }
 
             // Calculate overlap
@@ -296,13 +261,13 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
                 overlap
             }
         })
-        .filter(c => c.itemTags.length > 0) // Must have tags to judge
-        .sort((a, b) => a.overlap - b.overlap) // Least overlap first
+        .filter((c: any) => c.itemTags.length > 0) // Must have tags to judge
+        .sort((a: any, b: any) => a.overlap - b.overlap) // Least overlap first
         .slice(0, 10) // Top 10 controversial fits
 
     // Format candidates for prompt
-    const candidatesStr = candidates.map(c =>
-        `- ${c.title} (${c.releaseYear}): [${c.itemTags.slice(0, 5).join(', ')}]`
+    const candidatesStr = candidates.map((c: any) =>
+        `- ${c.title} (${c.release_year}): [${c.itemTags.slice(0, 5).join(', ')}]`
     ).join('\n')
 
 
@@ -424,12 +389,12 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
 
         // Cache the result
         if (categoryId) {
-            await db.update(categories)
-                .set({
-                    cachedAnalysis: JSON.stringify(sanitizedResult),
-                    analysisHash: currentHash
+            await (supabase.from('categories') as any)
+                .update({
+                    cached_analysis: JSON.stringify(sanitizedResult),
+                    analysis_hash: currentHash
                 })
-                .where(eq(categories.id, categoryId))
+                .eq('id', categoryId)
         }
 
         return sanitizedResult

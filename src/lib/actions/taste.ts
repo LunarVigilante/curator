@@ -1,19 +1,7 @@
 'use server'
 
-import { db } from '@/lib/db'
-import {
-    items,
-    tasteMetrics,
-    tasteSnapshots,
-    cohortAverages,
-    insightUnlocks,
-    unlockConditions,
-    follows,
-    users
-} from '@/db/schema'
-import { eq, and, desc, sql, isNotNull, count } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserId } from '@/lib/auth'
 import {
     MetricTypes,
     InsightKeys,
@@ -29,15 +17,6 @@ import {
 } from '@/lib/types/taste'
 
 // ============================================================================
-// AUTH HELPER
-// ============================================================================
-
-async function getCurrentUserId(): Promise<string | null> {
-    const session = await auth.api.getSession({ headers: await headers() })
-    return session?.user?.id || null
-}
-
-// ============================================================================
 // TIER DISTRIBUTION HELPERS
 // ============================================================================
 
@@ -48,28 +27,35 @@ async function getTierDistribution(
     userId: string,
     categoryId?: string
 ): Promise<TierDistribution> {
-    const whereClause = categoryId
-        ? and(eq(items.userId, userId), eq(items.categoryId, categoryId), isNotNull(items.tier))
-        : and(eq(items.userId, userId), isNotNull(items.tier))
+    const supabase = await createClient()
 
-    const results = await db
-        .select({
-            tier: items.tier,
-            count: sql<number>`COUNT(*)`
-        })
-        .from(items)
-        .where(whereClause)
-        .groupBy(items.tier)
+    let query = (supabase.from('items') as any)
+        .select('tier')
+        .eq('user_id', userId)
+        .not('tier', 'is', null)
+
+    if (categoryId) {
+        query = query.eq('category_id', categoryId)
+    }
+
+    const { data: items } = await query
 
     const distribution: TierDistribution = { S: 0, A: 0, B: 0, C: 0, D: 0, F: 0 }
-    const total = results.reduce((sum, r) => sum + r.count, 0)
+    const total = items?.length || 0
 
     if (total === 0) return distribution
 
-    for (const result of results) {
-        const tier = result.tier as keyof TierDistribution
+    // Count tiers
+    const counts: Record<string, number> = {}
+    for (const item of items || []) {
+        if (item.tier) {
+            counts[item.tier] = (counts[item.tier] || 0) + 1
+        }
+    }
+
+    for (const [tier, count] of Object.entries(counts)) {
         if (tier in distribution) {
-            distribution[tier] = (result.count / total) * 100
+            distribution[tier as keyof TierDistribution] = (count / total) * 100
         }
     }
 
@@ -164,19 +150,23 @@ export async function computeAlignmentScore(
     cohortType: 'global' | 'experts',
     categoryId?: string
 ): Promise<number> {
+    const supabase = await createClient()
     const userDist = await getTierDistribution(userId, categoryId)
     const userVector = distributionToVector(userDist)
 
     // Get pre-computed cohort average
-    const cohortAvg = await db.query.cohortAverages.findFirst({
-        where: and(
-            eq(cohortAverages.cohortType, cohortType),
-            eq(cohortAverages.metricType, 'tier_distribution'),
-            categoryId
-                ? eq(cohortAverages.categoryId, categoryId)
-                : sql`${cohortAverages.categoryId} IS NULL`
-        )
-    })
+    let query = (supabase.from('cohort_averages') as any)
+        .select('*')
+        .eq('cohort_type', cohortType)
+        .eq('metric_type', 'tier_distribution')
+
+    if (categoryId) {
+        query = query.eq('category_id', categoryId)
+    } else {
+        query = query.is('category_id', null)
+    }
+
+    const { data: cohortAvg } = await query.single()
 
     if (!cohortAvg) {
         // No cohort data yet, return neutral
@@ -208,26 +198,31 @@ export async function getTasteMetrics(
     const currentUserId = userId || await getCurrentUserId()
     if (!currentUserId) return null
 
+    const supabase = await createClient()
+
     // Check cache
-    const cached = await db.query.tasteMetrics.findMany({
-        where: and(
-            eq(tasteMetrics.userId, currentUserId),
-            categoryId
-                ? eq(tasteMetrics.categoryId, categoryId)
-                : sql`${tasteMetrics.categoryId} IS NULL`
-        )
-    })
+    let query = (supabase.from('taste_metrics') as any)
+        .select('*')
+        .eq('user_id', currentUserId)
+
+    if (categoryId) {
+        query = query.eq('category_id', categoryId)
+    } else {
+        query = query.is('category_id', null)
+    }
+
+    const { data: cached } = await query
 
     const now = Date.now()
-    const validCache = cached.filter(m =>
-        now - m.computedAt.getTime() < maxAge
+    const validCache = (cached || []).filter((m: any) =>
+        now - new Date(m.computed_at).getTime() < maxAge
     )
 
     if (validCache.length >= 2) {
         // Return cached metrics
         const result: Record<string, number> = {}
         for (const metric of validCache) {
-            result[metric.metricType] = metric.value
+            result[metric.metric_type] = metric.value
         }
         return result
     }
@@ -235,20 +230,16 @@ export async function getTasteMetrics(
     // Compute fresh metrics
     const metrics = await computeUserMetrics(currentUserId, categoryId)
 
-    // Cache them
+    // Cache them - use upsert with on conflict
     for (const [type, value] of Object.entries(metrics)) {
-        await db.insert(tasteMetrics)
-            .values({
-                userId: currentUserId,
-                categoryId: categoryId || null,
-                metricType: type,
+        await (supabase.from('taste_metrics') as any)
+            .upsert({
+                user_id: currentUserId,
+                category_id: categoryId || null,
+                metric_type: type,
                 value,
-                computedAt: new Date()
-            })
-            .onConflictDoUpdate({
-                target: [tasteMetrics.id],
-                set: { value, computedAt: new Date() }
-            })
+                computed_at: new Date().toISOString()
+            }, { onConflict: 'user_id, category_id, metric_type' })
     }
 
     return metrics
@@ -268,24 +259,25 @@ export async function checkInsightUnlock(
     const userId = await getCurrentUserId()
     if (!userId) return { unlocked: false, displayLabel: 'Sign in required' }
 
+    const supabase = await createClient()
+
     // Check if already unlocked
-    const existing = await db.query.insightUnlocks.findFirst({
-        where: and(
-            eq(insightUnlocks.userId, userId),
-            eq(insightUnlocks.insightKey, insightKey)
-        )
-    })
+    const { data: existing } = await (supabase.from('insight_unlocks') as any)
+        .select('id')
+        .eq('user_id', userId)
+        .eq('insight_key', insightKey)
+        .single()
 
     if (existing) return { unlocked: true }
 
     // Get conditions for this insight
-    const conditions = await db.query.unlockConditions.findMany({
-        where: eq(unlockConditions.insightKey, insightKey)
-    })
+    const { data: conditions } = await (supabase.from('unlock_conditions') as any)
+        .select('*')
+        .eq('insight_key', insightKey)
 
     // If no conditions defined, check defaults
-    const effectiveConditions = conditions.length > 0
-        ? conditions
+    const effectiveConditions = (conditions?.length || 0) > 0
+        ? conditions!
         : DEFAULT_UNLOCK_CONDITIONS.filter(c => c.insightKey === insightKey)
 
     for (const condition of effectiveConditions) {
@@ -297,17 +289,17 @@ export async function checkInsightUnlock(
                 unlocked: false,
                 progress,
                 required: condition.threshold,
-                displayLabel: condition.displayLabel,
+                displayLabel: condition.displayLabel || condition.display_label,
                 percentComplete
             }
         }
     }
 
     // All conditions met - grant unlock
-    await db.insert(insightUnlocks).values({
-        userId,
-        insightKey,
-        unlockContext: JSON.stringify({ categoryId, triggeredAt: new Date().toISOString() })
+    await (supabase.from('insight_unlocks') as any).insert({
+        user_id: userId,
+        insight_key: insightKey,
+        unlock_context: JSON.stringify({ categoryId, triggeredAt: new Date().toISOString() })
     })
 
     return { unlocked: true }
@@ -318,44 +310,57 @@ export async function checkInsightUnlock(
  */
 async function evaluateCondition(
     userId: string,
-    condition: { conditionType: string; threshold: number; categoryScoped?: boolean },
+    condition: { conditionType?: string; condition_type?: string; threshold: number; categoryScoped?: boolean; category_scoped?: boolean },
     categoryId?: string
 ): Promise<number> {
-    switch (condition.conditionType) {
-        case ConditionTypes.MIN_ITEMS_RATED: {
-            const whereClause = condition.categoryScoped && categoryId
-                ? and(eq(items.userId, userId), isNotNull(items.tier), eq(items.categoryId, categoryId))
-                : and(eq(items.userId, userId), isNotNull(items.tier))
+    const supabase = await createClient()
+    const conditionType = condition.conditionType || condition.condition_type
+    const categoryScoped = condition.categoryScoped ?? condition.category_scoped
 
-            const result = await db.select({ count: count() }).from(items).where(whereClause)
-            return result[0]?.count || 0
+    switch (conditionType) {
+        case ConditionTypes.MIN_ITEMS_RATED: {
+            let query = (supabase.from('items') as any)
+                .select('id', { count: 'exact', head: true })
+                .eq('user_id', userId)
+                .not('tier', 'is', null)
+
+            if (categoryScoped && categoryId) {
+                query = query.eq('category_id', categoryId)
+            }
+
+            const { count } = await query
+            return count || 0
         }
 
         case ConditionTypes.ACCOUNT_AGE_DAYS: {
-            const user = await db.query.users.findFirst({
-                where: eq(users.id, userId),
-                columns: { createdAt: true }
-            })
+            const { data: user } = await (supabase.from('profiles') as any)
+                .select('created_at')
+                .eq('id', userId)
+                .single()
+
             if (!user) return 0
             const daysSinceCreation = Math.floor(
-                (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+                (Date.now() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)
             )
             return daysSinceCreation
         }
 
         case ConditionTypes.MIN_FOLLOWING: {
-            const result = await db.select({ count: count() })
-                .from(follows)
-                .where(eq(follows.followerId, userId))
-            return result[0]?.count || 0
+            const { count } = await (supabase.from('follows') as any)
+                .select('id', { count: 'exact', head: true })
+                .eq('follower_id', userId)
+
+            return count || 0
         }
 
         case ConditionTypes.MIN_CATEGORIES: {
-            const result = await db
-                .selectDistinct({ categoryId: items.categoryId })
-                .from(items)
-                .where(and(eq(items.userId, userId), isNotNull(items.tier)))
-            return result.length
+            const { data: items } = await (supabase.from('items') as any)
+                .select('category_id')
+                .eq('user_id', userId)
+                .not('tier', 'is', null)
+
+            const uniqueCategories = new Set(items?.map((i: any) => i.category_id).filter(Boolean))
+            return uniqueCategories.size
         }
 
         default:
@@ -390,34 +395,38 @@ export async function captureSnapshot(
     snapshotType: 'weekly' | 'monthly' | 'milestone',
     categoryId?: string
 ): Promise<void> {
+    const supabase = await createClient()
     const metrics = await computeUserMetrics(userId, categoryId)
     const distribution = await getTierDistribution(userId, categoryId)
 
     // Get item count
-    const itemCount = await db.select({ count: count() })
-        .from(items)
-        .where(and(
-            eq(items.userId, userId),
-            isNotNull(items.tier),
-            categoryId ? eq(items.categoryId, categoryId) : undefined
-        ))
+    let countQuery = (supabase.from('items') as any)
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .not('tier', 'is', null)
+
+    if (categoryId) {
+        countQuery = countQuery.eq('category_id', categoryId)
+    }
+
+    const { count } = await countQuery
 
     const snapshotMetrics: SnapshotMetrics = {
         niche_score: metrics[MetricTypes.NICHE_SCORE],
         diversity_score: metrics[MetricTypes.DIVERSITY_SCORE],
         alignment_global: metrics[MetricTypes.ALIGNMENT_GLOBAL],
-        totalItems: itemCount[0]?.count || 0,
+        totalItems: count || 0,
         topGenres: [], // TODO: compute from tags
     }
 
-    await db.insert(tasteSnapshots).values({
-        userId,
-        categoryId: categoryId || null,
-        snapshotType,
-        metricsJson: JSON.stringify(snapshotMetrics),
-        itemCount: snapshotMetrics.totalItems,
-        topGenresJson: JSON.stringify(snapshotMetrics.topGenres),
-        capturedAt: new Date()
+    await (supabase.from('taste_snapshots') as any).insert({
+        user_id: userId,
+        category_id: categoryId || null,
+        snapshot_type: snapshotType,
+        metrics_json: JSON.stringify(snapshotMetrics),
+        item_count: snapshotMetrics.totalItems,
+        top_genres_json: JSON.stringify(snapshotMetrics.topGenres),
+        captured_at: new Date().toISOString()
     })
 }
 
@@ -430,16 +439,18 @@ export async function getTasteEvolution(
     const userId = await getCurrentUserId()
     if (!userId) return null
 
-    const snapshots = await db.query.tasteSnapshots.findMany({
-        where: eq(tasteSnapshots.userId, userId),
-        orderBy: desc(tasteSnapshots.capturedAt),
-        limit: months * 5 // ~5 data points per month
-    })
+    const supabase = await createClient()
 
-    if (snapshots.length < 2) return null
+    const { data: snapshots } = await (supabase.from('taste_snapshots') as any)
+        .select('*')
+        .eq('user_id', userId)
+        .order('captured_at', { ascending: false })
+        .limit(months * 5) // ~5 data points per month
 
-    const latest = JSON.parse(snapshots[0].metricsJson) as SnapshotMetrics
-    const oldest = JSON.parse(snapshots[snapshots.length - 1].metricsJson) as SnapshotMetrics
+    if (!snapshots || snapshots.length < 2) return null
+
+    const latest = JSON.parse(snapshots[0].metrics_json) as SnapshotMetrics
+    const oldest = JSON.parse(snapshots[snapshots.length - 1].metrics_json) as SnapshotMetrics
 
     const nicheChange = (latest.niche_score ?? 0) - (oldest.niche_score ?? 0)
     const diversityChange = (latest.diversity_score ?? 0) - (oldest.diversity_score ?? 0)
@@ -471,15 +482,16 @@ export async function getTasteEvolution(
  * Seed default unlock conditions (run once on setup)
  */
 export async function seedUnlockConditions(): Promise<void> {
+    const supabase = await createClient()
+
     for (const condition of DEFAULT_UNLOCK_CONDITIONS) {
-        await db.insert(unlockConditions)
-            .values({
-                insightKey: condition.insightKey,
-                conditionType: condition.conditionType,
+        await (supabase.from('unlock_conditions') as any)
+            .upsert({
+                insight_key: condition.insightKey,
+                condition_type: condition.conditionType,
                 threshold: condition.threshold,
-                categoryScoped: condition.categoryScoped,
-                displayLabel: condition.displayLabel
-            })
-            .onConflictDoNothing()
+                category_scoped: condition.categoryScoped,
+                display_label: condition.displayLabel
+            }, { onConflict: 'insight_key, condition_type' })
     }
 }

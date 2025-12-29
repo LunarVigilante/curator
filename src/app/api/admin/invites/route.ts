@@ -1,41 +1,50 @@
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
+import { getSession, isAdmin } from '@/lib/auth'
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { invites, users } from '@/db/schema'
-import { eq, desc } from 'drizzle-orm'
+import { createClient } from '@/lib/supabase/server'
+
+interface Invite {
+    id: string
+    code: string
+    is_used: boolean
+    created_at: string
+    used_at: string | null
+    created_by: string
+    used_by: string | null
+}
 
 // GET - List all invites
 export async function GET() {
     try {
-        const session = await auth.api.getSession({ headers: await headers() })
+        const session = await getSession()
         if (!session) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Check if admin
-        if (session.user.role !== 'admin') {
+        if (!(await isAdmin())) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
-        // Fetch all invites with creator info
-        const result = await db
-            .select({
-                id: invites.id,
-                code: invites.code,
-                isUsed: invites.isUsed,
-                createdAt: invites.createdAt,
-                usedAt: invites.usedAt,
-                createdBy: invites.createdBy,
-                usedBy: invites.usedBy,
-                creatorName: users.name,
-                creatorEmail: users.email,
-            })
-            .from(invites)
-            .leftJoin(users, eq(invites.createdBy, users.id))
-            .orderBy(desc(invites.createdAt))
+        const supabase = await createClient()
 
-        return NextResponse.json(result)
+        // Use type assertion to bypass Supabase type inference
+        const { data: result, error } = await (supabase as any)
+            .from('invites')
+            .select('*')
+            .order('created_at', { ascending: false })
+
+        if (error) throw error
+
+        const mapped = ((result || []) as Invite[]).map((invite) => ({
+            id: invite.id,
+            code: invite.code,
+            isUsed: invite.is_used,
+            createdAt: invite.created_at,
+            usedAt: invite.used_at,
+            createdBy: invite.created_by,
+            usedBy: invite.used_by,
+        }))
+
+        return NextResponse.json(mapped)
     } catch (error) {
         console.error('Failed to fetch invites:', error)
         return NextResponse.json({ error: 'Failed to fetch invites' }, { status: 500 })
@@ -45,34 +54,43 @@ export async function GET() {
 // POST - Generate new invite code
 export async function POST() {
     try {
-        const session = await auth.api.getSession({ headers: await headers() })
+        const session = await getSession()
         if (!session) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Check if admin
-        if (session.user.role !== 'admin') {
+        if (!(await isAdmin())) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
-        // Generate random 8-character alphanumeric code (uppercase)
+        const supabase = await createClient()
+
         const code = Array.from({ length: 8 }, () =>
             'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.charAt(Math.floor(Math.random() * 36))
         ).join('')
 
-        // Insert new invite
-        const [newInvite] = await db
-            .insert(invites)
-            .values({
+        // Use type assertion to bypass Supabase type inference
+        const { data: newInvite, error } = await (supabase as any)
+            .from('invites')
+            .insert({
                 code,
-                createdBy: session.user.id,
-                isUsed: false,
+                created_by: session.user.id,
+                is_used: false,
             })
-            .returning()
+            .select()
+            .single()
+
+        if (error) throw error
+
+        const invite = newInvite as Invite
 
         return NextResponse.json({
-            ...newInvite,
-            creatorName: session.user.name,
+            id: invite.id,
+            code: invite.code,
+            isUsed: invite.is_used,
+            createdAt: invite.created_at,
+            createdBy: invite.created_by,
+            creatorName: session.profile?.name,
             creatorEmail: session.user.email,
         })
     } catch (error) {
@@ -84,13 +102,12 @@ export async function POST() {
 // DELETE - Revoke invite
 export async function DELETE(request: Request) {
     try {
-        const session = await auth.api.getSession({ headers: await headers() })
+        const session = await getSession()
         if (!session) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Check if admin
-        if (session.user.role !== 'admin') {
+        if (!(await isAdmin())) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
@@ -101,7 +118,8 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: 'Invite ID required' }, { status: 400 })
         }
 
-        await db.delete(invites).where(eq(invites.id, id))
+        const supabase = await createClient()
+        await (supabase as any).from('invites').delete().eq('id', id)
 
         return NextResponse.json({ success: true })
     } catch (error) {

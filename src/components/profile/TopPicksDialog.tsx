@@ -39,7 +39,7 @@ export function TopPicksDialog({ isOpen, onOpenChange, onSuccess }: TopPicksDial
         if (isOpen) {
             setIsLoading(true)
             getMyItemsForTopPicks().then((data) => {
-                const safeData: TopPickItem[] = data.map(item => ({
+                const safeData: TopPickItem[] = data.map((item: any) => ({
                     ...item,
                     name: item.name || 'Untitled Item'
                 }))
