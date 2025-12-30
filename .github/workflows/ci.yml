@@ -37,9 +37,6 @@ jobs:
       - name: Build Test
         run: npm run build
         env:
-            # Add dummy env vars if build fails due to missing keys (Next.js usually requires them at build time)
-            BETTER_AUTH_SECRET: 'autogenerate_ci_dummy_secret'
-            ANANNAS_API_KEY: 'ci_dummy_key'
-            RESEND_API_KEY: 're_123456789'
-            NEXT_PUBLIC_POSTHOG_KEY: 'ph_dummy_key'
-            NEXT_PUBLIC_POSTHOG_HOST: 'https://app.posthog.com'
+            # Supabase credentials from GitHub Secrets
+            NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}

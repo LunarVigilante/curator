@@ -6,79 +6,75 @@
 
 ## Features
 
-- 🎮 **Face-Off Tournament Mode** - Rank items by comparing them head-to-head with ELO scoring
-- 🧠 **AI-Powered Analysis** - Intelligent insights and taste profiling powered by Anannas AI
-- 🔍 **Smart Paste** - Import content instantly via URL
-- 🎨 **Antigravity UI** - Premium glassmorphism aesthetic with fluid animations
-- 📊 **Multi-Source Metadata** - Pulls from TMDB, AniList, Spotify, RAWG, BGG, and more
-- 🏷️ **Vector-Ready** - Rich metadata payloads for AI embeddings and recommendations
+- 🎮 **Face-Off Tournament Mode** - Rank items by comparing them head-to-head with ELO scoring for scientifically accurate leaderboards.
+- 🧠 **AI-Powered Analysis** - Intelligent insights, taste profiling, and "Smart Sort" tiering using LLMs (OpenAI, Anthropic, or OpenRouter).
+- 🔍 **Smart Paste** - Import content instantly via URL.
+- 🎨 **Antigravity UI** - Premium glassmorphism aesthetic with fluid animations and responsive design.
+- 📊 **Multi-Source Metadata** - Auto-fetches rich data from TMDB, AniList, Spotify, RAWG, BGG, Google Books, and more.
+- 🔒 **Enterprise-Grade Auth** - Secure authentication via Supabase (Email/Password + OAuth).
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS |
-| **Database** | Supabase (PostgreSQL) |
-| **Auth** | Supabase Auth (Email, OAuth) |
-| **AI** | Anannas (LLM Gateway) |
-| **Analytics** | PostHog |
-| **APIs** | TMDB, AniList, Spotify, RAWG, BoardGameGeek, Google Books, ComicVine, iTunes |
+| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| **Database** | Supabase (PostgreSQL 15+) |
+| **Auth** | Supabase Auth (SSR w/ Middleware Protection) |
+| **AI** | Integrated LLM Client (OpenAI / Anthropic / OpenRouter) |
+| **Styling** | Tailwind CSS, Framer Motion, Lucide Icons |
+| **Data Sources** | TMDB, AniList, Spotify, RAWG, BoardGameGeek, Google Books, ComicVine |
 
 ## Quick Start
 
+### Prerequisites
+- Node.js 18+
+- Supabase Project
+
+### Installation
+
 ```bash
-# Clone and install
+# Clone the repository
 git clone https://github.com/LunarVigilante/curator.git
 cd curator
+
+# Install dependencies
 npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your Supabase credentials and API keys
+```
 
-# Start development server
+### Environment Setup
+
+1.  **Database & Auth**: Create a project on [Supabase](https://supabase.com).
+2.  **Schema**: run the SQL from `supabase/schema.sql` in your Supabase SQL Editor.
+3.  **Credentials**: Update `.env` with your Supabase URL and Keys.
+4.  **External APIs**: (Optional) Add keys for TMDB, Spotify, etc., to fetch rich metadata.
+
+See `.env.example` for a detailed breakdown of all configuration options.
+
+### Running Locally
+
+```bash
 npm run dev
+# App running at http://localhost:3000
 ```
-
-## Environment Setup
-
-Required in `.env`:
-
-```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# AI & Analytics
-ANANNAS_API_KEY=your-key
-POSTHOG_KEY=your-key
-```
-
-## Supabase Setup
-
-1. Create a new Supabase project
-2. Execute the SQL in `supabase/schema.sql` to create all tables
-3. Configure auth providers in the Supabase dashboard
 
 ## Project Structure
 
 ```
 curator/
-├── supabase/               # Supabase SQL schema
-│   └── schema.sql
 ├── src/
-│   ├── app/                # Next.js App Router
-│   ├── components/         # React components
+│   ├── app/                # Next.js 16 App Router pages & layouts
+│   ├── components/         # Reusable React components (UI, features)
 │   ├── lib/
-│   │   ├── actions/        # Server actions
-│   │   ├── services/       # Business logic
-│   │   │   └── media/      # API strategies (TMDB, Spotify, etc.)
-│   │   ├── supabase/       # Supabase client configuration
-│   │   └── metadata/       # Vector text generator
-│   └── hooks/              # React hooks
-├── scripts/                # Seed scripts
-└── docs/                   # Documentation
+│   │   ├── actions/        # Server Actions (Mutations)
+│   │   ├── services/       # Core Business Logic (Tournaments, Stats, Media)
+│   │   ├── supabase/       # Supabase SSR client setup
+│   │   └── hooks/          # Custom React hooks
+│   └── middleware.ts       # Route protection & Session management
+├── supabase/               # SQL Schema & Migrations
+└── public/                 # Static assets
 ```
 
 ## License
