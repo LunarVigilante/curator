@@ -27,7 +27,7 @@
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 24+ (LTS recommended)
 - Supabase Project
 
 ### Installation
