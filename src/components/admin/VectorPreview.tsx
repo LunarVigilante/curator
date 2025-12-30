@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { getVectorTextPreview } from '@/lib/services/GlobalItemService';
 import { ChevronDown, ChevronUp, Brain, RefreshCw, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -34,19 +34,15 @@ export function VectorPreview({
     onRegenerate,
 }: VectorPreviewProps) {
     const [isExpanded, setIsExpanded] = useState(false);
-    const [vectorText, setVectorText] = useState<string>('');
     const [copied, setCopied] = useState(false);
 
-    // Generate vector text on mount and when dependencies change
-    useEffect(() => {
-        const text = getVectorTextPreview({
-            title,
-            categoryType: categoryType || 'MOVIE',
-            metadata,
-            description,
-        });
-        setVectorText(text);
-    }, [title, categoryType, metadata, description]);
+    // Compute vector text whenever dependencies change (using useMemo instead of useEffect + setState)
+    const vectorText = useMemo(() => getVectorTextPreview({
+        title,
+        categoryType: categoryType || 'MOVIE',
+        metadata,
+        description,
+    }), [title, categoryType, metadata, description]);
 
     // Handle copy to clipboard
     const handleCopy = async () => {
@@ -66,13 +62,13 @@ export function VectorPreview({
         });
     };
 
-    // Check if stale (>30 days)
-    const isStale = (): boolean => {
+    // Check if stale (>30 days) - computed once on mount to avoid impure render
+    const [isStale] = useState<boolean>(() => {
         if (!lastUpdated) return true;
         const d = typeof lastUpdated === 'string' ? new Date(lastUpdated) : lastUpdated;
         const diffDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
         return diffDays > 30;
-    };
+    });
 
     return (
         <div className="border rounded-lg overflow-hidden bg-muted/30">
@@ -90,7 +86,7 @@ export function VectorPreview({
                             {source.toUpperCase()}
                         </Badge>
                     )}
-                    {isStale() && (
+                    {isStale && (
                         <Badge variant="destructive" className="text-xs">
                             Stale
                         </Badge>

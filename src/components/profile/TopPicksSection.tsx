@@ -25,7 +25,6 @@ interface TopPicksSectionProps {
 
 export function TopPicksSection({ picks, isOwner, onAddClick }: TopPicksSectionProps) {
     const [items, setItems] = useState(picks)
-    const [isReordering, setIsReordering] = useState(false)
 
     const handleReorder = async (newOrder: TopPick[]) => {
         setItems(newOrder)

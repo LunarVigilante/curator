@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Card } from "@/components/ui/card"
 import { Lock, Search, ChevronLeft, ChevronRight, LayoutGrid, LayoutList, Grip, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {

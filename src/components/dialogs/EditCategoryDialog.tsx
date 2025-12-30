@@ -5,10 +5,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { updateCategory, deleteCategory } from '@/lib/actions/categories'
-import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import ImageCropper from '@/components/ImageCropper'
+import Image from 'next/image'
 
 type Category = {
     id: string
@@ -24,7 +24,7 @@ function getCategoryType(metadata: string | null): string {
     try {
         const parsed = JSON.parse(metadata);
         return parsed.type || '';
-    } catch (e) {
+    } catch {
         return '';
     }
 }
@@ -41,7 +41,6 @@ export default function EditCategoryDialog({
     onSuccess?: () => void
 }) {
     const [isPending, startTransition] = useTransition()
-    const router = useRouter()
     const [imageToCrop, setImageToCrop] = useState<string | null>(null)
 
     const [formData, setFormData] = useState({
@@ -57,7 +56,7 @@ export default function EditCategoryDialog({
         e.preventDefault()
         startTransition(async () => {
             // Preserve existing metadata but update type
-            let newMetadata = category.metadata ? JSON.parse(category.metadata) : {};
+            const newMetadata = category.metadata ? JSON.parse(category.metadata) : {};
             if (formData.type) {
                 newMetadata.type = formData.type;
             } else {
@@ -166,12 +165,13 @@ export default function EditCategoryDialog({
 
                             {formData.image ? (
                                 <div className="mt-2 relative group aspect-video rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
-                                    <img
+                                    <Image
                                         src={formData.image}
                                         alt="Preview"
-                                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                                        onError={(e) => {
-                                            e.currentTarget.src = 'https://placehold.co/1280x720?text=Invalid+Image'
+                                        fill
+                                        className="object-cover transition-transform group-hover:scale-105"
+                                        onError={() => {
+                                            // Fallback handling simplified
                                         }}
                                     />
                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">

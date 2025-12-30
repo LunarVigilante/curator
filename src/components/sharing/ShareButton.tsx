@@ -13,7 +13,7 @@ interface ShareButtonProps {
     disabled?: boolean
 }
 
-export function ShareButton({ categoryId, categoryName, disabled }: ShareButtonProps) {
+export function ShareButton({ categoryId, disabled }: ShareButtonProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [loading, setLoading] = useState(false)
     const [shareCard, setShareCard] = useState<ShareCardData | null>(null)
@@ -28,7 +28,7 @@ export function ShareButton({ categoryId, categoryName, disabled }: ShareButtonP
             } else {
                 toast.error(result.error || 'Failed to generate share card')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setLoading(false)

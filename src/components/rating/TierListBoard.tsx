@@ -2,7 +2,6 @@
 
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import Image from 'next/image'
 import {
     DndContext,
@@ -28,12 +27,11 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useState, useTransition, useEffect, useRef, useOptimistic } from 'react'
 import { assignItemToTier, removeItemTier } from '@/lib/actions/tiers'
-import { createCustomRank, deleteCustomRank, updateCustomRank, updateCustomRankOrder } from '@/lib/actions/customRanks'
+import { deleteCustomRank, updateCustomRank, updateCustomRankOrder } from '@/lib/actions/customRanks'
 import {
-    Pencil, Plus, GripVertical, Trash2, Check, X, Eye, Image as ImageIcon,
-    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3, Share, Loader2, Save, AlertCircle
+    Pencil, Plus, GripVertical, Trash2, Check, X,
+    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3, Share, Loader2
 } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toPng } from 'html-to-image';
 import { LegacyShareCard } from '@/components/sharing/LegacyShareCard';
 import {
@@ -42,7 +40,6 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Slider } from '@/components/ui/slider'
 import EditItemDialog from '@/components/dialogs/EditItemDialog'
 import AddItemDialog from '@/components/dialogs/AddItemDialog'
 import { CreateTierDialog } from '@/components/dialogs/CreateTierDialog'
@@ -59,7 +56,6 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import ItemPlaceholder from '@/components/ItemPlaceholder'
-import TagSelector from '@/components/tags/TagSelector'
 import { toast } from 'sonner'
 
 export type Item = {
@@ -251,8 +247,7 @@ export default function TierListBoard({
             link.href = dataUrl;
             link.click();
             toast.success("Image generated!");
-        } catch (err) {
-            console.error(err);
+        } catch {
             toast.error("Failed to generate image.");
         } finally {
             setIsSharing(false);
@@ -513,7 +508,6 @@ function TierRow({
     const [, startTransition] = useTransition()
 
     const {
-        attributes,
         listeners,
         setNodeRef,
         transform,
@@ -536,7 +530,7 @@ function TierRow({
                 await updateCustomRank(rank.id as string, { name, color })
                 setIsEditing(false)
                 toast.success('Updated tier')
-            } catch (error) {
+            } catch {
                 toast.error('Failed to update tier')
             }
         })
@@ -548,7 +542,7 @@ function TierRow({
                 try {
                     await deleteCustomRank(rank.id as string)
                     toast.success('Deleted tier')
-                } catch (error) {
+                } catch {
                     toast.error('Failed to delete tier')
                 }
             })
@@ -770,7 +764,6 @@ function DraggableItem({
     item,
     categoryId,
     tileSize,
-    hoveredItemId,
     onHoverChange,
     flashItem,
     editingItemId,
@@ -808,7 +801,6 @@ function DraggableItem({
         }
     }, [editingItemId, item.id, onEditingItemIdChange, isEditing])
 
-    const isHovered = hoveredItemId === item.id
     const isFlashing = flashItem?.id === item.id
     const [showRemoveDialog, setShowRemoveDialog] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)

@@ -1,4 +1,4 @@
-import { MediaStrategy, MediaResult, MediaSearchResponse } from "../types";
+import { MediaStrategy, MediaSearchResponse } from "../types";
 import { SystemSettings } from '@/lib/services/SystemConfigService';
 
 /**
@@ -141,8 +141,7 @@ export class SpotifyStrategy implements MediaStrategy {
         if (years.length === 0) return '';
 
         const avgYear = Math.round(years.reduce((a, b) => a + b, 0) / years.length);
-        const minYear = Math.min(...years);
-        const maxYear = Math.max(...years);
+
         const currentYear = new Date().getFullYear();
 
         // Determine era

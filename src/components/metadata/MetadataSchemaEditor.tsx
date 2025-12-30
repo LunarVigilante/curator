@@ -68,7 +68,7 @@ export default function MetadataSchemaEditor({
             } else {
                 toast.error('No suggestions found')
             }
-        } catch (error) {
+        } catch {
             toast.error('Failed to get suggestions')
         } finally {
             setIsSuggesting(false)

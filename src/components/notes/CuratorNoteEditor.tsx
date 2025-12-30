@@ -46,7 +46,7 @@ export function CuratorNoteEditor({
             } else {
                 toast.error(result.error || 'Failed to save note')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setSaving(false)
@@ -66,7 +66,7 @@ export function CuratorNoteEditor({
             } else {
                 toast.error(result.error || 'Failed to delete note')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setDeleting(false)

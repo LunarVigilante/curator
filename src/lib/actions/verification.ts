@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSession, getCurrentUserId } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 
 /**
  * Generate a 6-digit verification code
@@ -34,8 +34,8 @@ export async function verifyEmailByCode(
 
     try {
         // Find verification record with matching code
-        const { data: verification, error } = await supabase
-            .from('verifications')
+        const { data: verification, error } = await (supabase
+            .from('verifications') as any)
             .select('*')
             .eq('identifier', session.user.email)
             .eq('verification_code', code)
@@ -47,14 +47,14 @@ export async function verifyEmailByCode(
         }
 
         // Mark email as verified
-        await supabase
-            .from('profiles')
+        await (supabase
+            .from('profiles') as any)
             .update({ email_verified: true })
             .eq('id', session.user.id)
 
         // Delete verification record
-        await supabase
-            .from('verifications')
+        await (supabase
+            .from('verifications') as any)
             .delete()
             .eq('id', verification.id)
 

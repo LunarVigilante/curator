@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
-import { ArrowLeft, Trash2, Save, Upload, Wand2, Crop, Search, Loader2 } from 'lucide-react'
+import Image from 'next/image'
+import { ArrowLeft, Trash2, Save, Wand2, Crop, Search, Loader2 } from 'lucide-react'
 import { updateItem, deleteItem } from '@/lib/actions/items'
 import { rateItem } from '@/lib/actions/ratings'
 import TierSelector from '@/components/rating/TierSelector'
@@ -279,7 +280,7 @@ export default function ItemDetailClient({ item }: { item: Item }) {
                                             className="group relative aspect-[2/3] rounded-lg overflow-hidden border border-white/10 hover:border-blue-500/50 transition-all bg-zinc-900"
                                         >
                                             {result.imageUrl ? (
-                                                <img src={result.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                <Image src={result.imageUrl} alt="" fill className="object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">No Image</div>
                                             )}
@@ -368,10 +369,11 @@ export default function ItemDetailClient({ item }: { item: Item }) {
                                     <div className="relative group w-full md:w-48 aspect-[2/3] rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] flex items-center justify-center shrink-0">
                                         {formData.image ? (
                                             <>
-                                                <img
+                                                <Image
                                                     src={formData.image}
                                                     alt="Item preview"
-                                                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                                    fill
+                                                    className="object-cover transition-transform group-hover:scale-105"
                                                 />
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                                     <Button

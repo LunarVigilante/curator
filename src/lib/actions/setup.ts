@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { hash } from 'bcryptjs'
 import { seedDefaultCategories } from './categories'
 
 /**
@@ -65,8 +64,8 @@ export async function completeSetup(
         }
 
         // Update the profile to be admin (the trigger should create it, but let's ensure)
-        await supabase
-            .from('profiles')
+        await (supabase
+            .from('profiles') as any)
             .update({
                 name,
                 role: 'ADMIN',

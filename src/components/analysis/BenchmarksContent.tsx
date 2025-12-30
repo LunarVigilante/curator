@@ -14,7 +14,6 @@ import {
 import { RadarChartComparison } from './RadarChartComparison'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Lock, Users, Activity, Crown, Info } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -51,8 +50,8 @@ export function BenchmarksContent({ categoryId }: BenchmarksContentProps) {
                     setGlobalAlignment(global)
                     setExpertAlignment(experts)
                 }
-            } catch (err) {
-                console.error("Failed to fetch benchmark data", err)
+            } catch (e) {
+                console.error("Failed to fetch benchmark data", e)
             } finally {
                 if (mounted) setLoading(false)
             }

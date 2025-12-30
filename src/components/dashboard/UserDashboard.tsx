@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Settings, GripVertical, X, Lock, Pencil } from 'lucide-react';
+import { Plus, Settings, GripVertical, X, Pencil } from 'lucide-react';
 import ActivityFeed from './ActivityFeed';
 import ChallengeCard from './ChallengeCard';
 import { Button } from '@/components/ui/button';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { updateCategoryOrder, reorderCategories } from '@/lib/actions/categories';
+import { reorderCategories } from '@/lib/actions/categories';
 import EditCategoryDialog from '@/components/dialogs/EditCategoryDialog';
 import CreateCategoryDialog from '@/components/dialogs/CreateCategoryDialog';
 import { toast } from 'sonner';
@@ -264,7 +265,7 @@ export default function UserDashboard({
                                     <Link key={user.id} href={`/u/${user.id}`} className="flex items-center gap-3 group hover:bg-white/5 p-2 rounded-lg transition-colors -mx-2">
                                         <div className="h-10 w-10 rounded-full bg-zinc-800 border-2 border-transparent group-hover:border-blue-500/50 transition-colors overflow-hidden">
                                             {user.image ? (
-                                                <img src={user.image} alt={user.name} className="w-full h-full object-cover" />
+                                                <Image src={user.image} alt={user.name} width={40} height={40} className="object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center text-xs font-bold text-zinc-500">
                                                     {user.name[0]}

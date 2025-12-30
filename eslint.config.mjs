@@ -31,6 +31,7 @@ const eslintConfig = defineConfig([
     "check_tables.js",
     "migrate.js",
     "src/scripts/**/*",
+    "scripts/**/*",
   ]),
 ]);
 

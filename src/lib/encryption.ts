@@ -2,9 +2,6 @@ import crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
-const SALT_LENGTH = 64;
-const TAG_LENGTH = 16;
-const ITERATIONS = 100000;
 const KEY_LENGTH = 32;
 
 function getEncryptionKey(): Buffer {
@@ -21,7 +18,7 @@ function getEncryptionKey(): Buffer {
             throw new Error(`ENCRYPTION_KEY must be exactly ${KEY_LENGTH} bytes (64 hex characters). Got ${key.length} bytes.`);
         }
         return key;
-    } catch (error) {
+    } catch {
         throw new Error('Invalid ENCRYPTION_KEY format. Must be a hex string.');
     }
 }

@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea'; // Importing Textarea (if not exists I'll standard input or create it, assuming shadcn)
 // Wait, I might not have Textarea. Using simple textarea for now if needed.
 import { useTheme } from 'next-themes';
 import { updateUserProfile } from '@/lib/actions/users';
@@ -19,6 +18,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import Image from 'next/image';
 
 interface UserSettingsProps {
     user: {
@@ -59,7 +59,7 @@ export default function UserSettings({ user }: UserSettingsProps) {
                 image
             });
             toast.success("Profile updated");
-        } catch (err) {
+        } catch {
             toast.error("Failed to update profile");
         } finally {
             setIsLoading(false);
@@ -76,7 +76,7 @@ export default function UserSettings({ user }: UserSettingsProps) {
                 }
             });
             toast.success("Preferences saved");
-        } catch (err) {
+        } catch {
             toast.error("Failed to save preferences");
         } finally {
             setIsLoading(false);
@@ -155,12 +155,14 @@ export default function UserSettings({ user }: UserSettingsProps) {
                                     {/* Current Avatar Preview */}
                                     {image && (
                                         <div className="flex items-center gap-4 mb-2">
-                                            <img
+                                            <Image
                                                 src={image}
                                                 alt="Avatar preview"
-                                                className="h-16 w-16 rounded-full object-cover border border-white/10"
-                                                onError={(e) => {
-                                                    e.currentTarget.style.display = 'none'
+                                                width={64}
+                                                height={64}
+                                                className="rounded-full object-cover border border-white/10"
+                                                onError={() => {
+                                                    // Handle error
                                                 }}
                                             />
                                             <Button

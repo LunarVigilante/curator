@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ThumbsUp, ThumbsDown, Minus, Trash2, Plus, Sparkles } from 'lucide-react'
-import { getCustomRanks, createCustomRank, deleteCustomRank, analyzeSentiment } from '@/lib/actions/customRanks'
+import { createCustomRank, deleteCustomRank, analyzeSentiment } from '@/lib/actions/customRanks'
 import { toast } from 'sonner'
 
 type CustomRank = {
@@ -53,7 +53,7 @@ export default function CustomRanksDialog({
             const sentiment = await analyzeSentiment(newRankName)
             setNewRankSentiment(sentiment.toLowerCase() as "positive" | "neutral" | "negative")
             toast.success(`Analyzed as ${sentiment}`)
-        } catch (error) {
+        } catch {
             toast.error('Failed to analyze sentiment')
         } finally {
             setAnalyzing(false)
@@ -78,7 +78,7 @@ export default function CustomRanksDialog({
                 setNewRankSentiment('neutral')
                 setIsAdding(false)
                 toast.success(`Added "${(newRank as CustomRank).name}" rank`)
-            } catch (error) {
+            } catch {
                 toast.error('Failed to create custom rank')
             }
         })
@@ -94,7 +94,7 @@ export default function CustomRanksDialog({
                 await deleteCustomRank(id)
                 setRanks(ranks.filter(r => r.id !== id))
                 toast.success(`Deleted "${name}" rank`)
-            } catch (error) {
+            } catch {
                 toast.error('Failed to delete rank')
             }
         })

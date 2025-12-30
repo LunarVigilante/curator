@@ -150,7 +150,6 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
 
     for (const item of itemsForPrompt) {
         const tier = item.tier || ''
-        const ratingValue = (item.ratings as any[])?.[0]?.value || 0
         // SECURITY: Sanitize all user-generated content to prevent prompt injection
         const sanitizedTags = ((item.item_tags as any[]) || [])
             .map((t: any) => sanitizeForPrompt(t.tag?.name, 30))
@@ -251,7 +250,7 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
             let itemTags: string[] = []
             try {
                 itemTags = gItem.cached_tags ? JSON.parse(gItem.cached_tags) : []
-            } catch (e) { }
+            } catch { }
 
             // Calculate overlap
             const overlap = itemTags.filter(t => userTopTags.includes(t.toLowerCase())).length

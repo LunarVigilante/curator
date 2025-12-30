@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSession, getCurrentUserId } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 
 /**
  * Toggle Like on a collection (public upvote)
@@ -81,7 +81,7 @@ export async function toggleSave(categoryId: string) {
 export async function getLikeCount(categoryId: string) {
     const supabase = await createClient()
 
-    const { count, error } = await (supabase.from('collection_likes') as any)
+    const { count } = await (supabase.from('collection_likes') as any)
         .select('*', { count: 'exact', head: true })
         .eq('category_id', categoryId)
 
@@ -94,7 +94,7 @@ export async function getLikeCount(categoryId: string) {
 export async function getSaveCount(categoryId: string) {
     const supabase = await createClient()
 
-    const { count, error } = await (supabase.from('collection_saves') as any)
+    const { count } = await (supabase.from('collection_saves') as any)
         .select('*', { count: 'exact', head: true })
         .eq('category_id', categoryId)
 

@@ -6,9 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, Loader2, Star, X, Plus, Trophy } from 'lucide-react';
+import { Search, Loader2, Star, X, Trophy } from 'lucide-react';
 import { getAllCategoriesWithOwners, toggleCategoryFeature } from '@/lib/actions/categories';
-import { toggleCategoryTemplate, toggleCategoryChallenge } from '@/lib/actions/challenges';
+import { toggleCategoryChallenge } from '@/lib/actions/challenges';
 
 interface CategoryWithOwner {
     id: string;
@@ -37,7 +37,7 @@ export default function FeaturedContent() {
         try {
             const data = await getAllCategoriesWithOwners();
             setCategories(data as any);
-        } catch (error) {
+        } catch {
             toast.error("Failed to load categories");
         } finally {
             setIsLoading(false);
@@ -52,23 +52,8 @@ export default function FeaturedContent() {
                 cat.id === id ? { ...cat, isFeatured: !currentStatus } : cat
             ));
             toast.success(currentStatus ? "Removed from featured" : "Added to featured");
-        } catch (error) {
+        } catch {
             toast.error("Failed to update featured status");
-        } finally {
-            setIsUpdating(null);
-        }
-    };
-
-    const handleToggleTemplate = async (id: string, currentStatus: boolean) => {
-        setIsUpdating(id);
-        try {
-            await toggleCategoryTemplate(id, !currentStatus);
-            setCategories(prev => prev.map(cat =>
-                cat.id === id ? { ...cat, isTemplate: !currentStatus } : cat
-            ));
-            toast.success(currentStatus ? "Removed from templates" : "Marked as template");
-        } catch (error) {
-            toast.error("Failed to update template status");
         } finally {
             setIsUpdating(null);
         }
@@ -82,7 +67,7 @@ export default function FeaturedContent() {
                 cat.id === id ? { ...cat, isChallenge: !currentStatus } : cat
             ));
             toast.success(currentStatus ? "Removed from challenges" : "Marked as challenge");
-        } catch (error) {
+        } catch {
             toast.error("Failed to update challenge status");
         } finally {
             setIsUpdating(null);

@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Pencil, Grid2X2, GripVertical } from 'lucide-react'
+import { Pencil, GripVertical } from 'lucide-react'
 import EditCategoryDialog from '@/components/dialogs/EditCategoryDialog'
 import CategoryPlaceholder from '@/components/CategoryPlaceholder'
 import { Badge } from '@/components/ui/badge'
@@ -94,11 +94,7 @@ export default function CategoryGrid({ categories, bentoLayout = false, onSucces
     }
 
     // Get aspect ratio based on card position
-    const getAspectClass = (index: number) => {
-        if (!bentoLayout) return 'aspect-video'
-        if (index === 0) return 'aspect-square'
-        return 'aspect-[4/3]'
-    }
+
 
     if (!mounted) return null
 

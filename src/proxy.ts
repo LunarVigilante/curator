@@ -63,7 +63,7 @@ export default async function middleware(request: NextRequest) {
 
     // 1. Check for Login/Register routes -> Redirect to home if logged in
     const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register')
-    const isChangePassword = pathname.startsWith('/change-password')
+
     const isSignOut = pathname.startsWith('/auth/signout')
 
     // 2. Fetch Session from Supabase

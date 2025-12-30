@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { getSession, getCurrentUserId } from '@/lib/auth'
+import { getCurrentUserId } from '@/lib/auth'
 
 // ============================================================================
 // Comment Types

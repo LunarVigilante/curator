@@ -21,7 +21,7 @@ export async function getSettings(): Promise<SystemSettings> {
 
   if (error) throw error
 
-  return (allSettings || []).reduce((acc, setting) => {
+  return (allSettings || []).reduce((acc: SystemSettings, setting: any) => {
     acc[setting.key as SystemSettingKey] = decrypt(setting.value)
     return acc
   }, {} as SystemSettings)

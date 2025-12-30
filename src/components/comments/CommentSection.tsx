@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { MessageCircle, Send, Loader2, ChevronDown } from 'lucide-react'
 import { getCollectionComments, addCollectionComment, type Comment, type CommentsPage } from '@/lib/actions/comments'
 import { CommentCard } from './CommentCard'
@@ -49,7 +49,7 @@ export function CommentSection({ categoryId, isOwner, currentUserId }: CommentSe
             } else {
                 toast.error(result.error || 'Failed to add comment')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setSubmitting(false)
@@ -66,7 +66,7 @@ export function CommentSection({ categoryId, isOwner, currentUserId }: CommentSe
                 ...nextPage,
                 comments: [...prev.comments, ...nextPage.comments],
             } : nextPage)
-        } catch (error) {
+        } catch {
             toast.error('Failed to load more comments')
         } finally {
             setLoadingMore(false)

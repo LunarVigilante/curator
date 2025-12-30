@@ -73,8 +73,8 @@ export type SystemSettings = Partial<Record<SystemSettingKey, string>>
  */
 const fetchAllSettingsDecrypted = cache(async (): Promise<SystemSettings> => {
     const supabase = await createClient();
-    const { data: allSettings } = await supabase
-        .from('system_settings')
+    const { data: allSettings } = await (supabase
+        .from('system_settings') as any)
         .select('*');
 
     const config: SystemSettings = {};
@@ -90,8 +90,8 @@ const fetchAllSettingsDecrypted = cache(async (): Promise<SystemSettings> => {
  */
 const fetchSingleSettingDecrypted = cache(async (key: SystemSettingKey): Promise<string | null> => {
     const supabase = await createClient();
-    const { data: setting, error } = await supabase
-        .from('system_settings')
+    const { data: setting, error } = await (supabase
+        .from('system_settings') as any)
         .select('*')
         .eq('key', key)
         .single();
@@ -128,12 +128,12 @@ export class SystemConfigService {
     static async getAllSettings() {
         noStore();
         const supabase = await createClient();
-        const { data: allSettings } = await supabase
-            .from('system_settings')
+        const { data: allSettings } = await (supabase
+            .from('system_settings') as any)
             .select('*')
             .order('category');
 
-        return (allSettings || []).map(setting => ({
+        return (allSettings || []).map((setting: any) => ({
             key: setting.key,
             value: setting.is_secret ? '********' : decrypt(setting.value),
             category: setting.category,
@@ -156,8 +156,8 @@ export class SystemConfigService {
         const encryptedValue = encrypt(rawValue);
 
         // Upsert logic
-        await supabase
-            .from('system_settings')
+        await (supabase
+            .from('system_settings') as any)
             .upsert({
                 key,
                 value: encryptedValue,

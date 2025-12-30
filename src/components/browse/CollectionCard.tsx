@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from 'react'
 import { Card } from "@/components/ui/card"
-import { Lock, Disc, Film, BookOpen, Gamepad2, Tv, Mic2, Star, ThumbsUp, Bookmark } from 'lucide-react'
+import { Lock, ThumbsUp, Bookmark } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -48,45 +48,10 @@ export function CollectionCard({
     let meta = {}
     try {
         meta = category.metadata ? JSON.parse(category.metadata) : {}
-    } catch (e) { }
+    } catch { }
 
     const type = (meta as any).type || 'General'
     const itemCount = category.itemCount ?? category.items?.length ?? 0
-
-    // Category Icon Logic
-    const getCategoryIcon = (type: string) => {
-        switch (type.toLowerCase()) {
-            case 'movie':
-            case 'movies': return <Film className="w-3.5 h-3.5" />
-
-            case 'music':
-            case 'music_album':
-            case 'music_artist':
-            case 'music_albums': return <Disc className="w-3.5 h-3.5" />
-
-            case 'book':
-            case 'books': return <BookOpen className="w-3.5 h-3.5" />
-
-            case 'game':
-            case 'video games':
-            case 'video_games': return <Gamepad2 className="w-3.5 h-3.5" />
-
-            case 'tv':
-            case 'tv shows':
-            case 'tv_shows': return <Tv className="w-3.5 h-3.5" />
-
-            case 'podcast':
-            case 'podcasts': return <Mic2 className="w-3.5 h-3.5" />
-
-            case 'board_game':
-            case 'board games': return <Gamepad2 className="w-3.5 h-3.5" />
-
-            case 'comic':
-            case 'comics': return <BookOpen className="w-3.5 h-3.5" />
-
-            default: return <Star className="w-3.5 h-3.5" />
-        }
-    }
 
     // Get display name for type (handle special cases like TV)
     const getDisplayName = (type: string) => {

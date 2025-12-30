@@ -13,7 +13,6 @@ type Tag = {
 }
 
 export default function TagManager({ initialTags }: { initialTags: Tag[] }) {
-    const [tags, setTags] = useState(initialTags)
     const [newTag, setNewTag] = useState('')
     const [isPending, startTransition] = useTransition()
 

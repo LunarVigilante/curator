@@ -7,8 +7,7 @@ import { ChevronRight, Sparkles } from 'lucide-react'
 import Image from 'next/image'
 import {
     CALIBRATION_QUESTIONS,
-    type CalibrationAnswer,
-    type CalibrationQuestion
+    type CalibrationAnswer
 } from '@/lib/types/onboarding'
 import { saveCalibrationAnswers } from '@/lib/actions/onboarding'
 import { toast } from 'sonner'
@@ -50,7 +49,7 @@ export function TasteCalibrationWizard({ onComplete }: TasteCalibrationWizardPro
                     } else {
                         toast.error('Something went wrong')
                     }
-                } catch (error) {
+                } catch {
                     toast.error('Failed to save preferences')
                 }
             })

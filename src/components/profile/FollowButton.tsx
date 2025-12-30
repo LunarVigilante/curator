@@ -25,7 +25,7 @@ export default function FollowButton({ targetUserId, initialIsFollowing }: Follo
                 // Ensure state matches server response
                 setIsFollowing(result.isFollowing);
                 toast.success(result.isFollowing ? 'Followed user' : 'Unfollowed user');
-            } catch (error) {
+            } catch {
                 // Revert on error
                 setIsFollowing(initialIsFollowing);
                 toast.error('Failed to update follow status');

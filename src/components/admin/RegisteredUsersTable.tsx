@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useTransition, useCallback } from 'react'
 import { getAllUsers, toggleUserRole, toggleUserBan, deleteUser, type AdminUserData } from '@/lib/actions/admin'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -66,19 +66,20 @@ export function RegisteredUsersTable() {
         variant: 'default',
     })
 
-    // Load users
-    useEffect(() => {
-        loadUsers()
-    }, [page, search])
-
-    function loadUsers() {
+    // Load users function wrapped in useCallback
+    const loadUsers = useCallback(() => {
         startTransition(async () => {
             const result = await getAllUsers({ page, limit: 10, search })
             setUsers(result.users)
             setTotal(result.total)
             setTotalPages(result.totalPages)
         })
-    }
+    }, [page, search])
+
+    // Load users when page or search changes
+    useEffect(() => {
+        loadUsers()
+    }, [loadUsers])
 
     function handleSearch(e: React.FormEvent) {
         e.preventDefault()

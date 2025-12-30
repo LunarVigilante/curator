@@ -14,12 +14,12 @@ export async function calculateTasteMatch(userIdA: string, userIdB: string): Pro
     const supabase = await createClient();
 
     // 1. Get User A's rated items
-    const { data: userAItems } = await supabase
-        .from('items')
+    const { data: userAItems } = await (supabase
+        .from('items') as any)
         .select('global_item_id, elo_score, name')
         .eq('user_id', userIdA)
         .neq('elo_score', 1200) // Ignore default score
-        .not('global_item_id', 'is', null);
+        .not('global_item_id', 'is', null) as { data: { global_item_id: string; elo_score: number; name: string }[], error: any };
 
     if (!userAItems || userAItems.length === 0) return null;
 
@@ -28,8 +28,8 @@ export async function calculateTasteMatch(userIdA: string, userIdB: string): Pro
     if (userAGlobalIds.length === 0) return null;
 
     // 2. Get User B's rated items that match User A's global IDs
-    const { data: userBItems } = await supabase
-        .from('items')
+    const { data: userBItems } = await (supabase
+        .from('items') as any)
         .select('global_item_id, elo_score')
         .eq('user_id', userIdB)
         .neq('elo_score', 1200)

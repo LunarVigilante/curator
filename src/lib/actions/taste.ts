@@ -397,7 +397,7 @@ export async function captureSnapshot(
 ): Promise<void> {
     const supabase = await createClient()
     const metrics = await computeUserMetrics(userId, categoryId)
-    const distribution = await getTierDistribution(userId, categoryId)
+
 
     // Get item count
     let countQuery = (supabase.from('items') as any)

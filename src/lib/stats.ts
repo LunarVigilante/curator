@@ -126,7 +126,7 @@ export function identifyControversialItems(items: StatsItem[]): ControversialIte
         // C (3) ~> 1100+
         // D/F (1-2) ~> <1100
 
-        let expectedElo = 1200 + (tierVal - 3.5) * 100
+        const expectedElo = 1200 + (tierVal - 3.5) * 100
         // S(6) -> 1200 + 2.5*100 = 1450
         // F(1) -> 1200 - 2.5*100 = 950
 

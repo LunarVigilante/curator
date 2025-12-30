@@ -62,7 +62,7 @@ ${context ? `Additional Context: ${context}` : ''}`;
             try {
                 const parsed = JSON.parse(description);
                 description = typeof parsed === 'string' ? parsed : parsed.description || description;
-            } catch (e) {
+            } catch {
                 // Not JSON, use as-is
             }
         }

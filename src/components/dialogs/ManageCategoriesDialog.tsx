@@ -12,6 +12,7 @@ import EditCategoryDialog from './EditCategoryDialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import ImageCropper from '@/components/ImageCropper'
+import Image from 'next/image'
 
 type Category = {
     id: string
@@ -128,13 +129,14 @@ export default function ManageCategoriesDialog({
                                         <Label>Image</Label>
 
                                         {newCategory.image ? (
-                                            <div className="mt-2 relative group">
-                                                <img
+                                            <div className="mt-2 relative group h-32 w-full">
+                                                <Image
                                                     src={newCategory.image}
                                                     alt="Preview"
-                                                    className="h-32 w-full object-cover rounded-md"
-                                                    onError={(e) => {
-                                                        e.currentTarget.src = 'https://placehold.co/600x400?text=Invalid+Image'
+                                                    fill
+                                                    className="object-cover rounded-md"
+                                                    onError={() => {
+                                                        // Simplified fallback
                                                     }}
                                                 />
                                                 <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

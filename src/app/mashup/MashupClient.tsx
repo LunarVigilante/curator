@@ -2,12 +2,8 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import {
     Users,
-    Layers,
-    ArrowRight,
-    Search,
     ChevronLeft,
     Sparkles,
     CheckCircle2,
@@ -16,6 +12,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getCommonGround } from '@/lib/actions/mashup';
 import { toast } from 'sonner';
+import Image from 'next/image';
 
 interface MashupClientProps {
     categories: any[];
@@ -46,7 +43,7 @@ export default function MashupClient({ categories, followedUsers }: MashupClient
             const data = await getCommonGround(selectedPartner.id, selectedCategory.id);
             setResults(data);
             setStep(3);
-        } catch (error) {
+        } catch {
             toast.error("Failed to find common ground. Ensure both curators have ranked items in this category.");
         } finally {
             setIsLoading(false);
@@ -97,7 +94,12 @@ export default function MashupClient({ categories, followedUsers }: MashupClient
                                 className="group relative aspect-video rounded-2xl overflow-hidden border border-white/5 hover:border-blue-500/50 transition-all text-left"
                             >
                                 {cat.image ? (
-                                    <img src={cat.image} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:scale-110 group-hover:opacity-60 transition-all" />
+                                    <Image
+                                        src={cat.image}
+                                        alt={cat.name}
+                                        fill
+                                        className="absolute inset-0 object-cover opacity-40 group-hover:scale-110 group-hover:opacity-60 transition-all"
+                                    />
                                 ) : (
                                     <div className="absolute inset-0 bg-zinc-900" />
                                 )}
@@ -195,7 +197,7 @@ export default function MashupClient({ categories, followedUsers }: MashupClient
 
                                     <div className="h-24 w-16 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl relative z-10">
                                         {item.image ? (
-                                            <img src={item.image} className="w-full h-full object-cover" />
+                                            <Image src={item.image} alt={item.name} fill className="object-cover" />
                                         ) : (
                                             <div className="w-full h-full bg-zinc-800" />
                                         )}

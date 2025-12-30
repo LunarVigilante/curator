@@ -30,7 +30,7 @@ export default function RegisterPage() {
                 setVerifyStatus('invalid')
                 setVerifyMessage(data.message)
             }
-        } catch (e) {
+        } catch {
             setVerifyStatus('invalid')
             setVerifyMessage('Error checking code')
         } finally {
@@ -64,7 +64,7 @@ export default function RegisterPage() {
                                         setVerifyStatus('idle')
                                     }}
                                     className={`uppercase font-mono ${verifyStatus === 'valid' ? 'border-green-500/50 focus-visible:ring-green-500/30' :
-                                            verifyStatus === 'invalid' ? 'border-red-500/50 focus-visible:ring-red-500/30' : ''
+                                        verifyStatus === 'invalid' ? 'border-red-500/50 focus-visible:ring-red-500/30' : ''
                                         }`}
                                 />
                                 <Button

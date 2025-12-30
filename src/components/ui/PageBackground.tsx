@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { AntigravityBackground } from './AntigravityBackground'
 import { cn } from '@/lib/utils'
 
@@ -17,10 +18,11 @@ export function PageBackground({ imageUrl, children, className }: PageBackground
             {/* LAYER A: Optional Image */}
             {hasImage && (
                 <div className="absolute inset-0 z-0 scale-105">
-                    <img
+                    <Image
                         src={imageUrl}
                         alt=""
-                        className="h-full w-full object-cover blur-3xl opacity-60 transition-opacity duration-1000"
+                        fill
+                        className="object-cover blur-3xl opacity-60 transition-opacity duration-1000"
                     />
                     <div className="absolute inset-0 bg-black/50" />
                 </div>

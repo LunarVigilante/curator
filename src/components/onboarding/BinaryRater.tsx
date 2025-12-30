@@ -58,7 +58,7 @@ export function BinaryRater({ pair, onComplete }: BinaryRaterProps) {
                         }
                     }, 500)
                 }
-            } catch (error) {
+            } catch {
                 // ROLLBACK: Only if server fails
                 setIsComplete(false)
                 setSelectedWinner(null)

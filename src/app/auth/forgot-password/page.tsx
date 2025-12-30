@@ -24,7 +24,7 @@ export default function ForgotPasswordPage() {
             } else {
                 setIsSuccess(true);
             }
-        } catch (err) {
+        } catch {
             setError("An unexpected error occurred");
         } finally {
             setIsPending(false);

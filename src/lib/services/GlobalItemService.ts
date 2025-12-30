@@ -11,7 +11,7 @@
  * 4. Always link user's Item to existing/new GlobalItem
  */
 
-import { generateVectorText, parseMetadata, normalizeMediaType, MediaType } from '@/lib/metadata/generator';
+import { generateVectorText, parseMetadata, normalizeMediaType } from '@/lib/metadata/generator';
 
 // Staleness threshold in days
 const STALE_THRESHOLD_DAYS = 30;

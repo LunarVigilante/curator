@@ -106,7 +106,7 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
             try {
                 const parsed = JSON.parse(description);
                 description = typeof parsed === 'string' ? parsed : parsed.description || description;
-            } catch (e) { }
+            } catch { }
         }
 
         // 2. Update Cache
@@ -151,7 +151,7 @@ export async function generateTagsAction(input: z.input<typeof generateTagsSchem
                     console.log(`[AI Cache] Hit for tags: "${title}"`);
                     return { tags: cached };
                 }
-            } catch (e) { /* Invalid JSON, regenerate */ }
+            } catch { /* Invalid JSON, regenerate */ }
         }
 
         // Fetch LLM config from database
@@ -256,7 +256,8 @@ export async function generateTags(title: string, description: string, type: str
 }
 
 // Stub for legacy import (TODO: implement properly if needed)
-export async function suggestMetadataSchema(categoryName: string, categoryDescription?: string): Promise<{ name: string; type: 'text' | 'number' | 'date' | 'url'; required?: boolean }[]> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function suggestMetadataSchema(_categoryName: string, _categoryDescription?: string): Promise<{ name: string; type: 'text' | 'number' | 'date' | 'url'; required?: boolean }[]> {
     // Returns empty array - feature not yet implemented
     return []
 }

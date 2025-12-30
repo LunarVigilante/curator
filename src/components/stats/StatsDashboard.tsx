@@ -10,8 +10,8 @@ import { TasteReportModal } from '../analysis/TasteReportModal'
 import { TasteAnalysis } from '@/lib/types/analysis'
 import { toast } from 'sonner'
 import { getStatsAnalytics } from '@/lib/actions/stats'
-import type { StatsData, TierCount } from '@/lib/types/stats'
-import { calculatePercentages } from '@/lib/utils/stats-utils'
+import type { StatsData } from '@/lib/types/stats'
+import { calculatePercentages } from './utils'
 
 // Props interface - accepts either raw items OR pre-calculated stats
 interface StatsDashboardProps {

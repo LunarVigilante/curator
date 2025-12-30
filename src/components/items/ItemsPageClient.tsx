@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -18,7 +18,7 @@ import PageContainer from '@/components/PageContainer'
 import EmptyState from '@/components/EmptyState'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
-import { LayoutGrid, List, Search, ArrowUpDown, ChevronLeft, ChevronRight, Box, Eye, Settings2, Image as ImageIcon, Grid3X3, Rows } from 'lucide-react'
+import { LayoutGrid, List, Search, ArrowUpDown, ChevronLeft, ChevronRight, Box, Eye, Image as ImageIcon, Grid3X3, Rows } from 'lucide-react'
 import ItemGrid from '@/components/items/ItemGrid'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -66,6 +66,9 @@ export default function ItemsPageClient({
     useEffect(() => {
         if (!gridContainerRef.current) return
 
+        // Get initial width before setting up observer
+        const initialWidth = gridContainerRef.current.offsetWidth || 1200
+
         let timeoutId: NodeJS.Timeout
         const observer = new ResizeObserver((entries) => {
             clearTimeout(timeoutId)
@@ -78,14 +81,25 @@ export default function ItemsPageClient({
         })
 
         observer.observe(gridContainerRef.current)
-        // Set initial width
-        setContainerWidth(gridContainerRef.current.offsetWidth || 1200)
+
+        // Only update if initial width differs from current state
+        if (initialWidth !== containerWidth) {
+            // Use timeout to avoid synchronous setState in effect
+            const initialTimeoutId = setTimeout(() => {
+                setContainerWidth(initialWidth)
+            }, 0)
+            return () => {
+                clearTimeout(timeoutId)
+                clearTimeout(initialTimeoutId)
+                observer.disconnect()
+            }
+        }
 
         return () => {
             clearTimeout(timeoutId)
             observer.disconnect()
         }
-    }, [])
+    }, [containerWidth])
 
     // Refetch when idealLimit changes
     const currentLimit = Number(searchParams.get('limit')) || 20
@@ -96,7 +110,7 @@ export default function ItemsPageClient({
             params.set('page', '1') // Reset to page 1 when limit changes
             router.push(`/items?${params.toString()}`)
         }
-    }, [idealLimit])
+    }, [idealLimit, currentLimit, searchParams, router])
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault()

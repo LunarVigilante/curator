@@ -7,7 +7,7 @@ async function fetchModelsFromProvider(provider: string, apiKey: string): Promis
         case 'openai':
             return await fetchOpenAIModels(apiKey);
         case 'anthropic':
-            return await fetchAnthropicModels(apiKey);
+            return await fetchAnthropicModels();
         case 'gemini':
             return await fetchGeminiModels(apiKey);
         case 'ollama':
@@ -15,7 +15,7 @@ async function fetchModelsFromProvider(provider: string, apiKey: string): Promis
         case 'mistral':
             return await fetchMistralModels(apiKey);
         case 'anannas':
-            return await fetchAnannasModels(apiKey);
+            return await fetchAnannasModels();
         default:
             return [];
     }
@@ -39,7 +39,7 @@ async function fetchOpenAIModels(apiKey: string): Promise<string[]> {
     }
 }
 
-async function fetchAnthropicModels(apiKey: string): Promise<string[]> {
+async function fetchAnthropicModels(): Promise<string[]> {
     // Anthropic doesn't have a public models endpoint, return known models
     return [
         'claude-3-5-sonnet-20241022',
@@ -92,7 +92,7 @@ async function fetchMistralModels(apiKey: string): Promise<string[]> {
     }
 }
 
-async function fetchAnannasModels(apiKey: string): Promise<string[]> {
+async function fetchAnannasModels(): Promise<string[]> {
     // Anannas AI - return known models
     return [
         'meta-llama/llama-3-70b-instruct',

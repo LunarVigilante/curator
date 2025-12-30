@@ -243,7 +243,7 @@ export class TmdbStrategy implements MediaStrategy {
                     // Fetch detailed info
                     let details: any;
                     let keyPerson = '';
-                    let descParts: string[] = [];
+                    const descParts: string[] = [];
                     let analysisPayload = '';
 
                     if (isMovie) {

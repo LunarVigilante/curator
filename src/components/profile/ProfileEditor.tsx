@@ -57,7 +57,7 @@ export function ProfileEditor({ isOpen, onOpenChange, onSuccess }: ProfileEditor
             } else {
                 toast.error(result.error || 'Failed to update profile')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setSaving(false)

@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { getSession, getCurrentUserId } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { logActivity } from '@/lib/actions/activity'
 
 export async function toggleFollow(targetUserId: string) {

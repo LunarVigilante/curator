@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { calculateElo } from '@/lib/elo'
 import { ChallengerItem } from '@/lib/actions/discovery'
 
@@ -17,9 +17,6 @@ type TournamentItem = {
 export function useTournamentMatchmaker(initialItems: TournamentItem[], challengers: ChallengerItem[]) {
     // Local session score map: ItemID -> Elo Score
     const [eloScores, setEloScores] = useState<Map<string, number>>(new Map(initialItems.map(i => [i.id, i.elo])))
-
-    const [currentPair, setCurrentPair] = useState<[TournamentItem, TournamentItem] | null>(null)
-    const [history, setHistory] = useState<string[]>([]) // Track pairs to avoid immediate repeats
     const [roundCount, setRoundCount] = useState(0)
     const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set())
 
@@ -61,7 +58,7 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
 
         // Standard Ranked Round: Pick two random items (optimized for close Elo in future)
         // For now: Pure random
-        let idx1 = Math.floor(Math.random() * pool.length)
+        const idx1 = Math.floor(Math.random() * pool.length)
         let idx2 = Math.floor(Math.random() * pool.length)
 
         while (idx1 === idx2) {
@@ -75,13 +72,29 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
 
     }, [initialItems, challengers, getScore, ignoredIds])
 
-    // Initial pair
-    useEffect(() => {
-        if (!currentPair) {
-            const next = generatePair()
-            setCurrentPair(next)
+    // Initialize current pair lazily
+    const [currentPair, setCurrentPair] = useState<[TournamentItem, TournamentItem] | null>(() => {
+        // Generate initial pair
+        const activeItems = initialItems.filter(i => !ignoredIds.has(i.id))
+        if (activeItems.length < 2) return null
+
+        const pool = [...activeItems]
+        const idx1 = Math.floor(Math.random() * pool.length)
+        let idx2 = Math.floor(Math.random() * pool.length)
+        while (idx1 === idx2) {
+            idx2 = Math.floor(Math.random() * pool.length)
         }
-    }, [currentPair, generatePair])
+
+        const getInitialScore = (id: string) => {
+            const item = initialItems.find(i => i.id === id)
+            return item?.elo || 1200
+        }
+
+        return [
+            { ...pool[idx1], elo: getInitialScore(pool[idx1].id) },
+            { ...pool[idx2], elo: getInitialScore(pool[idx2].id) }
+        ]
+    })
 
     const vote = (winnerId: string) => {
         if (!currentPair) return

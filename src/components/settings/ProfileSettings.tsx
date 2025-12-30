@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { authClient } from '@/lib/auth-client';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,7 +17,6 @@ export default function ProfileSettings() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [sessions, setSessions] = useState<any[]>([]);
-    const [currentSessionToken, setCurrentSessionToken] = useState<string | null>(null);
     const router = useRouter();
 
     // Fetch sessions on mount
@@ -86,7 +84,7 @@ export default function ProfileSettings() {
         toast.error("Account deletion is disabled in this demo.");
     };
 
-    const handleRevokeSession = async (token: string) => {
+    const handleRevokeSession = async () => {
         toast.error("Session management is currently managed by Supabase");
     };
 
@@ -197,7 +195,7 @@ export default function ProfileSettings() {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => handleRevokeSession(session.token)}
+                                        onClick={() => handleRevokeSession()}
                                         className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                                     >
                                         <X className="w-4 h-4 mr-1" />

@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSession, isAdmin } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import { SystemConfigService } from '@/lib/services/SystemConfigService'
 import { render } from '@react-email/render'
@@ -69,7 +69,7 @@ export async function getSystemConfig() {
     await assertAdmin()
     const settings = await SystemConfigService.getAllSettings()
     const configRecord: Record<string, string> = {}
-    settings.forEach(s => {
+    settings.forEach((s: any) => {
         configRecord[s.key] = s.value
     })
     return configRecord
@@ -486,8 +486,8 @@ export async function getEmailTemplates() {
                 body_html: html,
                 variables: JSON.stringify(['resetLink', 'userEmail'])
             } as any)
-        } catch (err) {
-            console.error("Failed to seed password-reset template:", err)
+        } catch (e) {
+            console.error("Failed to seed password-reset template:", e)
         }
     }
 
@@ -504,8 +504,8 @@ export async function getEmailTemplates() {
                 body_html: html,
                 variables: JSON.stringify(['verifyLink', 'userEmail'])
             } as any)
-        } catch (err) {
-            console.error("Failed to seed verify-email template:", err)
+        } catch (e) {
+            console.error("Failed to seed verify-email template:", e)
         }
     }
 

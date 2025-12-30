@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Trophy, ArrowRight, Loader2, Sparkles } from 'lucide-react';
@@ -31,7 +32,7 @@ export default function ChallengeCard({ challenge }: ChallengeCardProps) {
             toast.success("Challenge Accepted! Let's start ranking.");
             // Immediately redirect to Face-Off mode
             router.push(`/categories/${result.categoryId}?mode=tournament`);
-        } catch (error) {
+        } catch {
             toast.error("Failed to accept challenge.");
         } finally {
             setIsLoading(false);
@@ -43,10 +44,11 @@ export default function ChallengeCard({ challenge }: ChallengeCardProps) {
             {/* Background Image with Gradient */}
             {challenge.image && (
                 <div className="absolute inset-0 z-0">
-                    <img
+                    <Image
                         src={challenge.image}
-                        className="w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-700"
                         alt=""
+                        fill
+                        className="object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-700"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent" />
                 </div>

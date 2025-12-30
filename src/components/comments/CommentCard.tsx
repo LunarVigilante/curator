@@ -55,7 +55,7 @@ export function CommentCard({
             } else {
                 toast.error(result.error || 'Failed to delete')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setDeleting(false)
@@ -76,7 +76,7 @@ export function CommentCard({
             } else {
                 toast.error(result.error || 'Failed to reply')
             }
-        } catch (error) {
+        } catch {
             toast.error('Something went wrong')
         } finally {
             setSubmittingReply(false)

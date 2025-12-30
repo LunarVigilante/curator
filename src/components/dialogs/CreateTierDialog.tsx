@@ -83,7 +83,7 @@ export function CreateTierDialog({ isOpen, onOpenChange, categoryId, onCreated, 
                     onCreated?.(newRank)
                 }
                 onOpenChange(false)
-            } catch (error) {
+            } catch {
                 toast.error("Failed to save tier")
             }
         })

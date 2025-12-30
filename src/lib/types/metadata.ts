@@ -147,7 +147,7 @@ export function parseMetadataLoose(jsonString: string | null | undefined): Recor
     try {
         const parsed = JSON.parse(jsonString)
         return typeof parsed === 'object' && parsed !== null ? parsed : null
-    } catch (e) {
+    } catch {
         return null
     }
 }

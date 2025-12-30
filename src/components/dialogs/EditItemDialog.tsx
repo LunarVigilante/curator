@@ -7,14 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { updateItem, deleteItem } from '@/lib/actions/items'
 import { getCategories } from '@/lib/actions/categories'
 import TagSelector from '@/components/tags/TagSelector'
-import { Trash2, Search, X, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { Trash2, X, Image as ImageIcon, Loader2 } from 'lucide-react'
 import ImageCropper from '@/components/ImageCropper'
 import { toast } from 'sonner'
 import { MediaResult } from '@/lib/services/media/types'
+import Image from 'next/image'
 
 type Item = {
     id: string
@@ -289,8 +289,8 @@ export default function EditItemDialog({
                                                 }}
                                             >
                                                 {result.imageUrl ? (
-                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden">
-                                                        <img src={result.imageUrl} alt={result.title} className="w-full h-full object-cover" />
+                                                    <div className="relative w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden">
+                                                        <Image src={result.imageUrl} alt={result.title} fill className="object-cover" />
                                                     </div>
                                                 ) : (
                                                     <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 flex items-center justify-center">
@@ -330,12 +330,13 @@ export default function EditItemDialog({
                                 <Label>Image</Label>
                                 {formData.image ? (
                                     <div className="relative group aspect-[2/3] w-32 rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
-                                        <img
+                                        <Image
                                             src={formData.image}
                                             alt="Preview"
-                                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                                            onError={(e) => {
-                                                e.currentTarget.src = 'https://placehold.co/200x300?text=Invalid+Image'
+                                            fill
+                                            className="object-cover transition-transform group-hover:scale-105"
+                                            onError={() => {
+                                                // Simplified fallback
                                             }}
                                         />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">

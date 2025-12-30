@@ -51,7 +51,7 @@ export interface RadarChartPayload {
 
 const MIN_OVERLAP_FOR_ALIGNMENT = 3
 const MIN_ITEMS_FOR_RADAR = 5
-const EXPERT_THRESHOLD = 50 // Users with 50+ ratings are "experts"
+
 
 const TIER_TO_NUMERIC: Record<string, number> = {
     'S': 100,
@@ -121,7 +121,7 @@ export async function calculateAlignmentScore(
     }
 
     // Extract global item IDs
-    const globalItemIds = userRatings
+    const globalItemIds = (userRatings as any[])
         .map(r => (r.items as any)?.global_item_id)
         .filter(Boolean) as string[];
 
@@ -148,7 +148,7 @@ export async function calculateAlignmentScore(
 
     // Build cohort averages map
     const cohortMap = new Map<string, { total: number; count: number }>();
-    for (const rating of cohortRatings || []) {
+    for (const rating of (cohortRatings as any[]) || []) {
         const globalId = (rating.items as any)?.global_item_id;
         const tier = rating.tier;
         if (!globalId || !tier) continue;
@@ -170,7 +170,7 @@ export async function calculateAlignmentScore(
     let totalDelta = 0;
     let overlappingCount = 0;
 
-    for (const userRating of userRatings) {
+    for (const userRating of (userRatings as any[]) || []) {
         const globalId = (userRating.items as any)?.global_item_id;
         const tier = userRating.tier;
         if (!globalId || !tier) continue;
@@ -199,8 +199,8 @@ export async function calculateAlignmentScore(
 
     // 4. Cache result in taste_metrics
     const metricKey = categoryId ? `alignment_${cohortType}_${categoryId}` : `alignment_${cohortType}`;
-    await supabase
-        .from('taste_metrics')
+    await (supabase
+        .from('taste_metrics') as any)
         .upsert({
             user_id: userId,
             category_id: categoryId || null,
@@ -234,8 +234,8 @@ export async function getMetricDelta(
 ): Promise<MetricDelta | null> {
     const supabase = await createClient();
 
-    const { data: snapshots } = await supabase
-        .from('taste_snapshots')
+    const { data: snapshots } = await (supabase
+        .from('taste_snapshots') as any)
         .select('*')
         .eq('user_id', userId)
         .order('captured_at', { ascending: false })
@@ -278,8 +278,8 @@ export async function captureSnapshot(
     const supabase = await createClient();
 
     // Get all current metrics
-    const { data: metrics } = await supabase
-        .from('taste_metrics')
+    const { data: metrics } = await (supabase
+        .from('taste_metrics') as any)
         .select('*')
         .eq('user_id', userId);
 
@@ -295,15 +295,15 @@ export async function captureSnapshot(
         .eq('user_id', userId);
 
     // Get top genres (from categories)
-    const { data: userCategories } = await supabase
-        .from('categories')
+    const { data: userCategories } = await (supabase
+        .from('categories') as any)
         .select('name')
         .eq('user_id', userId)
         .limit(5);
 
-    const topGenres = (userCategories || []).map(c => c.name)
+    const topGenres = (userCategories || []).map((c: any) => c.name)
 
-    await supabase.from('taste_snapshots').insert({
+    await (supabase.from('taste_snapshots') as any).insert({
         user_id: userId,
         snapshot_type: snapshotType,
         metrics_json: JSON.stringify(metricsJson),
@@ -333,8 +333,10 @@ export async function checkUnlockStatus(
         .eq('insight_key', insightKey)
         .single();
 
-    if (existing) {
-        return { unlocked: true, unlockedAt: new Date(existing.unlocked_at) }
+    const existingRec = existing as any;
+
+    if (existingRec) {
+        return { unlocked: true, unlockedAt: new Date(existingRec.unlocked_at) }
     }
 
     // 2. Get condition requirements
@@ -344,7 +346,9 @@ export async function checkUnlockStatus(
         .eq('insight_key', insightKey)
         .single();
 
-    if (!condition) {
+    const cond = condition as any;
+
+    if (!cond) {
         // No condition defined = always unlocked
         return { unlocked: true }
     }
@@ -352,7 +356,7 @@ export async function checkUnlockStatus(
     // 3. Evaluate condition
     let progress = 0
 
-    switch (condition.condition_type) {
+    switch (cond.condition_type) {
         case 'min_items_rated': {
             const { count } = await supabase
                 .from('ratings')
@@ -374,11 +378,11 @@ export async function checkUnlockStatus(
     }
 
     // 4. If met, record unlock
-    if (progress >= condition.threshold) {
-        await supabase.from('insight_unlocks').insert({
+    if (progress >= cond.threshold) {
+        await (supabase.from('insight_unlocks') as any).insert({
             user_id: userId,
             insight_key: insightKey,
-            unlock_context: JSON.stringify({ triggered_by: condition.condition_type }),
+            unlock_context: JSON.stringify({ triggered_by: cond.condition_type }),
         })
         return { unlocked: true, unlockedAt: new Date() }
     }
@@ -386,8 +390,8 @@ export async function checkUnlockStatus(
     return {
         unlocked: false,
         progress,
-        required: condition.threshold,
-        displayLabel: condition.display_label,
+        required: cond.threshold,
+        displayLabel: cond.display_label,
     }
 }
 
@@ -415,13 +419,13 @@ export async function buildRadarChartPayload(
         query = query.eq('category_id', categoryId);
     }
 
-    const { data: userItems } = await query;
+    const { data: userItems } = await (query as any);
 
     // 2. Determine category type for axes
     let categoryType = 'default'
     if (categoryId) {
-        const { data: cat } = await supabase
-            .from('categories')
+        const { data: cat } = await (supabase
+            .from('categories') as any)
             .select('name')
             .eq('id', categoryId)
             .single();
@@ -455,7 +459,7 @@ export async function buildRadarChartPayload(
 
     // 4. Generate synthetic scores based on tier distribution
     const tierCounts: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, D: 0 }
-    for (const item of userItems) {
+    for (const item of (userItems as any[]) || []) {
         if (item.tier && tierCounts[item.tier] !== undefined) {
             tierCounts[item.tier]++
         }

@@ -23,11 +23,11 @@ interface EditCategoryDialogProps {
 }
 
 export default function EditCategoryDialog({ isOpen, onClose, category }: EditCategoryDialogProps) {
-    if (!category) return null;
-
-    const [name, setName] = useState(category.name);
-    const [description, setDescription] = useState(category.description || '');
+    const [name, setName] = useState(category?.name || '');
+    const [description, setDescription] = useState(category?.description || '');
     const [isLoading, setIsLoading] = useState(false);
+
+    if (!category) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

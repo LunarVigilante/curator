@@ -76,7 +76,7 @@ export function TournamentModal({
 
                 await addChallengerItem(challengerData, categoryId, result.newWinnerScore)
                 toast.success(`${winner.name} saved!`)
-            } catch (e) {
+            } catch {
                 toast.error(`Failed to save ${winner.name}`)
             }
         }
@@ -103,7 +103,7 @@ export function TournamentModal({
 
             toast.success(`Tournament Complete! ${updates.length} ratings updated.`)
             onOpenChange(false)
-        } catch (error) {
+        } catch {
             toast.error("Failed to save tournament results.")
         } finally {
             setIsSaving(false)

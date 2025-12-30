@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { getSession, getCurrentUserId } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 
 export async function updateUserProfile(data: {
@@ -22,8 +22,8 @@ export async function updateUserProfile(data: {
 
     const preferencesString = preferences ? JSON.stringify(preferences) : undefined
 
-    await supabase
-        .from('profiles')
+    await (supabase
+        .from('profiles') as any)
         .update({
             ...(name && { name }),
             ...(bio && { bio }),
@@ -67,8 +67,8 @@ export async function deleteUserAccount() {
 export async function getUserById(userId: string) {
     const supabase = await createClient()
 
-    const { data: user, error } = await supabase
-        .from('profiles')
+    const { data: user, error } = await (supabase
+        .from('profiles') as any)
         .select('id, name, image, bio, created_at')
         .eq('id', userId)
         .single()

@@ -11,8 +11,10 @@ export default function OnboardingPage() {
     const router = useRouter()
     const [step, setStep] = useState<OnboardingStep>('calibration')
 
-    // Pick a random binary rater pair for the "This or That" step
-    const binaryPair = BINARY_RATER_PAIRS[Math.floor(Math.random() * BINARY_RATER_PAIRS.length)]
+    // Pick a random binary rater pair for the "This or That" step (computed once on initial mount)
+    const [binaryPair] = useState(() =>
+        BINARY_RATER_PAIRS[Math.floor(Math.random() * BINARY_RATER_PAIRS.length)]
+    )
 
     const handleCalibrationComplete = () => {
         setStep('binary')

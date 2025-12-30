@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,24 +32,24 @@ export default function EmailTemplates() {
     const [body, setBody] = useState('');
 
     useEffect(() => {
-        loadTemplates();
-    }, []);
-
-    const loadTemplates = async () => {
-        setIsLoading(true);
-        try {
-            const data = await getEmailTemplates();
-            setTemplates(data);
-            if (data.length > 0 && !selectedTemplateId) {
-                selectTemplate(data[0]);
+        const loadTemplates = async () => {
+            setIsLoading(true);
+            try {
+                const data = await getEmailTemplates();
+                setTemplates(data);
+                if (data.length > 0 && !selectedTemplateId) {
+                    selectTemplate(data[0]);
+                }
+            } catch (e) {
+                console.error(e);
+                toast.error("Failed to load templates.");
+            } finally {
+                setIsLoading(false);
             }
-        } catch (e) {
-            console.error(e);
-            toast.error("Failed to load templates.");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+        };
+        loadTemplates();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const selectTemplate = (template: EmailTemplate) => {
         setSelectedTemplateId(template.id);
@@ -73,8 +73,8 @@ export default function EmailTemplates() {
                     ? { ...t, subject, bodyHtml: body, lastUpdated: new Date() }
                     : t
             ));
-        } catch (err) {
-            console.error(err);
+        } catch (e) {
+            console.error(e);
             toast.error("Failed to save template.");
         } finally {
             setIsSaving(false);

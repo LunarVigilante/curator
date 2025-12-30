@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createItem } from '@/lib/actions/items'
 import { Plus, X, Image as ImageIcon, Loader2 } from 'lucide-react'
+import Image from 'next/image'
 import TagSelector from '@/components/tags/TagSelector'
 import ImageCropper from '@/components/ImageCropper'
 import { toast } from 'sonner'
@@ -280,8 +281,8 @@ export default function AddItemDialog({
                                                 }}
                                             >
                                                 {result.imageUrl ? (
-                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden">
-                                                        <img src={result.imageUrl} alt={result.title} className="w-full h-full object-cover" />
+                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden relative">
+                                                        <Image src={result.imageUrl} alt={result.title} fill className="object-cover" />
                                                     </div>
                                                 ) : (
                                                     <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 flex items-center justify-center">
@@ -375,13 +376,12 @@ export default function AddItemDialog({
 
                                 {formData.image && (
                                     <div className="mt-2 relative group w-full aspect-[2/3] rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900/50">
-                                        <img
+                                        <Image
                                             src={formData.image}
                                             alt="Preview"
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                e.currentTarget.src = 'https://placehold.co/200x300?text=Invalid+Image'
-                                            }}
+                                            fill
+                                            className="object-cover"
+                                            onError={() => setFormData({ ...formData, image: 'https://placehold.co/200x300?text=Invalid+Image' })}
                                         />
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                             <Button

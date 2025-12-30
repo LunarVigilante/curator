@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { Database } from '@/lib/types/database'
 

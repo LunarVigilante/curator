@@ -61,7 +61,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
             } else {
                 toast.error('Failed to generate invite');
             }
-        } catch (err) {
+        } catch {
             toast.error('Error generating invite');
         } finally {
             setIsGenerating(false);
@@ -84,7 +84,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                 const refetch = await fetch('/api/admin/invites');
                 if (refetch.ok) setInvites(await refetch.json());
             }
-        } catch (err) {
+        } catch {
             toast.error('Error revoking invite');
         }
     };
@@ -112,7 +112,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
             } else {
                 toast.error('Failed to create user');
             }
-        } catch (err) {
+        } catch {
             toast.error('Error creating user');
         } finally {
             setIsLoading(false);

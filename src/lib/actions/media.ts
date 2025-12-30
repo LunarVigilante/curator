@@ -22,7 +22,7 @@ export async function searchMediaAction(query: string, categoryName: string | nu
                     try {
                         const parsed = JSON.parse(category.metadata);
                         if (parsed.type) finalType = parsed.type;
-                    } catch (e) {
+                    } catch {
                         // ignore json error
                     }
                 }

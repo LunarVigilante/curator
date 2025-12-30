@@ -1,6 +1,7 @@
 'use client';
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { supabase, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -97,10 +98,12 @@ export function Navbar() {
                                     className="flex items-center gap-2 px-2 hover:bg-white/10"
                                 >
                                     {userImage ? (
-                                        <img
+                                        <Image
                                             src={userImage}
                                             alt="Avatar"
-                                            className="h-8 w-8 rounded-full border border-white/10 object-cover"
+                                            width={32}
+                                            height={32}
+                                            className="rounded-full border border-white/10 object-cover"
                                         />
                                     ) : (
                                         <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-zinc-800 text-zinc-400">

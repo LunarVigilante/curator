@@ -7,10 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Zap, Copy, Database, Mail, Brain, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
-import { updateSystemConfig, generateInviteCode, getInvites, getSystemConfig, testLLMConnectionAction, testServiceConnection } from '@/lib/actions/admin';
+import { Loader2, Zap, Database, Mail, Brain, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
+import { updateSystemConfig, getSystemConfig, testLLMConnectionAction, testServiceConnection } from '@/lib/actions/admin';
 import { useEffect } from 'react';
 
 interface AdminSystemConfigProps {
@@ -82,9 +80,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         bgg: { status: 'idle' }
     });
 
-    // Invite State
-    const [invites, setInvites] = useState<any[]>([]);
-    const [isInviteLoading, setIsInviteLoading] = useState(false);
+
 
     useEffect(() => {
         loadData();
@@ -93,9 +89,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [config, inviteList] = await Promise.all([
-                getSystemConfig(),
-                getInvites()
+            const [config] = await Promise.all([
+                getSystemConfig()
             ]);
 
             // Populate states
@@ -116,7 +111,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
             if (config['resend_from_email']) setFromEmail(config['resend_from_email']);
             if (config['public_app_url']) setAppUrl(config['public_app_url']);
 
-            setInvites(inviteList);
+
         } catch (e) {
             console.error("Failed to load settings:", e);
             toast.error("Failed to load existing settings.");
@@ -125,17 +120,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
     };
 
-    const loadInvites = async () => {
-        setIsInviteLoading(true);
-        try {
-            const data = await getInvites();
-            setInvites(data);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsInviteLoading(false);
-        }
-    };
+
 
     const handleTestLLM = async () => {
         setIsTestLoading(true);
@@ -220,7 +205,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 setLlmModel(data.models[0]);
             }
             toast.success(`Found ${data.models?.length || 0} models`);
-        } catch (err) {
+        } catch {
             toast.error('Failed to fetch models from provider');
         } finally {
             setIsLoadingModels(false);
@@ -262,32 +247,14 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 featureChallenges: enableChallenges ? 'true' : 'false'
             });
             toast.success("System configuration updated!");
-        } catch (err) {
+        } catch {
             toast.error("Failed to update system config.");
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleGenerateInvite = async () => {
-        setIsInviteLoading(true);
-        try {
-            const { success, code } = await generateInviteCode();
-            if (success) {
-                toast.success(`Invite Generated: ${code}`);
-                await loadInvites();
-            }
-        } catch (err) {
-            toast.error("Failed to generate invite.");
-        } finally {
-            setIsInviteLoading(false);
-        }
-    };
 
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text);
-        toast.success("Copied to clipboard");
-    };
 
     return (
         <div className="space-y-8">

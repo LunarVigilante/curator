@@ -87,7 +87,7 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
             } else {
                 toast.error('No models found. Check your API Key and Endpoint.')
             }
-        } catch (error) {
+        } catch {
             toast.error('Failed to fetch models')
         } finally {
             setFetchingModels(false)
@@ -105,7 +105,7 @@ export default function SettingsForm({ initialSettings }: SettingsFormProps) {
         try {
             await updateSettings(formData)
             toast.success('Settings updated successfully')
-        } catch (error) {
+        } catch {
             toast.error('Failed to update settings')
         } finally {
             setLoading(false)

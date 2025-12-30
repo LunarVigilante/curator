@@ -122,7 +122,8 @@ export async function createItemInternal(input: z.input<typeof createItemSchema>
     const data = createItemSchema.parse(input)
     const userId = await getGuestUserId()
     const supabase = await createClient()
-    let { name, description, categoryId, image, tags: tagIds, metadata } = data
+    const { name, description, categoryId, tags: tagIds, metadata } = data
+    let image = data.image
 
     // Auto-localize external images
     if (image && image.startsWith('http')) {
@@ -501,7 +502,8 @@ export async function getTournamentPool(categoryId: string, size: number = 20) {
     return await TournamentService.generateTournamentPool(userId, categoryId, size, true)
 }
 
-export async function submitMatchResult(winnerId: string, loserId: string) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function submitMatchResult(_winnerId: string, _loserId: string) {
     const session = await getSession()
     if (!session) return
     // Activity logging handled by submitMatchActivity

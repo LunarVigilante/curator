@@ -89,7 +89,7 @@ ${context ? `Additional Context: ${context}` : ''}`;
 
             result = JSON.parse(jsonString);
             console.log('Parsed LLM result:', JSON.stringify(result, null, 2));
-        } catch (parseError) {
+        } catch {
             console.error('Failed to parse LLM response as JSON:', response);
             // Fallback: try to extract what we can
             result = {

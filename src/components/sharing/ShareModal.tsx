@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Copy, Download, Check, Twitter, Instagram, Link2 } from 'lucide-react'
+import { Copy, Download, Check, Twitter, Link2 } from 'lucide-react'
 import { ShareCard } from './ShareCard'
 import type { ShareCardData, ShareTemplate } from '@/lib/actions/sharing'
 import { toast } from 'sonner'

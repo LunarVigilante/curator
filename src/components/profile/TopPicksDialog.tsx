@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useTransition, useMemo } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -30,37 +30,34 @@ interface TopPicksDialogProps {
 
 export function TopPicksDialog({ isOpen, onOpenChange, onSuccess }: TopPicksDialogProps) {
     const [items, setItems] = useState<TopPickItem[]>([])
-    const [filteredItems, setFilteredItems] = useState<TopPickItem[]>([])
     const [search, setSearch] = useState('')
-    const [isLoading, setIsLoading] = useState(true)
+    const [isLoading, startLoadingTransition] = useTransition()
     const [isPending, startTransition] = useTransition()
 
+    // Load items when dialog opens
     useEffect(() => {
         if (isOpen) {
-            setIsLoading(true)
-            getMyItemsForTopPicks().then((data) => {
-                const safeData: TopPickItem[] = data.map((item: any) => ({
-                    ...item,
-                    name: item.name || 'Untitled Item'
-                }))
-                setItems(safeData)
-                setFilteredItems(safeData)
-                setIsLoading(false)
+            startLoadingTransition(() => {
+                getMyItemsForTopPicks().then((data) => {
+                    const safeData: TopPickItem[] = data.map((item: any) => ({
+                        ...item,
+                        name: item.name || 'Untitled Item'
+                    }))
+                    setItems(safeData)
+                })
             })
         }
     }, [isOpen])
 
-    useEffect(() => {
+    // Compute filtered items synchronously using useMemo
+    const filteredItems = useMemo(() => {
         if (search.trim()) {
-            setFilteredItems(
-                items.filter(item =>
-                    item.name.toLowerCase().includes(search.toLowerCase()) ||
-                    item.categoryName?.toLowerCase().includes(search.toLowerCase())
-                )
+            return items.filter(item =>
+                item.name.toLowerCase().includes(search.toLowerCase()) ||
+                item.categoryName?.toLowerCase().includes(search.toLowerCase())
             )
-        } else {
-            setFilteredItems(items)
         }
+        return items
     }, [search, items])
 
     const handleAddPick = (itemId: string) => {

@@ -15,7 +15,7 @@ import { toggleLike, toggleSave } from '@/lib/actions/interactions'
 import { cn } from '@/lib/utils'
 
 import { joinChallenge, leaveChallenge } from '@/lib/actions/challenges'
-import { Trophy, Users } from 'lucide-react'
+import { Trophy } from 'lucide-react'
 
 interface CategoryHeaderProps {
     category: any

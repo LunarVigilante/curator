@@ -5,8 +5,8 @@ import { getChallengeTemplates } from '@/lib/actions/challenges';
 import { getRecentActivities } from '@/lib/actions/activity';
 import UserDashboard from '@/components/dashboard/UserDashboard';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Lock } from 'lucide-react';
 
 export default async function LandingPage() {
@@ -77,10 +77,11 @@ export default async function LandingPage() {
                     {/* Background Image */}
                     <div className="absolute inset-0 z-0">
                       {collection.image ? (
-                        <img
+                        <Image
                           src={collection.image}
                           alt={collection.name}
-                          className="w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-110 transition-all duration-700"
+                          fill
+                          className="object-cover opacity-60 group-hover:opacity-80 group-hover:scale-110 transition-all duration-700"
                         />
                       ) : (
                         <div className="w-full h-full bg-zinc-800" />

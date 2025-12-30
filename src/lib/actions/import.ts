@@ -73,8 +73,7 @@ export async function magicImport(
             userId,
             collectionName || parsed.collectionTitle,
             parsed.collectionDescription,
-            reconciledItems,
-            parsed.mediaType
+            reconciledItems
         )
 
         return result
@@ -141,8 +140,7 @@ async function createCollectionFromImport(
     userId: string,
     collectionTitle: string,
     collectionDescription: string | undefined,
-    reconciledItems: ReconciledItem[],
-    mediaType: string
+    reconciledItems: ReconciledItem[]
 ): Promise<ImportResult> {
     const supabase = await createClient()
     const warnings: string[] = []

@@ -30,7 +30,7 @@ export class EmailService {
                 .single();
 
             if (!existing) {
-                await supabase.from('email_templates').insert(template);
+                await (supabase.from('email_templates') as any).insert(template);
                 console.log(`Seeded template: ${template.name}`);
             }
         }
@@ -40,8 +40,8 @@ export class EmailService {
         const supabase = await createClient();
 
         // 1. Fetch Template
-        const { data: template, error } = await supabase
-            .from('email_templates')
+        const { data: template, error } = await (supabase
+            .from('email_templates') as any)
             .select('*')
             .eq('name', templateName)
             .single();

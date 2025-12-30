@@ -53,7 +53,7 @@ export class TournamentService {
             .limit(poolSize);
 
         // Map user items to slim DTO
-        const userPoolItems: TournamentPoolItem[] = (userItems || []).map(i => ({
+        const userPoolItems: TournamentPoolItem[] = ((userItems as any[]) || []).map(i => ({
             id: i.id,
             name: i.name || 'Untitled',
             image: i.image,
@@ -70,17 +70,13 @@ export class TournamentService {
         const needed = poolSize - userPoolItems.length;
 
         // 2. Fetch Global Popular Items (excluding ones user has interacted with)
-        const { data: existingItems } = await supabase
-            .from('items')
-            .select('global_item_id')
-            .eq('user_id', userId)
-            .eq('category_id', categoryId);
+        // (Query removed as unused)
 
-        const existingGlobalIds = (existingItems || []).map(i => i.global_item_id).filter(Boolean) as string[];
+
 
         // 3. External Fallback (Discovery)
-        const { data: category } = await supabase
-            .from('categories')
+        const { data: category } = await (supabase
+            .from('categories') as any)
             .select('id, name')
             .eq('id', categoryId)
             .single();

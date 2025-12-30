@@ -27,14 +27,4 @@ export async function removeItemTier(itemId: string, categoryId: string) {
 }
 
 // Helper to convert tier to numeric value for sorting
-function getTierValue(tier: string): number {
-    const tierValues: Record<string, number> = {
-        'S': 100,
-        'A': 85,
-        'B': 70,
-        'C': 55,
-        'D': 40,
-        'F': 25
-    }
-    return tierValues[tier] || 0
-}
+

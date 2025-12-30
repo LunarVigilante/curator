@@ -47,7 +47,7 @@ export default function ChangePasswordPage() {
             router.push('/');
             router.refresh();
 
-        } catch (err) {
+        } catch {
             toast.error("An unexpected error occurred.");
             setIsLoading(false);
         }
