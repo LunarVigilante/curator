@@ -1,8 +1,9 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { completeSetup, isSetupRequired } from '@/lib/actions/setup'
+import { supabase } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +13,7 @@ import { Shield, Loader2 } from 'lucide-react'
 export default function SetupPage() {
     const router = useRouter()
     const [state, dispatch, isPending] = useActionState(completeSetup, undefined)
+    const [hasCheckedSetup, setHasCheckedSetup] = useState(false)
 
     // Redirect on success
     useEffect(() => {
@@ -20,24 +22,36 @@ export default function SetupPage() {
         }
     }, [state?.success, router])
 
-    // Check if setup is actually needed
+    // Check if user is already logged in - redirect them to home
     useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                router.push('/')
+            }
+        })
+    }, [router])
+
+    // Check if setup is actually needed (only once on initial mount)
+    useEffect(() => {
+        if (hasCheckedSetup) return
+        setHasCheckedSetup(true)
+
         isSetupRequired().then(required => {
             if (!required) {
                 router.push('/login')
             }
         })
-    }, [router])
+    }, [router, hasCheckedSetup])
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 p-4">
+        <div className="flex items-center justify-center min-h-screen p-4">
             <Card className="w-full max-w-md border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl">
                 <CardHeader className="text-center space-y-4">
                     <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
                         <Shield className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                        <CardTitle className="text-2xl font-bold">Welcome to Curator</CardTitle>
+                        <CardTitle className="text-3xl font-bold font-serif">Welcome to Curator</CardTitle>
                         <CardDescription className="text-zinc-400 mt-2">
                             Create your admin account to get started
                         </CardDescription>
@@ -87,8 +101,10 @@ export default function SetupPage() {
                             <p className="text-xs text-zinc-500">Minimum 8 characters</p>
                         </div>
 
+                        <div className="mt-8" />
+
                         {state?.error && (
-                            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
+                            <div className="p-3 mb-4 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
                                 {state.error}
                             </div>
                         )}
@@ -96,7 +112,7 @@ export default function SetupPage() {
 
                     <CardFooter>
                         <Button
-                            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500"
+                            className="w-full bg-blue-600 text-white hover:bg-blue-500 shadow-[0_0_30px_-5px_var(--color-blue-500)] shadow-blue-500/50 transition-all hover:scale-[1.02]"
                             disabled={isPending}
                         >
                             {isPending ? (

@@ -63,7 +63,7 @@ export class AniListStrategy implements MediaStrategy {
                         countryOfOrigin
                         isAdult
                         
-                        tags(limit: 15, sort: RANK_DESC) {
+                        tags {
                             name
                             rank
                             category
@@ -96,6 +96,8 @@ export class AniListStrategy implements MediaStrategy {
             }
         `;
 
+        console.log('[AniList] Starting search for:', query, 'type:', this.mediaType);
+
         try {
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -112,7 +114,11 @@ export class AniListStrategy implements MediaStrategy {
                 })
             });
 
+            console.log('[AniList] Fetch complete, status:', response.status);
+
             if (!response.ok) {
+                const errorBody = await response.text();
+                console.error('[AniList] Error body:', errorBody);
                 return {
                     success: false,
                     data: [],
@@ -121,6 +127,8 @@ export class AniListStrategy implements MediaStrategy {
             }
 
             const data = await response.json();
+
+            console.log('[AniList] API Response:', JSON.stringify(data).substring(0, 500));
 
             if (data.errors) {
                 return {

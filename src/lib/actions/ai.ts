@@ -155,6 +155,7 @@ export async function generateTagsAction(input: z.input<typeof generateTagsSchem
         }
 
         // Fetch LLM config from database
+        console.log('[AI Tags] Fetching LLM configuration...');
         const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
         const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
         const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
@@ -165,8 +166,14 @@ export async function generateTagsAction(input: z.input<typeof generateTagsSchem
         const openrouterKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key');
         const googleAiKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key');
 
+        console.log('[AI Tags] Provider:', provider);
+        console.log('[AI Tags] Model:', model);
+        console.log('[AI Tags] Has llm_api_key:', !!apiKey);
+        console.log('[AI Tags] Has openrouter_api_key:', !!openrouterKey);
+
         let finalApiKey = apiKey;
         if (!finalApiKey) {
+            console.log('[AI Tags] No llm_api_key, falling back to provider-specific key...');
             switch (provider) {
                 case 'ananas': finalApiKey = anannasKey; break;
                 case 'anthropic': finalApiKey = anthropicKey; break;
@@ -176,6 +183,8 @@ export async function generateTagsAction(input: z.input<typeof generateTagsSchem
             }
         }
         finalApiKey = finalApiKey || openrouterKey || anannasKey || anthropicKey || openaiKey || googleAiKey;
+
+        console.log('[AI Tags] Final API key found:', !!finalApiKey);
 
         if (!finalApiKey) {
             throw new Error('LLM API Key not configured in System Settings')

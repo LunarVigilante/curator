@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { supabase, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users } from "lucide-react";
 import {
     DropdownMenu,
@@ -22,6 +22,8 @@ export function Navbar() {
     const [isPending, setIsPending] = useState(true);
     const [userRole, setUserRole] = useState<string | null>(null);
     const router = useRouter();
+    const pathname = usePathname();
+    const isSetupPage = pathname === '/setup';
 
     useEffect(() => {
         // Get initial session
@@ -82,7 +84,9 @@ export function Navbar() {
                     </Link>
 
                     <nav className="flex items-center space-x-6 text-sm font-medium">
-                        <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/browse">Browse</Link>
+                        {!isSetupPage && (
+                            <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/browse">Browse</Link>
+                        )}
                     </nav>
                 </div>
 
@@ -183,11 +187,13 @@ export function Navbar() {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     ) : (
-                        <Link href="/login">
-                            <Button size="sm" className="rounded-full px-6">
-                                Sign In
-                            </Button>
-                        </Link>
+                        !isSetupPage && (
+                            <Link href="/login">
+                                <Button size="sm" className="rounded-full px-6">
+                                    Sign In
+                                </Button>
+                            </Link>
+                        )
                     )}
                 </div>
             </div>

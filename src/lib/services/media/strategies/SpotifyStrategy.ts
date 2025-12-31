@@ -234,6 +234,8 @@ export class SpotifyStrategy implements MediaStrategy {
 
     async search(query: string, settings: SystemSettings, type?: string): Promise<MediaSearchResponse> {
         try {
+            console.log('[Spotify] Starting search for:', query, 'type:', type || 'artist');
+
             const token = await this.getSpotifyToken(settings);
             const apiUrl = settings['spotify_api_url'] || 'https://api.spotify.com/v1';
 
@@ -250,11 +252,16 @@ export class SpotifyStrategy implements MediaStrategy {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
+            console.log('[Spotify] Fetch complete, status:', response.status);
+
             if (!response.ok) {
+                const errorBody = await response.text();
+                console.error('[Spotify] Error body:', errorBody);
                 return { success: false, data: [], error: `Spotify Error: ${response.statusText}` };
             }
 
             const data = await response.json();
+            console.log('[Spotify] Search type:', searchType, 'Results found:', searchType === 'artist' ? data.artists?.items?.length : data.albums?.items?.length);
 
             // =============================
             // ARTIST SEARCH (with top tracks and era analysis)

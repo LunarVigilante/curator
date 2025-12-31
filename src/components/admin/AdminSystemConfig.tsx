@@ -146,10 +146,10 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
     };
 
-    const handleTestService = async (service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg', apiKey: string) => {
+    const handleTestService = async (service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg', apiKey: string, clientSecret?: string) => {
         setServiceStatuses(prev => ({ ...prev, [service]: { status: 'loading' } }));
         try {
-            const result = await testServiceConnection({ service, apiKey });
+            const result = await testServiceConnection({ service, apiKey, clientSecret });
             if (result.success) {
                 setServiceStatuses(prev => ({ ...prev, [service]: { status: 'success', message: result.message } }));
                 toast.success(result.message || `${service} Verified`);
@@ -563,8 +563,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => handleTestService('spotify', spotifyClientId)}
-                                    disabled={serviceStatuses.spotify?.status === 'loading' || !spotifyClientId}
+                                    onClick={() => handleTestService('spotify', spotifyClientId, spotifyClientSecret)}
+                                    disabled={serviceStatuses.spotify?.status === 'loading' || !spotifyClientId || !spotifyClientSecret}
                                     className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
                                 >
                                     {serviceStatuses.spotify?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
@@ -612,7 +612,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                                     {serviceStatuses.comicvine?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
                                         serviceStatuses.comicvine?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
                                             serviceStatuses.comicvine?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test
+                                    Test ComicVine
                                 </Button>
                             </div>
                             <Input
@@ -646,7 +646,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                                     {serviceStatuses.bgg?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
                                         serviceStatuses.bgg?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
                                             serviceStatuses.bgg?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test
+                                    Test BGG
                                 </Button>
                             </div>
                             <Input

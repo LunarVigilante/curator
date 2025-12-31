@@ -151,12 +151,14 @@ export class SystemConfigService {
         category: string = 'GENERAL',
         isSecret: boolean = false
     ) {
+        console.log(`[SystemConfig] Saving setting: ${key} (category: ${category}, isSecret: ${isSecret})`);
+
         const supabase = await createClient();
         // Encrypt immediately
         const encryptedValue = encrypt(rawValue);
 
         // Upsert logic
-        await (supabase
+        const { error } = await (supabase
             .from('system_settings') as any)
             .upsert({
                 key,
@@ -165,6 +167,13 @@ export class SystemConfigService {
                 is_secret: isSecret,
                 updated_at: new Date().toISOString(),
             }, { onConflict: 'key' });
+
+        if (error) {
+            console.error(`[SystemConfig] FAILED to save ${key}:`, error.message, error.details, error.hint);
+            throw new Error(`Failed to save setting ${key}: ${error.message}`);
+        }
+
+        console.log(`[SystemConfig] Successfully saved: ${key}`);
 
         // Return public view (masked if secret)
         return {

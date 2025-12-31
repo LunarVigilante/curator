@@ -104,7 +104,9 @@ export async function updateSystemConfig(data: {
     featureRecommendations?: string
     featureChallenges?: string
 }) {
-    await assertAdmin()
+    const session = await assertAdmin()
+    console.log('[Admin] updateSystemConfig called by user:', session.user.id)
+    console.log('[Admin] Saving settings:', Object.keys(data).filter(k => data[k as keyof typeof data]))
 
     const upsertSetting = async (key: string, value: string, category: string, isSecret: boolean) => {
         if (!value) return
@@ -363,8 +365,10 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
 export async function testServiceConnection(data: {
     service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg'
     apiKey: string
+    clientSecret?: string  // Optional: for Spotify
 }) {
-    await assertAdmin()
+    await assertAdmin();
+    console.log(`[ServiceTest] Testing ${data.service} connection...`);
 
     let apiKey = data.apiKey
     let clientSecret = ''
@@ -385,8 +389,15 @@ export async function testServiceConnection(data: {
     }
 
     if (data.service === 'spotify') {
-        clientSecret = await SystemConfigService.getDecryptedConfig('spotify_client_secret') || ''
-        if (!clientSecret) throw new Error("Spotify Client Secret is missing")
+        // Use provided clientSecret first, otherwise fetch from DB
+        clientSecret = data.clientSecret || '';
+        if (!clientSecret || clientSecret.includes('********')) {
+            clientSecret = await SystemConfigService.getDecryptedConfig('spotify_client_secret') || '';
+        }
+        if (!clientSecret) {
+            console.error('[ServiceTest] Spotify Client Secret is missing');
+            throw new Error("Spotify Client Secret is missing. Save your settings first, then test.");
+        }
     }
 
     try {

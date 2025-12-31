@@ -132,6 +132,8 @@ export class BggStrategy implements MediaStrategy {
         }
 
         try {
+            console.log('[BGG] Starting search for:', query);
+
             // Step 1: Search for games
             const searchUrl = `${apiUrl}/search?query=${encodeURIComponent(query)}&type=boardgame`;
 
@@ -142,6 +144,8 @@ export class BggStrategy implements MediaStrategy {
                 }
             });
 
+            console.log('[BGG] Search fetch complete, status:', searchRes.status);
+
             if (searchRes.status === 401 || searchRes.status === 403) {
                 return {
                     success: false,
@@ -151,6 +155,8 @@ export class BggStrategy implements MediaStrategy {
             }
 
             if (!searchRes.ok) {
+                const errorBody = await searchRes.text();
+                console.error('[BGG] Error body:', errorBody.substring(0, 500));
                 return { success: false, data: [], error: `BGG API Error: ${searchRes.status} ${searchRes.statusText}` };
             }
 
@@ -164,8 +170,11 @@ export class BggStrategy implements MediaStrategy {
             }).filter(Boolean);
 
             if (gameIds.length === 0) {
+                console.log('[BGG] No games found');
                 return { success: true, data: [] };
             }
+
+            console.log('[BGG] Found game IDs:', gameIds.length);
 
             // Step 2: Get detailed info for each game (with stats=1 for weight/rank)
             const detailUrl = `${apiUrl}/thing?id=${gameIds.join(',')}&stats=1`;

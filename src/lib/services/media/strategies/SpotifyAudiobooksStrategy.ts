@@ -145,6 +145,8 @@ export class SpotifyAudiobooksStrategy implements MediaStrategy {
 
     async search(query: string, settings: SystemSettings): Promise<MediaSearchResponse> {
         try {
+            console.log('[SpotifyAudiobooks] Starting search for:', query);
+
             const token = await this.getSpotifyToken(settings);
             const apiUrl = settings['spotify_api_url'] || 'https://api.spotify.com/v1';
 
@@ -154,7 +156,12 @@ export class SpotifyAudiobooksStrategy implements MediaStrategy {
                 { headers: { 'Authorization': `Bearer ${token}` } }
             );
 
+            console.log('[SpotifyAudiobooks] Fetch complete, status:', response.status);
+
             if (!response.ok) {
+                const errorBody = await response.text();
+                console.error('[SpotifyAudiobooks] Error body:', errorBody);
+
                 // Audiobooks API might not be available in all markets
                 if (response.status === 404 || response.status === 400) {
                     return {
@@ -167,6 +174,7 @@ export class SpotifyAudiobooksStrategy implements MediaStrategy {
             }
 
             const data = await response.json();
+            console.log('[SpotifyAudiobooks] Results count:', data.audiobooks?.items?.length || 0);
 
             if (!data.audiobooks || !data.audiobooks.items) {
                 return { success: true, data: [] };

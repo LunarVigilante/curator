@@ -139,17 +139,24 @@ export class ComicVineStrategy implements MediaStrategy {
         }
 
         try {
+            console.log('[ComicVine] Starting search for:', query);
+
             // Search for volumes (comic series/trade paperbacks)
             const res = await fetch(
                 `${apiUrl}/search/?api_key=${apiKey}&format=json&query=${encodeURIComponent(query)}&resources=volume&limit=10`,
                 { headers: { 'User-Agent': this.userAgent } }
             );
 
+            console.log('[ComicVine] Fetch complete, status:', res.status);
+
             if (!res.ok) {
+                const errorBody = await res.text();
+                console.error('[ComicVine] Error body:', errorBody.substring(0, 500));
                 return { success: false, data: [], error: `ComicVine API Error: ${res.statusText}` };
             }
 
             const data = await res.json();
+            console.log('[ComicVine] Results count:', data.number_of_total_results || 0);
 
             if (data.error !== 'OK') {
                 return { success: false, data: [], error: data.error || 'ComicVine API Error' };

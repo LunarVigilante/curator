@@ -63,15 +63,33 @@ export async function completeSetup(
             return { error: signUpError?.message || 'Failed to create user' }
         }
 
-        // Update the profile to be admin (the trigger should create it, but let's ensure)
-        await (supabase
-            .from('profiles') as any)
-            .update({
-                name,
-                role: 'ADMIN',
-                email_verified: true,
-            })
-            .eq('id', authData.user.id)
+        // Wait for the trigger to create the profile, then update it to be admin
+        // The trigger may take a moment to create the profile
+        let profileUpdated = false
+        for (let attempt = 0; attempt < 5; attempt++) {
+            // Small delay to allow trigger to execute
+            await new Promise(resolve => setTimeout(resolve, 500))
+
+            const { error: updateError } = await (supabase
+                .from('profiles') as any)
+                .update({
+                    name,
+                    role: 'ADMIN',
+                    email_verified: true,
+                })
+                .eq('id', authData.user.id)
+
+            if (!updateError) {
+                profileUpdated = true
+                break
+            }
+            console.log(`Setup: Profile update attempt ${attempt + 1} failed:`, updateError.message)
+        }
+
+        if (!profileUpdated) {
+            console.error('Setup: Failed to update profile to admin role after 5 attempts')
+            // Don't return error - the user was created, just may not be admin
+        }
 
         // Seed default categories for admin
         await seedDefaultCategories(authData.user.id)

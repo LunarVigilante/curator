@@ -3,6 +3,8 @@ import { getSession, isAdmin } from '@/lib/auth';
 
 // Provider-specific model fetching logic
 async function fetchModelsFromProvider(provider: string, apiKey: string): Promise<string[]> {
+    console.log('[LLM Models] Fetching models for provider:', provider);
+
     switch (provider) {
         case 'openai':
             return await fetchOpenAIModels(apiKey);
@@ -14,9 +16,12 @@ async function fetchModelsFromProvider(provider: string, apiKey: string): Promis
             return await fetchOllamaModels();
         case 'mistral':
             return await fetchMistralModels(apiKey);
+        case 'openrouter':
+            return await fetchOpenRouterModels(apiKey);
         case 'anannas':
             return await fetchAnannasModels();
         default:
+            console.warn('[LLM Models] Unknown provider:', provider);
             return [];
     }
 }
@@ -34,7 +39,7 @@ async function fetchOpenAIModels(apiKey: string): Promise<string[]> {
             .map((m: any) => m.id)
             .sort();
     } catch (e) {
-        console.error('OpenAI fetch error:', e);
+        console.error('[LLM Models] OpenAI fetch error:', e);
         return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'];
     }
 }
@@ -100,6 +105,45 @@ async function fetchAnannasModels(): Promise<string[]> {
         'mistralai/mixtral-8x7b-instruct',
         'anthropic/claude-3-haiku'
     ];
+}
+
+async function fetchOpenRouterModels(apiKey: string): Promise<string[]> {
+    try {
+        console.log('[LLM Models] Fetching OpenRouter models...');
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+
+        console.log('[LLM Models] OpenRouter response status:', res.status);
+
+        if (!res.ok) {
+            const errorBody = await res.text();
+            console.error('[LLM Models] OpenRouter error:', errorBody);
+            throw new Error('Failed to fetch OpenRouter models');
+        }
+
+        const data = await res.json();
+        console.log('[LLM Models] OpenRouter returned:', data.data?.length || 0, 'models');
+
+        // Return model IDs sorted, filtering for text generation models
+        const models = data.data
+            ?.filter((m: any) => !m.id.includes('image') && !m.id.includes('audio'))
+            ?.map((m: any) => m.id)
+            ?.sort() || [];
+
+        return models;
+    } catch (e) {
+        console.error('[LLM Models] OpenRouter fetch error:', e);
+        // Return popular models as fallback
+        return [
+            'anthropic/claude-3.5-sonnet',
+            'anthropic/claude-3-haiku',
+            'openai/gpt-4o',
+            'openai/gpt-4o-mini',
+            'google/gemini-2.0-flash-exp:free',
+            'meta-llama/llama-3.1-70b-instruct'
+        ];
+    }
 }
 
 export async function POST(req: NextRequest) {

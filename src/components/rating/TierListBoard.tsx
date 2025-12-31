@@ -415,7 +415,17 @@ export default function TierListBoard({
                     <UnrankedPool
                         items={optimisticItems.filter(item => getItemTier(item) === 'Unranked')}
                         categoryId={categoryId}
-                        categoryName={categoryMetadata ? JSON.parse(categoryMetadata).name : 'Category'}
+                        categoryName={(() => {
+                            if (!categoryMetadata) return categoryName || 'Category';
+                            try {
+                                const parsed = typeof categoryMetadata === 'string'
+                                    ? JSON.parse(categoryMetadata)
+                                    : categoryMetadata;
+                                return parsed?.name || categoryName || 'Category';
+                            } catch {
+                                return categoryName || 'Category';
+                            }
+                        })()}
                         tileSize={tileSize}
                         hoveredItemId={hoveredItemId}
                         onHoverChange={onHoverChange}

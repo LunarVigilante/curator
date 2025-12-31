@@ -238,7 +238,7 @@ export async function getAllCategoriesWithOwners() {
     const { data, error } = await (supabase.from('categories') as any)
         .select(`
             *,
-            owner:profiles(*)
+            owner:profiles!categories_user_id_fkey(*)
         `)
         .order('name', { ascending: true })
 
@@ -260,7 +260,7 @@ export async function getPublicCategories(
 
     // Build query
     let queryBuilder = (supabase.from('categories') as any)
-        .select('*, owner:profiles(*), items(id)', { count: 'exact' })
+        .select('*, owner:profiles!categories_user_id_fkey(*), items(id)', { count: 'exact' })
 
     // Apply filters
     if (!isAdmin) {

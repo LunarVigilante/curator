@@ -220,10 +220,20 @@ export class TmdbStrategy implements MediaStrategy {
         if (type === 'movie') endpoint = `${apiUrl}/search/movie`;
 
         try {
+            console.log('[TMDB] Starting search for:', query, 'type:', type || 'multi');
+
             const res = await fetch(`${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(query)}&include_adult=false`);
-            if (!res.ok) return { success: false, data: [], error: `TMDB Error: ${res.statusText}` };
+
+            console.log('[TMDB] Fetch complete, status:', res.status);
+
+            if (!res.ok) {
+                const errorBody = await res.text();
+                console.error('[TMDB] Error body:', errorBody);
+                return { success: false, data: [], error: `TMDB Error: ${res.statusText}` };
+            }
 
             const data = await res.json();
+            console.log('[TMDB] Results count:', data.results?.length || 0);
 
             // Process results with enhanced metadata (parallel fetching)
             const resultsPromises = (data.results || [])

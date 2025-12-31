@@ -31,12 +31,35 @@ export default function AddItemDialog({
     const [imageToCrop, setImageToCrop] = useState<string | null>(null)
     const [mediaResults, setMediaResults] = useState<MediaResult[]>([])
 
-    // Parse Metadata to get Type
-    const categoryType = categoryMetadata ? JSON.parse(categoryMetadata).type : undefined
+    // Parse Metadata to get Type (handle both string and object)
+    const categoryType = (() => {
+        if (!categoryMetadata) return undefined
+        if (typeof categoryMetadata === 'string') {
+            try {
+                return JSON.parse(categoryMetadata).type
+            } catch {
+                return undefined
+            }
+        }
+        // If it's already an object
+        return (categoryMetadata as any).type
+    })()
 
     // Automation States
     const [isGeneratingDescription, setIsGeneratingDescription] = useState(false)
     const [isGeneratingTags, setIsGeneratingTags] = useState(false)
+
+    // Image URL validation helper
+    const isValidImageUrl = (url: string): boolean => {
+        if (!url) return true // Empty is valid (optional field)
+        // Accept http/https URLs
+        if (url.startsWith('http://') || url.startsWith('https://')) return true
+        // Accept local /uploads/ paths
+        if (url.startsWith('/uploads/')) return true
+        // Accept data URLs (for cropped images)
+        if (url.startsWith('data:image/')) return true
+        return false
+    }
 
     const initialFormData = {
         name: '',
@@ -48,6 +71,7 @@ export default function AddItemDialog({
     }
 
     const [formData, setFormData] = useState(initialFormData)
+    const [imageError, setImageError] = useState<string | null>(null)
 
     // Skip auto-search after selecting a result
     const skipNextSearchRef = useRef(false)
@@ -82,6 +106,14 @@ export default function AddItemDialog({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
+
+        // Validate image URL before submission
+        if (formData.image && !isValidImageUrl(formData.image)) {
+            setImageError('Must be a valid URL (http/https) or local path (/uploads/...)')
+            toast.error('Invalid image URL')
+            return
+        }
+
         startTransition(async () => {
             const formDataObj = new FormData()
             formDataObj.append('name', formData.name)
@@ -94,6 +126,7 @@ export default function AddItemDialog({
             await createItem(formDataObj)
             setOpen(false)
             setFormData(initialFormData) // Reset form
+            setImageError(null)
         })
     }
 
@@ -345,14 +378,28 @@ export default function AddItemDialog({
                                 </div>
 
                                 {formData.imageUploadMode === 'url' ? (
-                                    <Input
-                                        key="url-input"
-                                        id="image"
-                                        type="url"
-                                        placeholder="https://example.com/image.jpg"
-                                        value={formData.image}
-                                        onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                                    />
+                                    <div className="space-y-1">
+                                        <Input
+                                            key="url-input"
+                                            id="image"
+                                            type="text"
+                                            placeholder="https://example.com/image.jpg or /uploads/..."
+                                            value={formData.image}
+                                            onChange={(e) => {
+                                                const value = e.target.value
+                                                setFormData({ ...formData, image: value })
+                                                if (value && !isValidImageUrl(value)) {
+                                                    setImageError('Must be a valid URL (http/https) or local path (/uploads/...)')
+                                                } else {
+                                                    setImageError(null)
+                                                }
+                                            }}
+                                            className={imageError ? 'border-red-500/50' : ''}
+                                        />
+                                        {imageError && (
+                                            <p className="text-[10px] text-red-500">{imageError}</p>
+                                        )}
+                                    </div>
                                 ) : (
                                     <Input
                                         key="file-input"
@@ -368,6 +415,7 @@ export default function AddItemDialog({
                                                 const url = await uploadImage(fileFormData)
                                                 if (url) {
                                                     setFormData({ ...formData, image: url })
+                                                    setImageError(null)
                                                 }
                                             }
                                         }}

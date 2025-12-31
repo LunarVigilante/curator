@@ -133,10 +133,21 @@ export class ItunesPodcastStrategy implements MediaStrategy {
 
         // iTunes Public API - No Key Required
         try {
+            console.log('[iTunes] Starting search for:', query);
+
             const response = await fetch(`${apiUrl}/search?term=${encodeURIComponent(query)}&entity=podcast&limit=5`);
-            if (!response.ok) return { success: false, data: [], error: `iTunes Error: ${response.statusText}` };
+
+            console.log('[iTunes] Fetch complete, status:', response.status);
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error('[iTunes] Error body:', errorBody);
+                return { success: false, data: [], error: `iTunes Error: ${response.statusText}` };
+            }
 
             const data = await response.json();
+            console.log('[iTunes] Results count:', data.resultCount || 0);
+
             if (!data.results) return { success: true, data: [] };
 
             // Process podcasts with enhanced metadata (parallel fetching)

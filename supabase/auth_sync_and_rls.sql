@@ -220,10 +220,69 @@ CREATE POLICY "Users can create own activities"
   WITH CHECK (auth.uid() = user_id);
 
 -- -----------------------------------------------------------------------------
--- GLOBAL ITEMS (No RLS - Public Reference Data)
+-- TAGS (Global - readable by all, writable by authenticated)
 -- -----------------------------------------------------------------------------
--- global_items is public reference data, no RLS needed
--- ALTER TABLE public.global_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read tags (they're global reference data)
+CREATE POLICY "Anyone can read tags"
+  ON public.tags FOR SELECT
+  USING (true);
+
+-- Authenticated users can create tags
+CREATE POLICY "Authenticated users can create tags"
+  ON public.tags FOR INSERT
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- Admins can manage all tags (update/delete)
+CREATE POLICY "Admins can manage tags"
+  ON public.tags FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+      AND profiles.role = 'ADMIN'
+    )
+  );
+
+-- -----------------------------------------------------------------------------
+-- GLOBAL ITEMS (Cache for media metadata - immutable once created)
+-- This stores canonical AI-generated descriptions and tags.
+-- Users can only INSERT (create cache entries), admins can modify/delete.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.global_items ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read global items (it's reference/cache data)
+CREATE POLICY "Anyone can read global items"
+  ON public.global_items FOR SELECT
+  USING (true);
+
+-- Authenticated users can INSERT new global items (create cache entries)
+CREATE POLICY "Authenticated users can create global items"
+  ON public.global_items FOR INSERT
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- Admins can update global items (fix AI-generated content)
+CREATE POLICY "Admins can update global items"
+  ON public.global_items FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+      AND profiles.role = 'ADMIN'
+    )
+  );
+
+-- Admins can delete global items (cleanup)
+CREATE POLICY "Admins can delete global items"
+  ON public.global_items FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+      AND profiles.role = 'ADMIN'
+    )
+  );
 
 -- -----------------------------------------------------------------------------
 -- SYSTEM SETTINGS (Admin Only)
@@ -233,6 +292,13 @@ ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Admins can manage system settings"
   ON public.system_settings FOR ALL
   USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+      AND profiles.role = 'ADMIN'
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM public.profiles
       WHERE profiles.id = auth.uid()

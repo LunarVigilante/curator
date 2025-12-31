@@ -199,10 +199,21 @@ export class GoogleBooksStrategy implements MediaStrategy {
         }
 
         try {
+            console.log('[GoogleBooks] Starting search for:', query);
+
             const response = await fetch(`${apiUrl}/volumes?q=${encodeURIComponent(query)}&key=${apiKey}&maxResults=5`);
-            if (!response.ok) return { success: false, data: [], error: `Google Books Error: ${response.statusText}` };
+
+            console.log('[GoogleBooks] Fetch complete, status:', response.status);
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error('[GoogleBooks] Error body:', errorBody);
+                return { success: false, data: [], error: `Google Books Error: ${response.statusText}` };
+            }
 
             const data = await response.json();
+            console.log('[GoogleBooks] Results count:', data.items?.length || 0);
+
             if (!data.items) return { success: true, data: [] };
 
             // Process books with enhanced metadata (parallel fetching)

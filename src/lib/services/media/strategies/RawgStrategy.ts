@@ -169,10 +169,20 @@ export class RawgStrategy implements MediaStrategy {
         }
 
         try {
+            console.log('[RAWG] Starting search for:', query);
+
             const res = await fetch(`${apiUrl}/games?key=${apiKey}&search=${encodeURIComponent(query)}&page_size=5`);
-            if (!res.ok) return { success: false, data: [], error: `RAWG API Error: ${res.statusText}` };
+
+            console.log('[RAWG] Fetch complete, status:', res.status);
+
+            if (!res.ok) {
+                const errorBody = await res.text();
+                console.error('[RAWG] Error body:', errorBody);
+                return { success: false, data: [], error: `RAWG API Error: ${res.statusText}` };
+            }
 
             const data = await res.json();
+            console.log('[RAWG] Results count:', data.results?.length || 0);
 
             // Process games with enhanced metadata (parallel fetching)
             const resultsPromises = (data.results || []).slice(0, 5).map(async (item: any) => {
