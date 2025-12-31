@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createItem } from '@/lib/actions/items'
-import { Plus, X, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { Plus, X, Image as ImageIcon, Loader2, Search } from 'lucide-react'
 import Image from 'next/image'
 import TagSelector from '@/components/tags/TagSelector'
 import ImageCropper from '@/components/ImageCropper'
@@ -73,15 +73,35 @@ export default function AddItemDialog({
     const [formData, setFormData] = useState(initialFormData)
     const [imageError, setImageError] = useState<string | null>(null)
 
+    // Track if user has selected a result (to prevent re-search)
+    const hasSelectedRef = useRef(false)
     // Skip auto-search after selecting a result
     const skipNextSearchRef = useRef(false)
     const debouncedName = useDebounce(formData.name, 500)
 
+    // Manual search function
+    const handleManualSearch = async () => {
+        if (!formData.name || formData.name.length < 3) {
+            toast.error('Enter at least 3 characters to search')
+            return
+        }
+        hasSelectedRef.current = false // Allow new selection
+        const { searchMediaAction } = await import('@/lib/actions/media')
+        startTransition(async () => {
+            const response = await searchMediaAction(formData.name, categoryName, categoryType || null, categoryId)
+            if (response.success) {
+                setMediaResults(response.data)
+            } else {
+                setMediaResults([])
+            }
+        })
+    }
+
     // Auto-search when name changes (debounced)
     useEffect(() => {
         const search = async () => {
-            // Skip search if we just selected a result
-            if (skipNextSearchRef.current) {
+            // Skip search if we just selected a result OR if user has already selected
+            if (skipNextSearchRef.current || hasSelectedRef.current) {
                 skipNextSearchRef.current = false
                 return
             }
@@ -104,6 +124,122 @@ export default function AddItemDialog({
         search()
     }, [debouncedName, categoryName, categoryType, categoryId])
 
+    // Track which result is currently selected (for visual highlight)
+    const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
+
+    // Function to select a result and fill the form
+    const selectResult = async (result: MediaResult, keepResultsVisible: boolean = false) => {
+        const providerDescription = result.description || ''
+
+        // Mark selection
+        hasSelectedRef.current = true
+        skipNextSearchRef.current = true
+        setSelectedResultId(result.id)
+
+        // 1. Fill form immediately
+        setFormData(prev => ({
+            ...prev,
+            name: result.title,
+            image: result.imageUrl || prev.image,
+            imageUploadMode: result.imageUrl ? 'url' : prev.imageUploadMode,
+            description: '✨ Generating AI curated description...',
+            tags: [],
+            metadata: JSON.stringify({
+                externalId: result.id,
+                year: result.year,
+                type: result.type
+            })
+        }))
+
+        // Only clear results if not keeping them visible
+        if (!keepResultsVisible) {
+            setMediaResults([])
+        }
+
+        // 2. Download image locally (async)
+        if (result.imageUrl && result.imageUrl.startsWith('http')) {
+            const { downloadImageFromUrl } = await import('@/lib/actions/upload')
+            downloadImageFromUrl(result.imageUrl)
+                .then(localUrl => {
+                    if (localUrl) {
+                        setFormData(prev => ({ ...prev, image: localUrl }))
+                    }
+                })
+                .catch(err => console.warn('Failed to download image:', err))
+        }
+
+        // 3. Generate description and tags
+        setIsGeneratingDescription(true)
+        setIsGeneratingTags(true)
+
+        const { generateDescriptionAction, generateTagsAction } = await import('@/lib/actions/ai')
+        const aiType = categoryName || categoryType || 'media'
+
+        // Description
+        generateDescriptionAction({ title: result.title, type: aiType, context: providerDescription })
+            .then(data => {
+                if (data.error) throw new Error(data.error)
+                setFormData(prev => ({ ...prev, description: data.description || '' }))
+            })
+            .catch(error => {
+                console.error('Description generation failed:', error)
+                toast.error(error instanceof Error ? error.message : 'Description generation failed')
+                setFormData(prev => ({ ...prev, description: providerDescription }))
+            })
+            .finally(() => setIsGeneratingDescription(false))
+
+        // Tags: Use provider tags first (instant), only fall back to AI if none
+        const useProviderTags = async () => {
+            if (result.tags && result.tags.length > 0) {
+                // Provider already gave us tags - use batch create (fast path!)
+                const { createTagsBatch } = await import('@/lib/actions/tags')
+                const validTags = await createTagsBatch(result.tags.slice(0, 8))
+                setFormData(prev => ({ ...prev, tags: validTags.map(t => t.id) }))
+                toast.success(`Applied ${validTags.length} tags`)
+                setIsGeneratingTags(false)
+            } else {
+                // No provider tags - fall back to AI generation (slow path)
+                generateTagsAction({ title: result.title, type: aiType, description: providerDescription })
+                    .then(async (data: any) => {
+                        if (data.error) throw new Error(data.error)
+                        if (data.tags) {
+                            let rawTags: string[] = []
+                            if (Array.isArray(data.tags)) {
+                                rawTags = data.tags
+                            } else if (typeof data.tags === 'string') {
+                                rawTags = data.tags.split(',').map((t: string) => t.trim())
+                            }
+                            const cleanTags = rawTags.map(t => t.trim()).filter(t => t.length > 0)
+                            const uniqueTags = [...new Set(cleanTags)]
+
+                            if (uniqueTags.length > 0) {
+                                const { createTag } = await import('@/lib/actions/tags')
+                                const tagPromises = uniqueTags.map((tagName: string) => createTag(tagName).catch(() => null))
+                                const createdTags: ({ id: string, name: string } | null)[] = await Promise.all(tagPromises)
+                                const validTags = createdTags.filter((t): t is { id: string, name: string } => t !== null)
+                                setFormData(prev => ({ ...prev, tags: validTags.map(t => t.id) }))
+                                toast.success(`Generated ${validTags.length} tags`)
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Tag generation failed:', error)
+                        toast.error('Tag generation failed')
+                    })
+                    .finally(() => setIsGeneratingTags(false))
+            }
+        }
+        useProviderTags()
+    }
+
+    // Auto-select first result when search completes
+    useEffect(() => {
+        if (mediaResults.length > 0 && !hasSelectedRef.current) {
+            // Auto-select first result but keep results visible for alternative selection
+            selectResult(mediaResults[0], true)
+        }
+    }, [mediaResults])
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
 
@@ -125,13 +261,25 @@ export default function AddItemDialog({
 
             await createItem(formDataObj)
             setOpen(false)
+            // Prevent search from triggering on form reset
+            skipNextSearchRef.current = true
+            hasSelectedRef.current = true
             setFormData(initialFormData) // Reset form
+            setMediaResults([])
+            setSelectedResultId(null)
             setImageError(null)
         })
     }
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(isOpen) => {
+            setOpen(isOpen)
+            if (isOpen) {
+                // Reset selection state when dialog opens
+                hasSelectedRef.current = false
+                skipNextSearchRef.current = false
+            }
+        }}>
             <DialogTrigger asChild>
                 {trigger ? trigger : (
                     <Button className="gap-2">
@@ -152,14 +300,40 @@ export default function AddItemDialog({
                     <div className="grid gap-4 py-4">
                         <div className="grid gap-2">
                             <Label htmlFor="name" className="font-sans">Name</Label>
-                            <Input
-                                id="name"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                required
-                                placeholder="Type to search..."
-                                className="font-sans"
-                            />
+                            <div className="flex gap-2">
+                                <Input
+                                    id="name"
+                                    value={formData.name}
+                                    onChange={(e) => {
+                                        // If user is editing the name (not just selecting), reset selection state
+                                        if (hasSelectedRef.current && e.target.value !== formData.name) {
+                                            // Only reset if they're actually typing different text
+                                            if (e.target.value.length < formData.name.length - 3) {
+                                                hasSelectedRef.current = false
+                                            }
+                                        }
+                                        setFormData({ ...formData, name: e.target.value })
+                                    }}
+                                    required
+                                    placeholder="Type to search..."
+                                    className="font-sans flex-1"
+                                />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={handleManualSearch}
+                                    disabled={isPending || formData.name.length < 3}
+                                    className="shrink-0"
+                                    title="Search providers"
+                                >
+                                    {isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Search className="h-4 w-4" />
+                                    )}
+                                </Button>
+                            </div>
                             {/* Search Status */}
                             {isPending && formData.name.length >= 3 && (
                                 <div className="text-xs text-muted-foreground animate-pulse">Searching...</div>
@@ -186,132 +360,11 @@ export default function AddItemDialog({
                                                 key={idx}
                                                 type="button"
                                                 aria-label={`Select ${result.title}`}
-                                                className="flex items-start gap-3 p-2 rounded hover:bg-white/5 transition-colors text-left w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                                onClick={async () => {
-                                                    // Store original provider description for fallback
-                                                    const providerDescription = result.description || ''
-
-                                                    // Skip next auto-search since we're setting the name programmatically
-                                                    skipNextSearchRef.current = true
-
-                                                    // 1. Immediate Updates - Set loading state, CLEAR tags
-                                                    setFormData(prev => ({
-                                                        ...prev,
-                                                        name: result.title,
-                                                        image: result.imageUrl || prev.image,
-                                                        imageUploadMode: result.imageUrl ? 'url' : prev.imageUploadMode,
-                                                        description: '✨ Generating AI curated description...',
-                                                        tags: [], // CRITICAL: Clear existing tags
-                                                        metadata: JSON.stringify({
-                                                            externalId: result.id,
-                                                            year: result.year,
-                                                            type: result.type
-                                                        })
-                                                    }))
-                                                    setMediaResults([])
-
-                                                    // 1.5 Download external image locally (async)
-                                                    if (result.imageUrl && result.imageUrl.startsWith('http')) {
-                                                        const { downloadImageFromUrl } = await import('@/lib/actions/upload')
-                                                        downloadImageFromUrl(result.imageUrl)
-                                                            .then(localUrl => {
-                                                                if (localUrl) {
-                                                                    setFormData(prev => ({
-                                                                        ...prev,
-                                                                        image: localUrl
-                                                                    }))
-                                                                }
-                                                            })
-                                                            .catch(err => {
-                                                                console.warn('Failed to download image locally:', err)
-                                                                // Keep the original URL as fallback
-                                                            })
-                                                    }
-
-                                                    // 2. Set loading states
-                                                    setIsGeneratingDescription(true)
-                                                    setIsGeneratingTags(true)
-
-                                                    // 3. Call SEPARATE AI endpoints in parallel
-                                                    const { generateDescriptionAction, generateTagsAction } = await import('@/lib/actions/ai')
-
-                                                    // Use categoryName or categoryType as fallback for AI type
-                                                    const aiType = categoryName || categoryType || 'media'
-
-                                                    const descriptionPromise = generateDescriptionAction({
-                                                        title: result.title,
-                                                        type: aiType,
-                                                        context: providerDescription
-                                                    })
-
-                                                    const tagsPromise = generateTagsAction({
-                                                        title: result.title,
-                                                        type: aiType,
-                                                        description: providerDescription
-                                                    })
-
-                                                    // Handle description
-                                                    descriptionPromise
-                                                        .then(data => {
-                                                            if (data.error) throw new Error(data.error)
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                description: data.description || ''
-                                                            }))
-                                                        })
-                                                        .catch(error => {
-                                                            console.error('Description generation failed:', error)
-                                                            toast.error(error instanceof Error ? error.message : 'Description generation failed')
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                description: providerDescription
-                                                            }))
-                                                        })
-                                                        .finally(() => setIsGeneratingDescription(false))
-
-                                                    // Handle tags
-                                                    tagsPromise
-                                                        .then(async (data: any) => {
-                                                            if (data.error) throw new Error(data.error)
-                                                            if (data.tags) {
-                                                                // 1. Robust Parsing (Handle string vs array)
-                                                                let rawTags: string[] = [];
-                                                                if (Array.isArray(data.tags)) {
-                                                                    rawTags = data.tags;
-                                                                } else if (typeof data.tags === 'string') {
-                                                                    rawTags = data.tags.split(',').map((t: string) => t.trim());
-                                                                }
-
-                                                                // 2. Clean & Deduplicate
-                                                                const cleanTags = rawTags
-                                                                    .map(t => t.trim())
-                                                                    .filter(t => t.length > 0);
-
-                                                                const uniqueTags = [...new Set(cleanTags)];
-
-                                                                if (uniqueTags.length > 0) {
-                                                                    const { createTag } = await import('@/lib/actions/tags')
-                                                                    const tagPromises = uniqueTags.map((tagName: string) =>
-                                                                        createTag(tagName).catch(() => null)
-                                                                    )
-                                                                    // Explicitly define the type for Promise.all result to avoid 'null' inference
-                                                                    const createdTags: ({ id: string, name: string } | null)[] = await Promise.all(tagPromises)
-                                                                    const validTags = createdTags.filter((t): t is { id: string, name: string } => t !== null)
-
-                                                                    setFormData(prev => ({
-                                                                        ...prev,
-                                                                        tags: validTags.map(t => t.id)
-                                                                    }))
-                                                                    toast.success(`Generated ${validTags.length} tags`)
-                                                                }
-                                                            }
-                                                        })
-                                                        .catch(error => {
-                                                            console.error('Tag generation failed:', error)
-                                                            toast.error('Tag generation failed')
-                                                        })
-                                                        .finally(() => setIsGeneratingTags(false))
-                                                }}
+                                                className={`flex items-start gap-3 p-2 rounded hover:bg-white/5 transition-colors text-left w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${selectedResultId === result.id
+                                                    ? 'bg-blue-500/10 ring-1 ring-blue-500/50'
+                                                    : ''
+                                                    }`}
+                                                onClick={() => selectResult(result, true)}
                                             >
                                                 {result.imageUrl ? (
                                                     <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden relative">
@@ -324,7 +377,8 @@ export default function AddItemDialog({
                                                 )}
                                                 <div className="flex-1 min-w-0 py-0.5">
                                                     <div className="flex items-baseline justify-between gap-2">
-                                                        <span className="font-medium text-sm truncate text-zinc-200 group-hover:text-blue-400 transition-colors">{result.title}</span>
+                                                        <span className={`font-medium text-sm truncate transition-colors ${selectedResultId === result.id ? 'text-blue-400' : 'text-zinc-200'
+                                                            }`}>{result.title}</span>
                                                         {result.year && <span className="text-[10px] text-zinc-500 font-mono">{result.year}</span>}
                                                     </div>
                                                     <p className="text-[10px] text-zinc-400 line-clamp-2 mt-0.5 leading-relaxed">{result.description}</p>
@@ -423,7 +477,7 @@ export default function AddItemDialog({
                                 )}
 
                                 {formData.image && (
-                                    <div className="mt-2 relative group w-full aspect-[2/3] rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900/50">
+                                    <div className="mt-2 relative group w-32 h-40 rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900/50">
                                         <Image
                                             src={formData.image}
                                             alt="Preview"

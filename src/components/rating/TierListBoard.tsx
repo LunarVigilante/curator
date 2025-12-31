@@ -30,7 +30,7 @@ import { assignItemToTier, removeItemTier } from '@/lib/actions/tiers'
 import { deleteCustomRank, updateCustomRank, updateCustomRankOrder } from '@/lib/actions/customRanks'
 import {
     Pencil, Plus, GripVertical, Trash2, Check, X,
-    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3, Share, Loader2
+    ArrowDownAZ, ArrowUpAZ, Calendar, ChevronDown, Trophy, BarChart3, Share, Loader2, MoreVertical
 } from 'lucide-react'
 import { toPng } from 'html-to-image';
 import { LegacyShareCard } from '@/components/sharing/LegacyShareCard';
@@ -156,13 +156,13 @@ export default function TierListBoard({
     const sensors = useSensors(
         useSensor(MouseSensor, {
             activationConstraint: {
-                distance: 8,
+                distance: 4, // Reduced from 8 for more responsive dragging
             },
         }),
         useSensor(TouchSensor, {
             activationConstraint: {
-                delay: 250,
-                tolerance: 5,
+                delay: 100, // Reduced from 250 for faster touch activation
+                tolerance: 8, // Increased from 5 to allow slight movement during delay
             },
         }),
         useSensor(KeyboardSensor)
@@ -875,30 +875,40 @@ function DraggableItem({
                     </div>
                 </div>
 
-                {/* Action buttons - edit and remove */}
-                <div className="absolute -top-1.5 -right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all z-20">
-                    <Button
-                        size="icon"
-                        variant="secondary"
-                        className="h-6 w-6 shadow-lg rounded-full"
-                        aria-label={`Edit ${item.name}`}
-                        onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setIsEditing(true)
-                        }}
-                    >
-                        <Pencil className="h-3 w-3" aria-hidden="true" />
-                    </Button>
-                    <Button
-                        size="icon"
-                        variant="destructive"
-                        className="h-6 w-6 shadow-lg rounded-full bg-red-500/90 hover:bg-red-600"
-                        aria-label={`Remove ${item.name}`}
-                        onClick={handleRemoveClick}
-                    >
-                        <Trash2 className="h-3 w-3" aria-hidden="true" />
-                    </Button>
+                {/* Kebab menu - visible on hover (desktop) or always (mobile) */}
+                <div className="absolute top-1 right-1 opacity-100 md:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all z-20">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white/80 hover:text-white"
+                                aria-label={`More options for ${item.name}`}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-700">
+                            <DropdownMenuItem
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    setIsEditing(true)
+                                }}
+                                className="cursor-pointer"
+                            >
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={handleRemoveClick}
+                                className="cursor-pointer text-red-400 focus:text-red-400 focus:bg-red-500/10"
+                            >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
 

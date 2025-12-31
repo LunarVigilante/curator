@@ -22,14 +22,77 @@ export function TasteReportContent({ data, categoryId, canEdit }: TasteReportCon
     const [isAdding, startTransition] = useTransition()
     const [addedItems, setAddedItems] = useState<Set<string>>(new Set())
 
-    const handleAddItem = (rec: { name: string, reason: string, category?: string }) => {
+    const handleAddItem = (rec: { name: string, reason: string, medium?: string }) => {
         startTransition(async () => {
+            // 1. Search provider for this recommendation
+            const { searchMediaAction } = await import('@/lib/actions/media')
+            const searchQuery = rec.name
+            const response = await searchMediaAction(searchQuery, rec.medium || 'anime', rec.medium || null, categoryId || '')
+
+            let image = ''
+            let metadata = ''
+            let description = rec.reason
+            let tagIds: string[] = []
+
+            if (response.success && response.data.length > 0) {
+                const match = response.data[0]
+                image = match.imageUrl || ''
+                metadata = JSON.stringify({
+                    externalId: match.id,
+                    year: match.year,
+                    type: match.type
+                })
+
+                // 2. Download image locally in background
+                if (image && image.startsWith('http')) {
+                    const { downloadImageFromUrl } = await import('@/lib/actions/upload')
+                    const localUrl = await downloadImageFromUrl(image).catch(() => null)
+                    if (localUrl) image = localUrl
+                }
+
+                // 3. Use provider tags (fast) or fall back to AI (slow)
+                const { generateDescriptionAction, generateTagsAction } = await import('@/lib/actions/ai')
+                const aiType = rec.medium || 'anime'
+                const providerDescription = match.description || ''
+
+                // Start description generation
+                const descPromise = generateDescriptionAction({ title: match.title, type: aiType, context: providerDescription })
+                    .catch(() => ({ description: rec.reason }))
+
+                // Use provider tags if available (fast path), otherwise AI (slow path)
+                if (match.tags && match.tags.length > 0) {
+                    // Fast path: use provider tags directly with batch create
+                    const { createTagsBatch } = await import('@/lib/actions/tags')
+                    const validTags = await createTagsBatch(match.tags.slice(0, 8))
+                    tagIds = validTags.map(t => t.id)
+                } else {
+                    // Slow path: generate with AI
+                    const tagsResult = await generateTagsAction({ title: match.title, type: aiType, description: providerDescription }).catch(() => ({ tags: [] }))
+                    if (tagsResult.tags) {
+                        const { createTagsBatch } = await import('@/lib/actions/tags')
+                        const rawTags = Array.isArray(tagsResult.tags)
+                            ? tagsResult.tags
+                            : String(tagsResult.tags).split(',').map(t => t.trim())
+                        const validTags = await createTagsBatch(rawTags.slice(0, 8))
+                        tagIds = validTags.map(t => t.id)
+                    }
+                }
+
+                // Wait for description
+                const descResult = await descPromise
+                if (descResult.description) {
+                    description = descResult.description
+                }
+            }
+
+            // 4. Create the item with full metadata
             await createItemInternal({
                 name: rec.name,
-                description: rec.reason,
+                description,
                 categoryId: categoryId || '',
-                image: '',
-                tags: []
+                image,
+                tags: tagIds,
+                metadata
             })
             setAddedItems(prev => new Set(prev).add(rec.name))
         })
@@ -243,7 +306,7 @@ export function TasteReportContent({ data, categoryId, canEdit }: TasteReportCon
                                         }}
                                         variant="success"
                                         isAdded={addedItems.has(rec.name)}
-                                        onAdd={categoryId && canEdit ? () => handleAddItem({ name: rec.name, reason: rec.reason }) : undefined}
+                                        onAdd={categoryId && canEdit ? () => handleAddItem({ name: rec.name, reason: rec.reason, medium: rec.medium }) : undefined}
                                         isAdding={isAdding}
                                     />
                                 ))}
@@ -270,7 +333,7 @@ export function TasteReportContent({ data, categoryId, canEdit }: TasteReportCon
                                             }}
                                             variant="danger"
                                             isAdded={addedItems.has(rec.name)}
-                                            onAdd={categoryId && canEdit ? () => handleAddItem({ name: rec.name, reason: rec.warning }) : undefined}
+                                            onAdd={categoryId && canEdit ? () => handleAddItem({ name: rec.name, reason: rec.warning, medium: rec.medium }) : undefined}
                                             isAdding={isAdding}
                                         />
                                     ))}

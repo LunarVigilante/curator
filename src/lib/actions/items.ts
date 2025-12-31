@@ -203,14 +203,34 @@ async function upsertGlobalItem(data: {
         .single()
     if (existingByTitle) return existingByTitle
 
-    // 3. Create new GlobalItem
+    // 3. Extract tags from metadata for cached_tags
+    let cachedTags: string[] = []
+    let parsedMeta: any = null
+    if (data.metadata) {
+        try {
+            parsedMeta = JSON.parse(data.metadata)
+            // Extract genres (priority)
+            if (Array.isArray(parsedMeta.genres)) {
+                cachedTags.push(...parsedMeta.genres)
+            }
+            // Extract tags (limit to high-relevance)
+            if (Array.isArray(parsedMeta.tags)) {
+                cachedTags.push(...parsedMeta.tags.slice(0, 10))
+            }
+            // Deduplicate
+            cachedTags = [...new Set(cachedTags)]
+        } catch { }
+    }
+
+    // 4. Create new GlobalItem with cached_tags populated
     const { data: newItem, error } = await (supabase.from('global_items') as any)
         .insert({
             external_id: data.externalId,
             title: data.title,
             description: data.description,
             image_url: data.imageUrl,
-            metadata: data.metadata ? JSON.parse(data.metadata) : null,
+            metadata: parsedMeta,
+            cached_tags: cachedTags.length > 0 ? cachedTags : null,
         })
         .select()
         .single()

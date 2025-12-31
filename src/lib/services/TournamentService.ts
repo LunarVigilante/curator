@@ -96,6 +96,7 @@ export class TournamentService {
 
         const newCandidates = discoveryResults.data
             .filter(r => !existingNames.has(r.title.toLowerCase()))
+            .filter(r => r.imageUrl && r.imageUrl.length > 0) // CRITICAL: Only show challengers with images
             .slice(0, needed);
 
         // Convert candidates to slim DTO - NO heavy metadata field

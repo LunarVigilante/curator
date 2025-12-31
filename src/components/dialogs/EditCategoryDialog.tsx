@@ -56,7 +56,19 @@ export default function EditCategoryDialog({
         e.preventDefault()
         startTransition(async () => {
             // Preserve existing metadata but update type
-            const newMetadata = category.metadata ? JSON.parse(category.metadata) : {};
+            // metadata might be a string or an object (Supabase JSONB)
+            let newMetadata: any = {};
+            if (category.metadata) {
+                if (typeof category.metadata === 'string') {
+                    try {
+                        newMetadata = JSON.parse(category.metadata);
+                    } catch {
+                        newMetadata = {};
+                    }
+                } else {
+                    newMetadata = { ...(category.metadata as Record<string, unknown>) };
+                }
+            }
             if (formData.type) {
                 newMetadata.type = formData.type;
             } else {

@@ -584,3 +584,60 @@ export async function clearUserCollections(userId?: string): Promise<{ success: 
         return { success: false, error: error.message || 'Failed to clear collections' }
     }
 }
+// --- Content Matching Wizard ---
+
+export async function getBrokenGlobalItems(limit: number = 50) {
+    await assertAdmin()
+    const supabase = await createClient()
+
+    // Fetch items with missing image OR missing description
+    const { data, error } = await supabase
+        .from('global_items')
+        .select(`
+            id, title, description, image_url, release_year, external_id,
+            items (count)
+        `)
+        .or('image_url.is.null,image_url.eq.,description.is.null,description.eq.')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+    if (error) throw error
+
+    return ((data as any[]) || []).map((item: any) => ({
+        ...item,
+        usersAffected: item.items?.[0]?.count || 0
+    }))
+}
+
+export async function updateGlobalItem(id: string, updates: {
+    title?: string,
+    description?: string,
+    image_url?: string,
+    external_id?: string,
+    release_year?: number,
+    metadata?: any
+}) {
+    await assertAdmin()
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('global_items')
+        .update(updates)
+        .eq('id', id)
+
+    if (error) throw error
+
+    // Revalidate paths that might show this item
+    revalidatePath('/admin/wizard')
+    revalidatePath('/')
+    return { success: true }
+}
+
+export async function adminSearchMedia(query: string, type: string) {
+    await assertAdmin()
+    const { MediaService } = await import('@/lib/services/media/mediaService')
+    const service = new MediaService()
+    const settings = await SystemConfigService.getRawConfigMap()
+
+    return await service.search(query, type, settings)
+}

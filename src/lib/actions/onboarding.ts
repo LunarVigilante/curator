@@ -5,6 +5,7 @@ import { getCurrentUserId } from '@/lib/auth'
 import {
     CALIBRATION_QUESTIONS,
     STARTER_TEMPLATES,
+    BINARY_RATER_PAIRS,
     type CalibrationAnswer,
     type StarterTemplate,
     type BinaryRaterVotePayload,
@@ -59,6 +60,15 @@ export async function applyStarterTemplate(
     const supabase = await createClient()
 
     try {
+        // Map categoryType to lowercase for provider
+        const typeMap: Record<string, string> = {
+            'MOVIE': 'movie',
+            'TV': 'tv',
+            'ANIME': 'anime',
+            'GAME': 'game'
+        }
+        const contentType = typeMap[template.categoryType] || template.categoryType.toLowerCase()
+
         // 1. Create the category
         const { data: category, error: categoryError } = await (supabase.from('categories') as any)
             .insert({
@@ -68,7 +78,8 @@ export async function applyStarterTemplate(
                 color: template.color,
                 user_id: userId,
                 is_public: false,
-                sort_order: 0
+                sort_order: 0,
+                metadata: JSON.stringify({ type: contentType })
             })
             .select()
             .single()
@@ -147,13 +158,24 @@ export async function processBinaryVote(
     let category = existingCategory
 
     if (!category) {
+        // Find the pair to get categoryType
+        const pair = BINARY_RATER_PAIRS.find(p => p.theme === payload.theme)
+        const typeMap: Record<string, string> = {
+            'MOVIE': 'movie',
+            'TV': 'tv',
+            'ANIME': 'anime',
+            'GAME': 'game'
+        }
+        const contentType = pair ? (typeMap[pair.categoryType] || pair.categoryType.toLowerCase()) : 'movie'
+
         const { data: newCategory, error } = await (supabase.from('categories') as any)
             .insert({
                 name: payload.theme,
                 user_id: userId,
                 description: `Your ${payload.theme} ranking`,
                 is_public: false,
-                sort_order: 0
+                sort_order: 0,
+                metadata: JSON.stringify({ type: contentType })
             })
             .select()
             .single()

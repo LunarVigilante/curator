@@ -14,7 +14,11 @@ type TournamentItem = {
     metadata?: any
 }
 
-export function useTournamentMatchmaker(initialItems: TournamentItem[], challengers: ChallengerItem[]) {
+export function useTournamentMatchmaker(
+    initialItems: TournamentItem[],
+    challengers: ChallengerItem[],
+    settings: { discoveryMode: boolean; matchLength: number | 'endless' }
+) {
     // Local session score map: ItemID -> Elo Score
     const [eloScores, setEloScores] = useState<Map<string, number>>(new Map(initialItems.map(i => [i.id, i.elo])))
     const [roundCount, setRoundCount] = useState(0)
@@ -32,32 +36,64 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
 
         const pool = [...activeItems]
 
-        // 20% Chance for Discovery Round (if challengers exist)
-        // ...
-        // Ensure challengers are not ignored (if we track their IDs in ignoredIds too)
-        const activeChallengers = challengers.filter(c => !ignoredIds.has(c.id))
-        const isDiscoveryRound = activeChallengers.length > 0 && Math.random() < 0.20
+        // Discovery Logic
+        // Only run if discoveryMode is ON
+        if (settings.discoveryMode) {
+            const activeChallengers = challengers.filter(c => !ignoredIds.has(c.id))
+            const isDiscoveryRound = activeChallengers.length > 0 && Math.random() < 0.20 // 20% chance
 
-        if (isDiscoveryRound) {
-            // Pick rand user item
-            const userItem = pool[Math.floor(Math.random() * pool.length)]
-            // Pick rand challenger
-            const challenger = activeChallengers[Math.floor(Math.random() * activeChallengers.length)]
+            if (isDiscoveryRound) {
+                const userItem = pool[Math.floor(Math.random() * pool.length)]
+                const challenger = activeChallengers[Math.floor(Math.random() * activeChallengers.length)]
 
-            const challengerItem: TournamentItem = {
-                ...challenger,
-                elo: 1200, // Challengers start at 1200
-                type: 'CHALLENGER'
+                const challengerItem: TournamentItem = {
+                    ...challenger,
+                    elo: 1200,
+                    type: 'CHALLENGER'
+                }
+                const hydratedUserItem = { ...userItem, elo: getScore(userItem.id) }
+                return [hydratedUserItem, challengerItem] as [TournamentItem, TournamentItem]
             }
-
-            // Hydrate user item with latest score
-            const hydratedUserItem = { ...userItem, elo: getScore(userItem.id) }
-
-            return [hydratedUserItem, challengerItem] as [TournamentItem, TournamentItem]
         }
 
-        // Standard Ranked Round: Pick two random items (optimized for close Elo in future)
-        // For now: Pure random
+        // Matchmaking Logic
+        const isHighVariance = typeof settings.matchLength === 'number' && settings.matchLength < 20
+
+        if (isHighVariance) {
+            // High Variance / Accuracy Focus: Pair items with similar Elo to force separation
+            // Sort by current Elo
+            const sortedPool = pool.map(i => ({ ...i, elo: getScore(i.id) })).sort((a, b) => a.elo - b.elo)
+
+            // Pick Item A at random
+            const idx1 = Math.floor(Math.random() * sortedPool.length)
+
+            // Pick Item B from neighbors (tight window)
+            // Window size 4 (+/- 2)
+            const minIdx = Math.max(0, idx1 - 2)
+            const maxIdx = Math.min(sortedPool.length - 1, idx1 + 2)
+
+            let idx2 = idx1
+            // Try to find a different item in window
+            // If window is too small, fallback to random
+            if (maxIdx > minIdx) {
+                let attempts = 0
+                while (idx2 === idx1 && attempts < 10) {
+                    idx2 = Math.floor(Math.random() * (maxIdx - minIdx + 1)) + minIdx
+                    attempts++
+                }
+            }
+
+            // Fallback if we couldn't find neighbor or window too small
+            if (idx2 === idx1) {
+                idx2 = Math.floor(Math.random() * sortedPool.length)
+                while (idx2 === idx1) idx2 = Math.floor(Math.random() * sortedPool.length)
+            }
+
+            return [sortedPool[idx1], sortedPool[idx2]] as [TournamentItem, TournamentItem]
+        }
+
+        // Standard / Endless Logic: Weighted Random or Pure Random
+        // Current: Pure Random
         const idx1 = Math.floor(Math.random() * pool.length)
         let idx2 = Math.floor(Math.random() * pool.length)
 
@@ -70,7 +106,7 @@ export function useTournamentMatchmaker(initialItems: TournamentItem[], challeng
 
         return [itemA, itemB] as [TournamentItem, TournamentItem]
 
-    }, [initialItems, challengers, getScore, ignoredIds])
+    }, [initialItems, challengers, getScore, ignoredIds, settings])
 
     // Initialize current pair lazily
     const [currentPair, setCurrentPair] = useState<[TournamentItem, TournamentItem] | null>(() => {

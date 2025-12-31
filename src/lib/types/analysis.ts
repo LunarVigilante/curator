@@ -23,11 +23,12 @@ export const TasteAnalysisSchema = z.object({
     })),
     anti_recommendations: z.array(z.object({
         name: z.string(),
-        releaseYear: z.string(),
-        medium: z.string(),
-        warning: z.string(),
-        matchScore: z.number()
-    })),
+        releaseYear: z.string().optional().default(''),
+        medium: z.string().optional().default(''),
+        warning: z.string().optional().default('May not match your preferences'),
+        reason: z.string().optional(), // Some LLMs use 'reason' instead of 'warning'
+        matchScore: z.number().optional().default(50)
+    })).optional().default([]),
     suggested_metadata_updates: z.array(z.object({
         item_id: z.string(),
         item_name: z.string(),

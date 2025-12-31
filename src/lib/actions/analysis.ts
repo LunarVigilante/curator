@@ -87,13 +87,14 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         }
     }
 
-    // Fetch rated items with relations
+    // Fetch rated items with relations (including global_items for metadata)
     let query = (supabase.from('items') as any)
         .select(`
-            id, name, description, tier, elo_score, global_item_id, user_id,
+            id, name, description, tier, elo_score, global_item_id, user_id, metadata,
             category:categories(id, name),
             ratings(*),
-            item_tags:item_tags(tag:tags(id, name))
+            items_to_tags(tag:tags(id, name)),
+            global_item:global_items(id, title, description, cached_tags, release_year, metadata, source)
         `)
         .eq('user_id', targetUserId)
         .not('tier', 'is', null)
@@ -118,6 +119,11 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     if (!ratedItems || ratedItems.length === 0) {
         throw new Error("No items found to analyze.")
     }
+
+    // Build explicit exclusion list (by name, case-insensitive)
+    const userRatedItemNames = new Set(
+        (ratedItems as any[]).map((i: any) => i.name?.toLowerCase().trim()).filter(Boolean)
+    )
 
     // ==========================================================================
     // TOKEN OPTIMIZATION: Limit items sent to LLM to reduce context window cost
@@ -148,11 +154,80 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     const utilityList: string[] = []
     let negativeRatedCount = 0
 
+    // DEBUG: Log first item to see data structure
+    if (itemsForPrompt.length > 0) {
+        console.log('[Analysis] Sample item data:', JSON.stringify(itemsForPrompt[0], null, 2))
+    }
+
     for (const item of itemsForPrompt) {
         const tier = item.tier || ''
-        // SECURITY: Sanitize all user-generated content to prevent prompt injection
-        const sanitizedTags = ((item.item_tags as any[]) || [])
-            .map((t: any) => sanitizeForPrompt(t.tag?.name, 30))
+        const globalItem = item.global_item as any
+
+        // Get name from global_item.title (preferred) or item.name (fallback)
+        const itemName = globalItem?.title || item.name || 'Unknown'
+
+        // Get description from global_item.description (preferred) or item.description (fallback)
+        const itemDescription = globalItem?.description || item.description || ''
+
+        // Get tags: prefer global_item.cached_tags, then metadata.genres/tags, then items_to_tags
+        let tagsList: string[] = []
+        if (globalItem?.cached_tags) {
+            try {
+                const cachedTags = typeof globalItem.cached_tags === 'string'
+                    ? JSON.parse(globalItem.cached_tags)
+                    : globalItem.cached_tags
+                if (Array.isArray(cachedTags)) {
+                    tagsList = cachedTags
+                }
+            } catch { }
+        }
+        // Fallback: extract from metadata.genres and metadata.tags
+        if (tagsList.length === 0 && globalItem?.metadata) {
+            try {
+                const meta = typeof globalItem.metadata === 'string'
+                    ? JSON.parse(globalItem.metadata)
+                    : globalItem.metadata
+                if (Array.isArray(meta.genres)) {
+                    tagsList.push(...meta.genres)
+                }
+                if (Array.isArray(meta.tags)) {
+                    tagsList.push(...meta.tags.slice(0, 10))
+                }
+            } catch { }
+        }
+        // Final fallback: items_to_tags relationship
+        if (tagsList.length === 0) {
+            tagsList = ((item.items_to_tags as any[]) || [])
+                .map((t: any) => t.tag?.name)
+                .filter(Boolean)
+        }
+
+        // Get additional metadata from global_item.metadata JSONB
+        const releaseYear = globalItem?.release_year || ''
+        let globalMetadata: any = {}
+        if (globalItem?.metadata) {
+            try {
+                globalMetadata = typeof globalItem.metadata === 'string'
+                    ? JSON.parse(globalItem.metadata)
+                    : globalItem.metadata
+            } catch { }
+        }
+        const genre = globalMetadata?.genre || globalMetadata?.genres?.join(', ') || ''
+        const medium = globalMetadata?.medium || globalMetadata?.type || globalItem?.source || ''
+
+        // Parse item.metadata for externalId, year, type if available
+        let itemMetadata: any = {}
+        if (item.metadata) {
+            try {
+                itemMetadata = typeof item.metadata === 'string'
+                    ? JSON.parse(item.metadata)
+                    : item.metadata
+            } catch { }
+        }
+
+        // SECURITY: Sanitize all user-generated content
+        const sanitizedTags = tagsList
+            .map((t: string) => sanitizeForPrompt(t, 30))
             .filter(Boolean)
             .join(', ')
 
@@ -164,12 +239,14 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         }
 
         const sentiment = isNegative ? 'NEGATIVE' : 'POSITIVE'
-        // SECURITY: Sanitize item name, category, and description
-        const sanitizedName = sanitizeForPrompt(item.name, 100)
+        const sanitizedName = sanitizeForPrompt(itemName, 100)
         const sanitizedCategory = sanitizeForPrompt((item.category as any)?.name, 50)
-        const sanitizedDesc = sanitizeForPrompt(item.description, 150)
+        const sanitizedDesc = sanitizeForPrompt(itemDescription, 200)
+        const yearInfo = releaseYear || itemMetadata?.year ? ` (${releaseYear || itemMetadata?.year})` : ''
+        const genreInfo = genre ? ` Genre: ${sanitizeForPrompt(genre, 50)}.` : ''
+        const mediumInfo = medium ? ` Medium: ${sanitizeForPrompt(medium, 30)}.` : ''
 
-        const line = `- ${sanitizedName} (${sanitizedCategory}): ${type === 'UTILITY' ? `Status: ${tier}` : `Tier ${tier} (${sentiment})`}. Tags: [${sanitizedTags}]. Desc: "${sanitizedDesc}" (ID: ${item.id})`
+        const line = `- ${sanitizedName}${yearInfo} [${sanitizedCategory}]: ${type === 'UTILITY' ? `Status: ${tier}` : `Tier ${tier} (${sentiment})`}. Tags: [${sanitizedTags}].${genreInfo}${mediumInfo} Desc: "${sanitizedDesc}" (ID: ${item.id})`
 
         if (type === 'UTILITY') {
             utilityList.push(line)
@@ -177,6 +254,10 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
             rankedList.push(line)
         }
     }
+
+    // DEBUG: Log formatted data being sent to LLM
+    console.log('[Analysis] Ranked items for prompt:', rankedList.slice(0, 3))
+    console.log('[Analysis] Total items:', itemsForPrompt.length)
 
     const hasNegativeRatings = negativeRatedCount >= 2
 
@@ -216,13 +297,50 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     // 4. FIND CONTROVERSIAL CANDIDATES (Anti-Recommendations)
     // ==========================================================================
 
-    // A. Identify User's S-Tier Tags
+    // A. Identify User's S-Tier Tags (from global_items.cached_tags or items_to_tags)
     const sTierItems = (ratedItems as any[]).filter((i: any) => ['S', 'A'].includes(i.tier || ''))
     const tagCounts = new Map<string, number>()
 
     sTierItems.forEach((item: any) => {
-        ((item.item_tags as any[]) || []).forEach(t => {
-            const tagName = t.tag?.name
+        // First try global_item.cached_tags
+        const globalItem = item.global_item as any
+        let tags: string[] = []
+
+        if (globalItem?.cached_tags) {
+            try {
+                const cachedTags = typeof globalItem.cached_tags === 'string'
+                    ? JSON.parse(globalItem.cached_tags)
+                    : globalItem.cached_tags
+                if (Array.isArray(cachedTags)) {
+                    tags = cachedTags
+                }
+            } catch { }
+        }
+
+        // Fallback: extract from metadata.genres and metadata.tags
+        if (tags.length === 0 && globalItem?.metadata) {
+            try {
+                const meta = typeof globalItem.metadata === 'string'
+                    ? JSON.parse(globalItem.metadata)
+                    : globalItem.metadata
+                if (Array.isArray(meta.genres)) {
+                    tags.push(...meta.genres)
+                }
+                if (Array.isArray(meta.tags)) {
+                    tags.push(...meta.tags.slice(0, 10))
+                }
+            } catch { }
+        }
+
+        // Final fallback: items_to_tags relationship
+        if (tags.length === 0) {
+            tags = ((item.items_to_tags as any[]) || [])
+                .map((t: any) => t.tag?.name)
+                .filter(Boolean)
+        }
+
+        // Count each tag
+        tags.forEach(tagName => {
             if (tagName) {
                 const count = tagCounts.get(tagName) || 0
                 tagCounts.set(tagName, count + 1)
@@ -245,7 +363,13 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
 
     // C. Filter for Incompatibility (Low Tag Overlap)
     const candidates = (popularGlobalItems || [])
-        .filter((gItem: any) => !userGlobalItemIds.has(gItem.id)) // Exclude seen
+        .filter((gItem: any) => {
+            // Exclude by global_item_id
+            if (userGlobalItemIds.has(gItem.id)) return false
+            // Exclude by name (case-insensitive)
+            if (userRatedItemNames.has(gItem.title?.toLowerCase().trim())) return false
+            return true
+        })
         .map((gItem: any) => {
             let itemTags: string[] = []
             try {
@@ -313,6 +437,9 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     `
 
     // --- Task 2: RECOMMENDATIONS ---
+    // Create explicit exclusion list for LLM
+    const excludedItemsList = Array.from(userRatedItemNames).slice(0, 30).join(', ')
+
     const recsPrompt = `
     Provide recommendations based on the user's taste.
     ${context}
@@ -321,8 +448,11 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     Potential "Likely Miss" Candidates (High quality items that might clash with user tags):
     ${candidatesStr || "None identified from database."}
 
+    CRITICAL EXCLUSION LIST - NEVER recommend these items (user already rated them):
+    ${excludedItemsList}
+
     Rules:
-    1. Do NOT recommend items already in the list.
+    1. NEVER recommend items from the exclusion list above - these are items the user has ALREADY RATED.
     2. Provide 'matchScore' (0-100).
     3. Anti-Recommendations:
        - Select items that are POPULAR or HIGHLY RATED but fundamentally clash with the user's specific preferences (Attribute Conflict).
@@ -380,9 +510,9 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         // SAFETY: Sanitize anti-recommendation warnings
         const sanitizedResult = {
             ...result,
-            anti_recommendations: result.anti_recommendations.map(rec => ({
+            anti_recommendations: (result.anti_recommendations || []).map(rec => ({
                 ...rec,
-                warning: sanitizeWarning(rec.warning)
+                warning: sanitizeWarning(rec.warning || rec.reason || 'May not match your preferences')
             }))
         }
 

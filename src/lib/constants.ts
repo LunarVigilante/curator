@@ -33,7 +33,7 @@ export const DEFAULT_CATEGORIES = [
 
     {
         name: "Music",
-        type: "music",
+        type: "music_album",
         image: "/images/defaults/music.jpg",
         description: "Your personal library of albums, EPs, and sonic landscapes across all genres."
     },

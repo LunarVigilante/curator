@@ -98,7 +98,8 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
             apiKey: finalApiKey,
             provider,
             model: model || undefined,
-            endpoint: endpoint || undefined
+            endpoint: endpoint || undefined,
+            timeoutMs: 60000  // 60 seconds for description generation
         });
 
         let description = response.trim();
