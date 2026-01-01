@@ -12,7 +12,7 @@ export const TasteAnalysisSchema = z.object({
         high_rated_patterns: z.string(),
         low_rated_patterns: z.string().optional(),
         unexplored_themes: z.string().optional(),
-        outliers: z.string()
+        outliers: z.string().optional().default('')
     }),
     recommendations: z.array(z.object({
         name: z.string(),
