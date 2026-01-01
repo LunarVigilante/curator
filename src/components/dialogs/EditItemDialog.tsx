@@ -79,38 +79,47 @@ export default function EditItemDialog({
     }, [open])
 
     const debouncedName = useDebounce(formData.name, 500)
+    const categoriesLengthRef = useRef(categories.length)
 
+    // Only update ref when categories actually change meaningfully
     useEffect(() => {
-        const search = async () => {
-            // Skip search if we just selected a result
-            if (skipNextSearchRef.current) {
-                skipNextSearchRef.current = false
-                return
+        categoriesLengthRef.current = categories.length
+    }, [categories.length])
+
+    // Manual search function
+    const doSearch = async (searchTerm: string) => {
+        if (!searchTerm || searchTerm.length < 2) return
+
+        const category = categories.find(c => c.id === formData.categoryId)
+        const catName = category?.name || ''
+
+        const { searchMediaAction } = await import('@/lib/actions/media')
+
+        startTransition(async () => {
+            const response = await searchMediaAction(searchTerm, catName, null, formData.categoryId)
+
+            if (response.success) {
+                setMediaResults(response.data)
+            } else {
+                setMediaResults([])
+                toast.error(`${response.error}. Showing local results only.`)
             }
-            if (!debouncedName || debouncedName.length < 3) return
+        })
+    }
 
-            const category = categories.find(c => c.id === formData.categoryId)
-            const catName = category?.name || ''
-
-            const { searchMediaAction } = await import('@/lib/actions/media')
-
-            // startTransition to not block UI
-            startTransition(async () => {
-                const response = await searchMediaAction(debouncedName, catName, null, formData.categoryId)
-
-                if (response.success) {
-                    setMediaResults(response.data)
-                    if (response.data.length === 0) {
-                        // Optional: Toast "No results"? Maybe too noisy for type-ahead.
-                    }
-                } else {
-                    setMediaResults([])
-                    toast.error(`${response.error}. Showing local results only.`)
-                }
-            })
+    // Debounced auto-search - only trigger on name change, not category changes
+    useEffect(() => {
+        // Skip search if we just selected a result
+        if (skipNextSearchRef.current) {
+            skipNextSearchRef.current = false
+            return
         }
-        search()
-    }, [debouncedName, categories, formData.categoryId])
+        if (!debouncedName || debouncedName.length < 3) return
+        if (categories.length === 0) return // Wait for categories to load
+
+        doSearch(debouncedName)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedName])
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
@@ -169,8 +178,17 @@ export default function EditItemDialog({
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                     required
                                     placeholder="Type to search..."
+                                    className="flex-1"
                                 />
-                                {/* Manual search button removed/hidden or kept as fallback? keeping minimal */}
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => doSearch(formData.name)}
+                                    disabled={isPending || formData.name.length < 2}
+                                >
+                                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
+                                </Button>
                             </div>
 
                             {/* Search Status */}

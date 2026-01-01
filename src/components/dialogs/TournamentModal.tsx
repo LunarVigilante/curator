@@ -304,7 +304,7 @@ function ContenderCard({ item, onClick }: { item: TournamentItem, onClick: () =>
 
             {/* Info */}
             <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12 transform group-hover:-translate-y-2 transition-transform duration-300 z-20">
-                <h3 className="text-3xl md:text-5xl font-black text-white leading-tight mb-2 drop-shadow-lg max-w-lg">
+                <h3 className="text-3xl md:text-5xl font-black text-white leading-tight mb-2 drop-shadow-lg max-w-lg whitespace-normal line-clamp-2">
                     {item.name}
                 </h3>
                 {item.description && (
