@@ -88,7 +88,12 @@ export class GoogleBooksStrategy implements MediaStrategy {
     private getBookCover(googleThumbnail: string | undefined, isbn: string | null): string | null {
         const coverUrls: string[] = [];
 
-        // 1. Try Google High-Res Hack
+        // 1. Try Open Library LARGE cover (Highest Priority if ISBN exists)
+        if (isbn) {
+            coverUrls.push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`);
+        }
+
+        // 2. Try Google High-Res Hack
         if (googleThumbnail) {
             // Remove edge curl and try larger zoom
             const highRes = googleThumbnail
@@ -96,11 +101,6 @@ export class GoogleBooksStrategy implements MediaStrategy {
                 .replace('&zoom=1', '&zoom=0')
                 .replace('zoom=1', 'zoom=0');
             coverUrls.push(highRes);
-        }
-
-        // 2. Try Open Library LARGE cover (if ISBN exists)
-        if (isbn) {
-            coverUrls.push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`);
         }
 
         // 3. Fallback to Google thumbnail
