@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { calculateElo } from '@/lib/elo'
 import { ChallengerItem } from '@/lib/actions/discovery'
 
@@ -142,6 +142,30 @@ export function useTournamentMatchmaker(
             { ...pool[idx2], elo: getInitialScore(pool[idx2].id) }
         ]
     })
+
+    // Re-initialize pair if items become available after initial mount (timing fix)
+    useEffect(() => {
+        // Only run if we don't have a pair yet and items are now available
+        if (!currentPair && initialItems.length >= 2 && roundCount === 0) {
+            const activeItems = initialItems.filter(i => !ignoredIds.has(i.id))
+            if (activeItems.length >= 2) {
+                const pool = [...activeItems]
+                const idx1 = Math.floor(Math.random() * pool.length)
+                let idx2 = Math.floor(Math.random() * pool.length)
+                while (idx1 === idx2) {
+                    idx2 = Math.floor(Math.random() * pool.length)
+                }
+
+                setCurrentPair([
+                    { ...pool[idx1], elo: pool[idx1].elo || 1200 },
+                    { ...pool[idx2], elo: pool[idx2].elo || 1200 }
+                ])
+
+                // Also update eloScores map
+                setEloScores(new Map(initialItems.map(i => [i.id, i.elo])))
+            }
+        }
+    }, [initialItems, currentPair, roundCount, ignoredIds])
 
     const vote = (winnerId: string) => {
         if (!currentPair) return

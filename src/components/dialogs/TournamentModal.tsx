@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
@@ -42,14 +42,23 @@ export function TournamentModal({
     const [discoveryMode, setDiscoveryMode] = useState(true)
     const [matchLength, setMatchLength] = useState<number | 'endless'>(30)
 
-    // Transform user items to Tournament format
-    const tournamentItems: TournamentItem[] = items.map(i => ({
-        id: i.id,
-        name: i.name,
-        image: i.image,
-        elo: i.eloScore || 1200,
-        type: 'USER'
-    }))
+    // Transform user items to Tournament format (deduplicate by ID)
+    const tournamentItems: TournamentItem[] = useMemo(() => {
+        const seen = new Set<string>()
+        return items
+            .filter(i => {
+                if (seen.has(i.id)) return false
+                seen.add(i.id)
+                return true
+            })
+            .map(i => ({
+                id: i.id,
+                name: i.name,
+                image: i.image,
+                elo: i.eloScore || 1200,
+                type: 'USER' as const
+            }))
+    }, [items])
 
     // Fetch challengers on mount
     useEffect(() => {
@@ -129,8 +138,8 @@ export function TournamentModal({
                     <DialogTitle className="sr-only">Tournament {isNoItemsAvailable ? 'Error' : 'Complete'}</DialogTitle>
                     <div className="p-8 text-center space-y-6">
                         <div className={`mx-auto w-20 h-20 rounded-full flex items-center justify-center ${isNoItemsAvailable
-                                ? 'bg-gradient-to-br from-red-500 to-red-700'
-                                : 'bg-gradient-to-br from-yellow-500 to-amber-600'
+                            ? 'bg-gradient-to-br from-red-500 to-red-700'
+                            : 'bg-gradient-to-br from-yellow-500 to-amber-600'
                             }`}>
                             <Trophy className="w-10 h-10 text-white" />
                         </div>
