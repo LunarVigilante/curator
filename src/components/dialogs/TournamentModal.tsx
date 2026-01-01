@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useTournamentMatchmaker } from '@/hooks/useTournamentMatchmaker'
 import { motion } from 'framer-motion'
-import { Trophy, Check, SkipForward, Save, Settings, Info, Loader2 } from 'lucide-react'
+import { Trophy, Check, SkipForward, Save, Settings, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import { addChallengerItem, ignoreItem, submitMatchActivity, autoMatchItemsToGlobal } from '@/lib/actions/items'
@@ -38,8 +38,8 @@ export function TournamentModal({
     categoryName: string
 }) {
     const [challengers, setChallengers] = useState<ChallengerItem[]>([])
-    const [isSaving, setIsSaving] = useState(false)
-    const [settingsOpen, setSettingsOpen] = useState(false)
+    // const [isSaving, setIsSaving] = useState(false)
+    // const [settingsOpen, setSettingsOpen] = useState(false)
     const [matchedData, setMatchedData] = useState<Map<string, { image: string | null; description: string | null }>>(new Map())
 
     // Settings State

@@ -19,7 +19,7 @@ export interface TasteReportContentProps {
 }
 
 export function TasteReportContent({ data, categoryId, canEdit }: TasteReportContentProps) {
-    const [isAdding, startTransition] = useTransition()
+    const [, startTransition] = useTransition()
     const [addingItemName, setAddingItemName] = useState<string | null>(null)
     const [addedItems, setAddedItems] = useState<Set<string>>(new Set())
 

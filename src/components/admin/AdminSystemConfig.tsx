@@ -45,6 +45,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     const [spotifyClientSecret, setSpotifyClientSecret] = useState(settings?.['spotify_client_secret'] || '');
     const [comicVineApiKey, setComicVineApiKey] = useState(settings?.['comicvine_api_key'] || '');
     const [bggApiKey, setBggApiKey] = useState(settings?.['bgg_api_key'] || '');
+    const [metronUsername, setMetronUsername] = useState(settings?.['metron_username'] || '');
+    const [metronPassword, setMetronPassword] = useState(settings?.['metron_password'] || '');
 
     // Media API Endpoints (Custom URLs)
     const [tmdbApiUrl, setTmdbApiUrl] = useState(settings?.['tmdb_api_url'] || 'https://api.themoviedb.org/3');
@@ -77,7 +79,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         spotify: { status: 'idle' },
         resend: { status: 'idle' },
         comicvine: { status: 'idle' },
-        bgg: { status: 'idle' }
+        bgg: { status: 'idle' },
+        metron: { status: 'idle' }
     });
 
 
@@ -106,6 +109,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
             if (config['spotify_client_secret']) setSpotifyClientSecret(config['spotify_client_secret']);
             if (config['comicvine_api_key']) setComicVineApiKey(config['comicvine_api_key']);
             if (config['bgg_api_key']) setBggApiKey(config['bgg_api_key']);
+            if (config['metron_username']) setMetronUsername(config['metron_username']);
+            if (config['metron_password']) setMetronPassword(config['metron_password']);
 
             if (config['resend_api_key']) setResendKey(config['resend_api_key']);
             if (config['resend_from_email']) setFromEmail(config['resend_from_email']);
@@ -146,7 +151,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
     };
 
-    const handleTestService = async (service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg', apiKey: string, clientSecret?: string) => {
+    const handleTestService = async (service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron', apiKey: string, clientSecret?: string) => {
         setServiceStatuses(prev => ({ ...prev, [service]: { status: 'loading' } }));
         try {
             const result = await testServiceConnection({ service, apiKey, clientSecret });
@@ -228,6 +233,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 spotifyClientSecret,
                 comicVineApiKey,
                 bggApiKey,
+                metronUsername,
+                metronPassword,
                 resendApiKey: resendKey,
                 fromEmail,
                 appUrl,
@@ -665,6 +672,43 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                                 placeholder="API Endpoint (default: https://boardgamegeek.com/xmlapi2)"
                                 className="text-xs h-8 bg-white/5"
                             />
+                        </div>
+
+                        {/* Metron (Comic Backup) */}
+                        <div className="grid gap-2">
+                            <div className="flex items-center justify-between">
+                                <Label>Metron (Comic Backup)</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleTestService('metron', metronUsername, metronPassword)}
+                                    disabled={serviceStatuses.metron?.status === 'loading' || !metronUsername || !metronPassword}
+                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
+                                >
+                                    {serviceStatuses.metron?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
+                                        serviceStatuses.metron?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
+                                            serviceStatuses.metron?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
+                                    Test Metron
+                                </Button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                    type="text"
+                                    value={metronUsername}
+                                    onChange={e => { setMetronUsername(e.target.value); setServiceStatuses(prev => ({ ...prev, metron: { status: 'idle' } })); }}
+                                    placeholder="Metron Username"
+                                    className={serviceStatuses.metron?.status === 'success' ? 'border-green-500/50' : serviceStatuses.metron?.status === 'error' ? 'border-red-500/50' : ''}
+                                />
+                                <Input
+                                    type="password"
+                                    value={metronPassword}
+                                    onChange={e => { setMetronPassword(e.target.value); setServiceStatuses(prev => ({ ...prev, metron: { status: 'idle' } })); }}
+                                    placeholder="Metron Password"
+                                />
+                            </div>
+                            {serviceStatuses.metron?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.metron.message}</p>}
+                            <p className="text-[10px] text-muted-foreground">Used as a fallback for comics. Register at <a href="https://metron.cloud" target="_blank" className="underline hover:text-white">metron.cloud</a></p>
                         </div>
 
                         {/* AniList (No API Key Required) */}

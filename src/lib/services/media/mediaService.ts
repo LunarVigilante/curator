@@ -7,7 +7,6 @@ import { ItunesPodcastStrategy } from "./strategies/ItunesPodcastStrategy";
 import { SpotifyStrategy } from "./strategies/SpotifyStrategy";
 import { SpotifyAudiobooksStrategy } from "./strategies/SpotifyAudiobooksStrategy";
 import { BggStrategy } from "./strategies/BggStrategy";
-import { ComicVineStrategy } from "./strategies/ComicVineStrategy";
 import { ComicFetcherService } from "./strategies/ComicFetcherService";
 import { SystemSettings } from "@/lib/services/SystemConfigService";
 
@@ -140,7 +139,7 @@ export class MediaService {
 
         console.log(`[MediaService] Using strategy: ${strategy.name} for category: "${categoryName}"${type ? ` (type: ${type})` : ''}`);
 
-        let results = await strategy.search(query, settings, type);
+        const results = await strategy.search(query, settings, type);
 
         // Fallback: If Google Books returns no results, try Spotify Audiobooks
         // User Request: "Audiobooks are missing many titles. can we use Spotify as a fallback for Google Books?"

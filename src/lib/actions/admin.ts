@@ -99,6 +99,8 @@ export async function updateSystemConfig(data: {
     comicVineApiUrl?: string
     bggApiUrl?: string
     itunesApiUrl?: string
+    metronUsername?: string
+    metronPassword?: string
     featureAiCritic?: string
     featureSmartSort?: string
     featureRecommendations?: string
@@ -128,6 +130,8 @@ export async function updateSystemConfig(data: {
     if (data.spotifyClientSecret) await upsertSetting('spotify_client_secret', data.spotifyClientSecret, 'MEDIA', true)
     if (data.comicVineApiKey) await upsertSetting('comicvine_api_key', data.comicVineApiKey, 'MEDIA', true)
     if (data.bggApiKey) await upsertSetting('bgg_api_key', data.bggApiKey, 'MEDIA', true)
+    if (data.metronUsername) await upsertSetting('metron_username', data.metronUsername, 'MEDIA', false)
+    if (data.metronPassword) await upsertSetting('metron_password', data.metronPassword, 'MEDIA', true)
 
     // Email Settings
     if (data.resendApiKey !== undefined) await upsertSetting('resend_api_key', data.resendApiKey, 'EMAIL', true)
@@ -363,9 +367,9 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
 }
 
 export async function testServiceConnection(data: {
-    service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg'
+    service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron'
     apiKey: string
-    clientSecret?: string  // Optional: for Spotify
+    clientSecret?: string  // Optional: for Spotify / Metron Password
 }) {
     await assertAdmin();
     console.log(`[ServiceTest] Testing ${data.service} connection...`);
@@ -381,7 +385,8 @@ export async function testServiceConnection(data: {
             spotify: 'spotify_client_id',
             resend: 'resend_api_key',
             comicvine: 'comicvine_api_key',
-            bgg: 'bgg_api_key'
+            bgg: 'bgg_api_key',
+            metron: 'metron_username'
         }
         const realKey = await SystemConfigService.getDecryptedConfig(keyMap[data.service])
         if (!realKey) throw new Error(`No API key found for ${data.service} and none provided.`)
@@ -462,6 +467,24 @@ export async function testServiceConnection(data: {
             case 'bgg': {
                 if (!apiKey) throw new Error('BGG: Please provide an API key')
                 return { success: true, message: `BGG: API key configured` }
+            }
+            case 'metron': {
+                // For Metron: apiKey = username, clientSecret = password
+                const password = clientSecret || await SystemConfigService.getDecryptedConfig('metron_password');
+                if (!password) throw new Error('Metron Password is required');
+
+                const headers = {
+                    'Authorization': 'Basic ' + Buffer.from(apiKey + ":" + password).toString('base64')
+                };
+
+                // Test search for "Batman"
+                const res = await fetch(`https://metron.cloud/api/series/?name=batman`, { headers });
+
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) throw new Error('Metron: Invalid Credentials');
+                    throw new Error(`Metron Error: ${res.statusText}`);
+                }
+                return { success: true, message: "Metron: Connection Verified" }
             }
             default:
                 throw new Error('Unsupported service')
