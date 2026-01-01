@@ -70,21 +70,20 @@ export default function UserDashboard({
         const { active, over } = event;
 
         if (over && active.id !== over.id) {
-            setCategories((items) => {
-                const oldIndex = items.findIndex((item) => item.id === active.id);
-                const newIndex = items.findIndex((item) => item.id === over.id);
-                const newItems = arrayMove(items, oldIndex, newIndex);
+            const oldIndex = categories.findIndex((item) => item.id === active.id);
+            const newIndex = categories.findIndex((item) => item.id === over.id);
+            const newItems = arrayMove(categories, oldIndex, newIndex);
 
-                // Persist order
-                const updates = newItems.map((item, index) => ({
-                    id: item.id,
-                    sortOrder: index
-                }));
+            // Update local state first
+            setCategories(newItems);
 
-                reorderCategories(updates).catch(() => toast.error("Failed to save order"));
+            // Persist order to database (outside of setState)
+            const updates = newItems.map((item, index) => ({
+                id: item.id,
+                sortOrder: index
+            }));
 
-                return newItems;
-            });
+            reorderCategories(updates).catch(() => toast.error("Failed to save order"));
         }
     };
 
