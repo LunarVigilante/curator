@@ -28,7 +28,7 @@ export class ComicFetcherService implements MediaStrategy {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async search(query: string, settings: SystemSettings, _type?: string): Promise<MediaSearchResponse> {
+    async search(query: string, settings: SystemSettings): Promise<MediaSearchResponse> {
         console.log(`[ComicFetcher] Starting waterfall search for: "${query}"`);
 
         // --- ATTEMPT 1: COMIC VINE ---

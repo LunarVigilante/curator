@@ -234,6 +234,21 @@ function TournamentGame({
         }
     }
 
+    // Keyboard support for voting (Moved up to avoid conditional hook error)
+    // Safe access to itemA/itemB even if currentPair is null (it will return early anyway)
+    const [maybeItemA, maybeItemB] = currentPair || [null, null]
+
+    useEffect(() => {
+        if (!maybeItemA || !maybeItemB) return
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowLeft') handleVote(maybeItemA.id)
+            if (e.key === 'ArrowRight') handleVote(maybeItemB.id)
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [maybeItemA, maybeItemB]) // eslint-disable-line react-hooks/exhaustive-deps
+
     // Show completion screen when tournament is done
     if (isComplete || !currentPair) {
         return (
@@ -273,16 +288,6 @@ function TournamentGame({
     }
 
     const [itemA, itemB] = currentPair
-
-    // Keyboard support for voting
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'ArrowLeft') handleVote(itemA.id)
-            if (e.key === 'ArrowRight') handleVote(itemB.id)
-        }
-        window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [itemA, itemB]) // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <DialogContent className="max-w-[90vw] h-[80vh] p-0 gap-0 bg-black border-none overflow-hidden flex flex-col">
