@@ -8,6 +8,8 @@ import { parseItemMetadata } from '@/lib/types/metadata'
 import { z } from 'zod'
 import { zfd } from 'zod-form-data'
 import { getSession } from '@/lib/auth'
+import { searchMediaAction } from './media'
+import { getCategory } from './categories'
 
 export async function getItems(
     query?: string,
@@ -540,4 +542,76 @@ export async function submitMatchActivity(payload: {
         winnerName: payload.winnerName,
         loserName: payload.loserName
     })
+}
+
+/**
+ * Auto-match items without global_item_id to external media services.
+ * Uses the category to determine which provider to search (TMDB, Spotify, RAWG, etc.)
+ * 
+ * @param items - Array of items with id, name, and optional global_item_id
+ * @param categoryId - Category ID to determine search provider
+ * @returns Map of item IDs to their matched global_item data (image, description)
+ */
+export async function autoMatchItemsToGlobal(
+    items: { id: string; name: string; global_item_id?: string | null }[],
+    categoryId: string
+): Promise<Map<string, { image: string | null; description: string | null; globalItemId: string }>> {
+    const supabase = await createClient()
+    const results = new Map<string, { image: string | null; description: string | null; globalItemId: string }>()
+
+    // Get category info for search routing
+    const category = await getCategory(categoryId)
+    if (!category) return results
+
+    // Filter items that need matching
+    const itemsToMatch = items.filter(i => !i.global_item_id)
+    if (itemsToMatch.length === 0) return results
+
+    console.log(`[AutoMatch] Matching ${itemsToMatch.length} items for category "${category.name}"`)
+
+    // Process items in batches to avoid rate limits
+    for (const item of itemsToMatch) {
+        try {
+            // Strip year from name for better matching
+            const cleanName = item.name.replace(/\s*\(\d{4}\)\s*$/, '').trim()
+
+            // Search using MediaService (routes to correct provider based on category)
+            const searchResult = await searchMediaAction(cleanName, category.name, null, categoryId)
+
+            if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
+                console.log(`[AutoMatch] No results for "${cleanName}"`)
+                continue
+            }
+
+            // Take first result
+            const match = searchResult.data[0]
+            console.log(`[AutoMatch] Matched "${cleanName}" -> "${match.title}" (${match.id})`)
+
+            // Create/get global item
+            const globalItem = await upsertGlobalItem({
+                externalId: match.id,
+                title: match.title,
+                description: match.description,
+                imageUrl: match.imageUrl,
+                metadata: match.metadata
+            })
+
+            // Update item to link to global item
+            await (supabase.from('items') as any)
+                .update({ global_item_id: globalItem.id })
+                .eq('id', item.id)
+
+            results.set(item.id, {
+                image: globalItem.image_url,
+                description: globalItem.description,
+                globalItemId: globalItem.id
+            })
+
+        } catch (error) {
+            console.error(`[AutoMatch] Error matching "${item.name}":`, error)
+        }
+    }
+
+    console.log(`[AutoMatch] Successfully matched ${results.size} of ${itemsToMatch.length} items`)
+    return results
 }

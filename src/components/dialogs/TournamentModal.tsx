@@ -10,9 +10,10 @@ import { motion } from 'framer-motion'
 import { Trophy, Check, SkipForward, Save, Settings, Info, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { addChallengerItem, ignoreItem, submitMatchActivity } from '@/lib/actions/items'
+import { addChallengerItem, ignoreItem, submitMatchActivity, autoMatchItemsToGlobal } from '@/lib/actions/items'
 import { fetchChallengers, ChallengerItem } from '@/lib/actions/discovery'
 import { assignTiersFromElo } from '@/lib/actions/tiers'
+
 
 type TournamentItem = {
     id: string
@@ -37,12 +38,37 @@ export function TournamentModal({
     const [challengers, setChallengers] = useState<ChallengerItem[]>([])
     const [isSaving, setIsSaving] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
+    const [matchedData, setMatchedData] = useState<Map<string, { image: string | null; description: string | null }>>(new Map())
 
     // Settings State
     const [discoveryMode, setDiscoveryMode] = useState(true)
     const [matchLength, setMatchLength] = useState<number | 'endless'>(30)
 
+    // Auto-match items without global_item_id to external services
+    useEffect(() => {
+        if (isOpen && items.length > 0) {
+            // Find items that need matching (no global_item_id)
+            const itemsNeedingMatch = items.filter((i: any) => !i.global_item_id)
+            if (itemsNeedingMatch.length > 0) {
+                autoMatchItemsToGlobal(
+                    itemsNeedingMatch.map((i: any) => ({ id: i.id, name: i.name, global_item_id: i.global_item_id })),
+                    categoryId
+                ).then(results => {
+                    if (results.size > 0) {
+                        setMatchedData(new Map(results))
+                        toast.success(`Auto-matched ${results.size} items to metadata`)
+                    }
+                }).catch(err => console.error('[AutoMatch] Error:', err))
+            }
+        }
+    }, [isOpen, categoryId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+
+    // Helper to strip year suffix from names like "The Fountain (2006)"
+    const stripYear = (name: string) => name.replace(/\s*\(\d{4}\)\s*$/, '').trim()
+
     // Transform user items to Tournament format (deduplicate by ID)
+    // Use matched data for images if available
     const tournamentItems: TournamentItem[] = useMemo(() => {
         const seen = new Set<string>()
         return items
@@ -51,14 +77,18 @@ export function TournamentModal({
                 seen.add(i.id)
                 return true
             })
-            .map(i => ({
-                id: i.id,
-                name: i.name,
-                image: i.image,
-                elo: i.eloScore || 1200,
-                type: 'USER' as const
-            }))
-    }, [items])
+            .map(i => {
+                // Use matched image if available and item doesn't have one
+                const matched = matchedData.get(i.id)
+                return {
+                    id: i.id,
+                    name: stripYear(i.name),
+                    image: i.image || matched?.image || null,
+                    elo: i.eloScore || 1200,
+                    type: 'USER' as const
+                }
+            })
+    }, [items, matchedData])
 
     // Fetch challengers on mount
     useEffect(() => {
