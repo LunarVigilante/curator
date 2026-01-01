@@ -490,6 +490,20 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     // Create explicit exclusion list for LLM
     const excludedItemsList = Array.from(userRatedItemNames).slice(0, 30).join(', ')
 
+    // Get category name for category-specific rules
+    const categoryName = (ratedItems[0]?.category as any)?.name?.toLowerCase() || ''
+    const isTVShows = categoryName.includes('tv') || categoryName.includes('show')
+
+    // Category-specific instructions
+    const categorySpecificRules = isTVShows
+        ? `
+    TV SHOWS CATEGORY RULES:
+    4. NEVER recommend specific seasons (e.g., "True Detective (Season 1)"). Always recommend the SERIES as a whole.
+    5. NEVER recommend anime series for TV Shows - anime belongs in a separate category.
+    6. Focus on live-action Western TV series only.
+        `
+        : ''
+
     const recsPrompt = `
     Provide recommendations based on the user's taste.
     ${context}
@@ -510,6 +524,7 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
        - WARNING FORMAT: A single sentence starting with 'While popular for...'.
        - Example: 'While popular for its visceral shock value, Saw relies on gore and torture, which conflicts with your demonstrated preference for atmospheric, psychological dread.'
        - Do NOT mention the 'Match %' in the text. Focus solely on the stylistic mismatch.
+    ${categorySpecificRules}
 
     Return JSON:
     {
