@@ -6,11 +6,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useTournamentMatchmaker } from '@/hooks/useTournamentMatchmaker'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Trophy, Check, SkipForward, Save, Settings, Info, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { updateItemScores, addChallengerItem, ignoreItem, submitMatchActivity } from '@/lib/actions/items'
+import { addChallengerItem, ignoreItem, submitMatchActivity } from '@/lib/actions/items'
 import { fetchChallengers, ChallengerItem } from '@/lib/actions/discovery'
 import { assignTiersFromElo } from '@/lib/actions/tiers'
 

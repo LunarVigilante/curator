@@ -189,7 +189,7 @@ export default function AddItemDialog({
             .finally(() => setIsGeneratingDescription(false))
 
         // Tags: Use provider tags first (instant), only fall back to AI if none
-        const useProviderTags = async () => {
+        const applyProviderTags = async () => {
             if (result.tags && result.tags.length > 0) {
                 // Provider already gave us tags - use batch create (fast path!)
                 const { createTagsBatch } = await import('@/lib/actions/tags')
@@ -229,7 +229,7 @@ export default function AddItemDialog({
                     .finally(() => setIsGeneratingTags(false))
             }
         }
-        useProviderTags()
+        applyProviderTags()
     }
 
     // Auto-select first result when search completes

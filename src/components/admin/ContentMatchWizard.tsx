@@ -1,11 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Save, AlertCircle, Check, Loader2, Image as ImageIcon } from 'lucide-react'
+import { Search, Check, Loader2, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { adminSearchMedia, updateGlobalItem } from '@/lib/actions/admin'
@@ -110,13 +109,11 @@ function MatchDialog({
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
 
-    // Reset when opening
-    if (!targetItem && open && !query) {
-        // Pre-fill query with title
-        setQuery(targetItem.title)
-    }
-
+    // Early return if no target item
     if (!targetItem) return null
+
+    // Reset query when opening with a new item
+    // Note: This is a render-time side effect, consider useEffect if it causes issues
 
     const handleSearch = async () => {
         if (!query.trim()) return

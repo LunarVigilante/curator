@@ -63,6 +63,51 @@ function sanitizeWarning(warning: string): string {
     return warning
 }
 
+/**
+ * Safely parse JSON with repair attempts for common LLM formatting errors.
+ */
+function safeParseJSON(raw: string, label: string): Record<string, unknown> {
+    // First, try direct parse
+    try {
+        return JSON.parse(raw)
+    } catch (firstError) {
+        console.warn(`[${label}] Direct parse failed, attempting repair...`)
+    }
+
+    // Repair attempt 1: Fix trailing commas before ] or }
+    let repaired = raw.replace(/,\s*([\]}])/g, '$1')
+
+    // Repair attempt 2: Fix unescaped newlines in strings
+    repaired = repaired.replace(/(?<!\\)\n/g, '\\n')
+
+    // Repair attempt 3: Remove control characters
+    repaired = repaired.replace(/[\x00-\x1F\x7F]/g, (char) =>
+        char === '\n' || char === '\r' || char === '\t' ? char : ''
+    )
+
+    try {
+        return JSON.parse(repaired)
+    } catch (secondError) {
+        console.warn(`[${label}] Repair attempt 1 failed, trying deeper repair...`)
+    }
+
+    // Repair attempt 4: Extract just the JSON object/array
+    const jsonMatch = raw.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
+    if (jsonMatch) {
+        try {
+            let extracted = jsonMatch[1]
+            // Fix trailing commas
+            extracted = extracted.replace(/,\s*([\]}])/g, '$1')
+            return JSON.parse(extracted)
+        } catch {
+            console.warn(`[${label}] JSON extraction failed`)
+        }
+    }
+
+    // Final fallback: throw with context
+    throw new Error(`Failed to parse ${label} JSON after repair attempts. Raw length: ${raw.length}`)
+}
+
 export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalysis> {
     // Get current user for tenant isolation
     const userId = await getCurrentUserId()
@@ -493,10 +538,10 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
             callLLMForJSON(metadataPrompt, undefined, { maxTokens: 2048 })
         ])
 
-        // Parse and Merge
-        const profileData = JSON.parse(profileRaw)
-        const recsData = JSON.parse(recsRaw)
-        const metaData = JSON.parse(metaRaw)
+        // Parse and Merge with repair for malformed LLM responses
+        const profileData = safeParseJSON(profileRaw, 'profile')
+        const recsData = safeParseJSON(recsRaw, 'recommendations')
+        const metaData = safeParseJSON(metaRaw, 'metadata')
 
         const finalResult = {
             ...profileData,

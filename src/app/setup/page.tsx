@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect, useState } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { completeSetup, isSetupRequired } from '@/lib/actions/setup'
 import { supabase } from '@/lib/auth-client'
@@ -13,7 +13,6 @@ import { Shield, Loader2 } from 'lucide-react'
 export default function SetupPage() {
     const router = useRouter()
     const [state, dispatch, isPending] = useActionState(completeSetup, undefined)
-    const [hasCheckedSetup, setHasCheckedSetup] = useState(false)
 
     // Redirect on success
     useEffect(() => {
@@ -32,16 +31,17 @@ export default function SetupPage() {
     }, [router])
 
     // Check if setup is actually needed (only once on initial mount)
+    const hasCheckedSetupRef = useRef(false)
     useEffect(() => {
-        if (hasCheckedSetup) return
-        setHasCheckedSetup(true)
+        if (hasCheckedSetupRef.current) return
+        hasCheckedSetupRef.current = true
 
         isSetupRequired().then(required => {
             if (!required) {
                 router.push('/login')
             }
         })
-    }, [router, hasCheckedSetup])
+    }, [router])
 
     return (
         <div className="flex items-center justify-center min-h-screen p-4">
