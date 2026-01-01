@@ -65,12 +65,13 @@ function sanitizeWarning(warning: string): string {
 
 /**
  * Safely parse JSON with repair attempts for common LLM formatting errors.
+ * Returns empty object if all repairs fail (graceful fallback for non-critical data).
  */
-function safeParseJSON(raw: string, label: string): Record<string, unknown> {
+function safeParseJSON(raw: string, label: string, throwOnFail = true): Record<string, unknown> {
     // First, try direct parse
     try {
         return JSON.parse(raw)
-    } catch (firstError) {
+    } catch {
         console.warn(`[${label}] Direct parse failed, attempting repair...`)
     }
 
@@ -87,7 +88,7 @@ function safeParseJSON(raw: string, label: string): Record<string, unknown> {
 
     try {
         return JSON.parse(repaired)
-    } catch (secondError) {
+    } catch {
         console.warn(`[${label}] Repair attempt 1 failed, trying deeper repair...`)
     }
 
@@ -104,7 +105,11 @@ function safeParseJSON(raw: string, label: string): Record<string, unknown> {
         }
     }
 
-    // Final fallback: throw with context
+    // Final fallback: return empty object or throw based on criticality
+    if (!throwOnFail) {
+        console.warn(`[${label}] All repairs failed, returning empty object`)
+        return {}
+    }
     throw new Error(`Failed to parse ${label} JSON after repair attempts. Raw length: ${raw.length}`)
 }
 
@@ -539,9 +544,10 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
         ])
 
         // Parse and Merge with repair for malformed LLM responses
+        // Profile and recommendations are critical, metadata is optional
         const profileData = safeParseJSON(profileRaw, 'profile')
         const recsData = safeParseJSON(recsRaw, 'recommendations')
-        const metaData = safeParseJSON(metaRaw, 'metadata')
+        const metaData = safeParseJSON(metaRaw, 'metadata', false)  // Graceful fallback for metadata
 
         const finalResult = {
             ...profileData,

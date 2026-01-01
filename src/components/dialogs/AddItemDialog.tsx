@@ -238,6 +238,7 @@ export default function AddItemDialog({
             // Auto-select first result but keep results visible for alternative selection
             selectResult(mediaResults[0], true)
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- selectResult changes too often, we only want to react to new results
     }, [mediaResults])
 
     const handleSubmit = (e: React.FormEvent) => {

@@ -620,8 +620,8 @@ export async function updateGlobalItem(id: string, updates: {
     await assertAdmin()
     const supabase = await createClient()
 
-    const { error } = await supabase
-        .from('global_items')
+    const { error } = await (supabase
+        .from('global_items') as any)
         .update(updates)
         .eq('id', id)
 
