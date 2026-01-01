@@ -117,39 +117,64 @@ export function TournamentModal({
     }
 
     // Show completion screen when tournament is done
+    // But distinguish between "not enough items" vs "actually completed rounds"
     if (isComplete || !currentPair) {
+        // If no rounds were completed but we're showing this screen,
+        // it means we couldn't generate pairs (not enough items)
+        const isNoItemsAvailable = roundCount === 0 && !currentPair
+
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
                 <DialogContent className="max-w-md bg-black border-white/10">
-                    <DialogTitle className="sr-only">Tournament Complete</DialogTitle>
+                    <DialogTitle className="sr-only">Tournament {isNoItemsAvailable ? 'Error' : 'Complete'}</DialogTitle>
                     <div className="p-8 text-center space-y-6">
-                        <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-yellow-500 to-amber-600 flex items-center justify-center">
+                        <div className={`mx-auto w-20 h-20 rounded-full flex items-center justify-center ${isNoItemsAvailable
+                                ? 'bg-gradient-to-br from-red-500 to-red-700'
+                                : 'bg-gradient-to-br from-yellow-500 to-amber-600'
+                            }`}>
                             <Trophy className="w-10 h-10 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold text-white mb-2">Tournament Complete!</h2>
-                            <p className="text-zinc-400">You completed {roundCount} rounds.</p>
+                            <h2 className="text-2xl font-bold text-white mb-2">
+                                {isNoItemsAvailable ? 'Not Enough Items' : 'Tournament Complete!'}
+                            </h2>
+                            <p className="text-zinc-400">
+                                {isNoItemsAvailable
+                                    ? 'You need at least 2 items in this category to start a tournament.'
+                                    : `You completed ${roundCount} rounds.`}
+                            </p>
                         </div>
-                        <p className="text-sm text-zinc-500">
-                            Click below to save your results and assign tiers (S-F) to all items based on their final ELO scores.
-                        </p>
-                        <Button
-                            onClick={handleEndTournament}
-                            disabled={isSaving}
-                            className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-bold"
-                        >
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Saving & Assigning Tiers...
-                                </>
-                            ) : (
-                                <>
-                                    <Check className="w-4 h-4 mr-2" />
-                                    Save Results & Assign Tiers
-                                </>
-                            )}
-                        </Button>
+                        {isNoItemsAvailable ? (
+                            <Button
+                                onClick={() => onOpenChange(false)}
+                                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white"
+                            >
+                                Close
+                            </Button>
+                        ) : (
+                            <>
+                                <p className="text-sm text-zinc-500">
+                                    Click below to save your results and assign tiers (S-F) to all items based on their final ELO scores.
+                                </p>
+                                <Button
+                                    onClick={handleEndTournament}
+                                    disabled={isSaving}
+                                    className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-bold"
+                                >
+                                    {isSaving ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            Saving & Assigning Tiers...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-4 h-4 mr-2" />
+                                            Save Results & Assign Tiers
+                                        </>
+                                    )}
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>
