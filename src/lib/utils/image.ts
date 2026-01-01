@@ -1,86 +1,76 @@
 /**
  * Utility functions for optimized image URLs.
- * Used with Supabase Storage and Edge Function image optimization.
+ * Uses Supabase Storage's built-in Image Transformations.
+ * 
+ * Enable in Dashboard: Storage → Settings → Image Transformations
  */
 
 type ImageSize = 'thumb' | 'medium' | 'large' | 'original'
 
-const SIZE_SUFFIXES: Record<ImageSize, string> = {
-    thumb: '_thumb',
-    medium: '_medium',
-    large: '_large',
-    original: ''
+const SIZE_CONFIG: Record<ImageSize, { width: number; quality?: number }> = {
+    thumb: { width: 200, quality: 75 },
+    medium: { width: 600, quality: 80 },
+    large: { width: 1200, quality: 85 },
+    original: { width: 0 } // No transformation
 }
 
 /**
- * Get the optimized image URL for a specific size.
+ * Get an optimized image URL using Supabase's built-in Image Transformations.
  * 
- * @param path - Original image path or URL
+ * @param url - Original image URL (must be a Supabase Storage URL)
  * @param size - Desired size (thumb: 200px, medium: 600px, large: 1200px)
- * @returns Optimized image URL
+ * @returns Transformed image URL
  * 
  * @example
- * getOptimizedImageUrl('/covers/abc123.jpg', 'medium')
- * // Returns: https://your-project.supabase.co/storage/v1/object/public/media/covers/abc123_medium.webp
+ * getOptimizedImageUrl('https://xxx.supabase.co/storage/v1/object/public/media/covers/abc.jpg', 'medium')
+ * // Returns: https://xxx.supabase.co/storage/v1/render/image/public/media/covers/abc.jpg?width=600&quality=80
  */
-export function getOptimizedImageUrl(path: string | null | undefined, size: ImageSize = 'medium'): string {
-    if (!path) return '/images/placeholder.png'
+export function getOptimizedImageUrl(url: string | null | undefined, size: ImageSize = 'medium'): string {
+    if (!url) return '/images/placeholder.png'
 
-    // If already a full Supabase URL, modify it
-    if (path.includes('supabase.co/storage')) {
-        if (size === 'original') return path
-
-        // Insert size suffix before extension
-        const lastDot = path.lastIndexOf('.')
-        if (lastDot === -1) return path
-
-        const basePath = path.substring(0, lastDot)
-        return `${basePath}${SIZE_SUFFIXES[size]}.webp`
+    // If not a Supabase URL, return as-is
+    if (!url.includes('supabase.co/storage')) {
+        return url
     }
 
-    // If it's an external URL (TMDB, etc.), return as-is
-    // These should be migrated to Supabase Storage
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-        return path
-    }
+    // For original size, return as-is
+    if (size === 'original') return url
 
-    // If it's a local path, return as-is
-    if (path.startsWith('/')) {
-        return path
-    }
+    const config = SIZE_CONFIG[size]
 
-    // Assume it's a Supabase Storage path
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    if (!supabaseUrl) return path
+    // Convert from /object/ to /render/image/ for transformations
+    // From: /storage/v1/object/public/media/...
+    // To:   /storage/v1/render/image/public/media/...?width=600
+    const transformUrl = url.replace(
+        '/storage/v1/object/',
+        '/storage/v1/render/image/'
+    )
 
-    const basePath = path.replace(/\.[^.]+$/, '') // Remove extension
-    const suffix = SIZE_SUFFIXES[size]
-    const ext = size === 'original' ? path.split('.').pop() : 'webp'
+    const params = new URLSearchParams()
+    params.set('width', config.width.toString())
+    if (config.quality) params.set('quality', config.quality.toString())
 
-    return `${supabaseUrl}/storage/v1/object/public/media/${basePath}${suffix}.${ext}`
+    return `${transformUrl}?${params.toString()}`
 }
 
 /**
  * Generate srcset string for responsive images.
  * 
- * @param path - Original image path
+ * @param url - Original image URL
  * @returns srcset string for use in img elements
- * 
- * @example
- * <img src={getOptimizedImageUrl(path, 'medium')} srcSet={getImageSrcSet(path)} />
  */
-export function getImageSrcSet(path: string | null | undefined): string {
-    if (!path) return ''
+export function getImageSrcSet(url: string | null | undefined): string {
+    if (!url || !url.includes('supabase.co/storage')) return ''
 
-    const thumb = getOptimizedImageUrl(path, 'thumb')
-    const medium = getOptimizedImageUrl(path, 'medium')
-    const large = getOptimizedImageUrl(path, 'large')
+    const thumb = getOptimizedImageUrl(url, 'thumb')
+    const medium = getOptimizedImageUrl(url, 'medium')
+    const large = getOptimizedImageUrl(url, 'large')
 
     return `${thumb} 200w, ${medium} 600w, ${large} 1200w`
 }
 
 /**
- * Check if an image path is a Supabase Storage URL.
+ * Check if an image URL is from Supabase Storage.
  */
 export function isSupabaseStorageUrl(url: string | null | undefined): boolean {
     if (!url) return false

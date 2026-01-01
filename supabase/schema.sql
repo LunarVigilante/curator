@@ -417,3 +417,47 @@ CREATE POLICY "Users can manage own ratings" ON ratings FOR ALL USING (auth.uid(
 
 -- System settings: Admin only via service role
 CREATE POLICY "Service role can access settings" ON system_settings FOR ALL USING (auth.role() = 'service_role');
+
+-- ============================================================================
+-- STORAGE: Media Bucket for File Uploads
+-- ============================================================================
+
+-- Create the 'media' bucket for all file uploads (avatars, covers, posters)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'media',
+    'media',
+    true, -- Public bucket for serving images
+    10485760, -- 10MB file size limit
+    ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO UPDATE SET
+    public = EXCLUDED.public,
+    file_size_limit = EXCLUDED.file_size_limit,
+    allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- Storage RLS: Allow public read access
+CREATE POLICY "Public read access for media" ON storage.objects
+FOR SELECT TO public
+USING (bucket_id = 'media');
+
+-- Storage RLS: Allow authenticated users to upload
+CREATE POLICY "Authenticated users can upload media" ON storage.objects
+FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'media');
+
+-- Storage RLS: Allow users to update their uploads
+CREATE POLICY "Users can update their uploads" ON storage.objects
+FOR UPDATE TO authenticated
+USING (bucket_id = 'media');
+
+-- Storage RLS: Allow users to delete their uploads
+CREATE POLICY "Users can delete their uploads" ON storage.objects
+FOR DELETE TO authenticated
+USING (bucket_id = 'media');
+
+-- Storage RLS: Allow service role full access (for Edge Functions)
+CREATE POLICY "Service role full access to media" ON storage.objects
+FOR ALL TO service_role
+USING (bucket_id = 'media')
+WITH CHECK (bucket_id = 'media');
