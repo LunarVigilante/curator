@@ -20,6 +20,8 @@ export type SystemSettingKey =
     | 'spotify_client_secret'
     | 'bgg_api_key'
     | 'comicvine_api_key'
+    | 'metron_username'
+    | 'metron_password'
     // Media API URLs (custom endpoints)
     | 'tmdb_api_url'
     | 'rawg_api_url'

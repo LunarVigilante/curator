@@ -8,6 +8,7 @@ import { SpotifyStrategy } from "./strategies/SpotifyStrategy";
 import { SpotifyAudiobooksStrategy } from "./strategies/SpotifyAudiobooksStrategy";
 import { BggStrategy } from "./strategies/BggStrategy";
 import { ComicVineStrategy } from "./strategies/ComicVineStrategy";
+import { ComicFetcherService } from "./strategies/ComicFetcherService";
 import { SystemSettings } from "@/lib/services/SystemConfigService";
 
 /**
@@ -72,9 +73,9 @@ export class MediaService {
         // Board Games -> BoardGameGeek
         this.registerStrategy(bggStrategy, ['board_game', 'boardgame', 'tabletop', 'card_game', 'cardgame', 'dice', 'strategy']);
 
-        // Comics -> ComicVine
-        const comicVineStrategy = new ComicVineStrategy();
-        this.registerStrategy(comicVineStrategy, ['comic', 'comics', 'graphic_novel', 'superhero']);
+        // Comics -> ComicFetcher (Waterfall)
+        const comicFetcherService = new ComicFetcherService();
+        this.registerStrategy(comicFetcherService, ['comic', 'comics', 'graphic_novel', 'superhero']);
     }
 
     /**
