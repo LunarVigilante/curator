@@ -34,7 +34,7 @@ export const TasteAnalysisSchema = z.object({
         item_name: z.string(),
         suggested_tags: z.array(z.string()),
         suggested_description: z.string()
-    }))
+    })).optional().default([])
 })
 
 export type TasteAnalysis = z.infer<typeof TasteAnalysisSchema>
