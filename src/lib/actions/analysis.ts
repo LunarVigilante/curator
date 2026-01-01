@@ -518,6 +518,11 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
 
     Rules:
     1. ⚠️ NEVER recommend items from the exclusion list above IN EITHER recommendations OR anti_recommendations - these are items the user has ALREADY RATED.
+    2. STRICT CATEGORY ENFORCEMENT: 
+       - If the category is "Video Games", ONLY recommend video games. DO NOT recommend Anime, Movies, or TV Shows.
+       - If the category is "Anime", ONLY recommend Anime.
+       - If the category is "Movies", ONLY recommend Movies.
+       - "Likely Misses" MUST also belong to the current category (${categoryName}). DO NOT introduce items from other mediums.
     2. Provide 'matchScore' (0-100).
     3. Anti-Recommendations ("Likely Misses"):
        - MUST NOT include any items from the exclusion list above.
