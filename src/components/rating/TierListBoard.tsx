@@ -483,6 +483,7 @@ export default function TierListBoard({
                     onOpenChange={setIsTournamentOpen}
                     items={items}
                     categoryId={categoryId}
+                    categoryName={categoryName}
                 />
             </div>
         </DndContext>

@@ -147,7 +147,7 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
             global_item:global_items(id, title, description, cached_tags, release_year, metadata, source)
         `)
         .eq('user_id', targetUserId)
-        .not('tier', 'is', null)
+    // .not('tier', 'is', null) // Fetch ALL items including unranked for exclusion list
 
     if (categoryId) {
         query = query.eq('category_id', categoryId)
@@ -210,7 +210,9 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     }
 
     for (const item of itemsForPrompt) {
-        const tier = item.tier || ''
+        const tier = item.tier
+        if (!tier) continue // Skip unranked items for analysis (but they are still in exclusion list)
+
         const globalItem = item.global_item as any
 
         // Get name from global_item.title (preferred) or item.name (fallback)
@@ -242,6 +244,9 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
                 }
                 if (Array.isArray(meta.tags)) {
                     tagsList.push(...meta.tags.slice(0, 10))
+                }
+                if (Array.isArray(meta.categories)) {
+                    tagsList.push(...meta.categories.slice(0, 10))
                 }
             } catch { }
         }
@@ -487,23 +492,33 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     `
 
     // --- Task 2: RECOMMENDATIONS ---
-    // Create explicit exclusion list for LLM
-    const excludedItemsList = Array.from(userRatedItemNames).slice(0, 30).join(', ')
+    // Create explicit exclusion list for LLM (increased limit)
+    const excludedItemsList = Array.from(userRatedItemNames).slice(0, 200).join(', ')
 
     // Get category name for category-specific rules
     const categoryName = (ratedItems[0]?.category as any)?.name?.toLowerCase() || ''
     const isTVShows = categoryName.includes('tv') || categoryName.includes('show')
+    const isAudiobooks = categoryName.includes('audiobook') || categoryName.includes('book')
 
     // Category-specific instructions
-    const categorySpecificRules = isTVShows
-        ? `
+    let categorySpecificRules = ''
+
+    if (isTVShows) {
+        categorySpecificRules = `
     TV SHOWS CATEGORY RULES:
     4. ONLY recommend COMPLETE SERIES - NEVER specific seasons like "True Detective (Season 1)", "Mindhunter (Season 2+)", "Fargo (Season 2)", etc.
     5. If a show has multiple seasons, recommend the SHOW NAME ONLY (e.g., "True Detective" not "True Detective (Season 1)").
     6. NEVER recommend anime series for TV Shows - anime belongs in a separate category.
     7. Focus on live-action Western TV series only.
         `
-        : ''
+    } else if (isAudiobooks) {
+        categorySpecificRules = `
+    AUDIOBOOKS/BOOKS CATEGORY RULES:
+    4. ONLY recommend Books or Audiobooks. match the user's format.
+    5. NEVER recommend Anime, TV Shows, or Movies.
+    6. Do not recommend "Adaptations" (e.g. don't recommend the Anime just because there is a Light Novel). Stick to the source material format.
+        `
+    }
 
     const recsPrompt = `
     Provide recommendations based on the user's taste.
@@ -520,9 +535,13 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     1. ⚠️ NEVER recommend items from the exclusion list above IN EITHER recommendations OR anti_recommendations - these are items the user has ALREADY RATED.
     2. STRICT CATEGORY ENFORCEMENT: 
        - If the category is "Video Games", ONLY recommend video games. DO NOT recommend Anime, Movies, or TV Shows.
-       - If the category is "Anime", ONLY recommend Anime.
-       - If the category is "Movies", ONLY recommend Movies.
-       - "Likely Misses" MUST also belong to the current category (${categoryName}). DO NOT introduce items from other mediums.
+       - If the category is "Anime", ONLY recommend Japanese Animation. DO NOT recommend Western cartoons or live-action TV.
+       - If the category is "TV Shows" or "TV Series", ONLY recommend Live-Action/Western TV. DO NOT recommend Anime.
+       - If the category is "Movies", ONLY recommend Movies. DO NOT recommend TV Series.
+       - If the category is "Audiobooks" or "Books", ONLY recommend Books/Audiobooks. DO NOT recommend Adaptations (Movies/TV).
+       - If the category is "Comics" or "Graphic Novels", ONLY recommend Western Comics. DO NOT recommend Manga.
+       - If the category is "Manga", ONLY recommend Japanese Manga. DO NOT recommend Western Comics.
+       - "Likely Misses" MUST also belong to the current category (${categoryName}) and follow these rules. DO NOT introduce items from other mediums.
     2. Provide 'matchScore' (0-100).
     3. Anti-Recommendations ("Likely Misses"):
        - MUST NOT include any items from the exclusion list above.

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ThumbsUp, AlertTriangle, Palette, BookOpen, Plus, Check, Compass, Sparkles } from "lucide-react"
+import { ThumbsUp, AlertTriangle, Palette, BookOpen, Plus, Check, Compass, Sparkles, Loader2 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import { Button } from "@/components/ui/button"
 import { BenchmarksContent } from "./BenchmarksContent"
@@ -20,81 +20,87 @@ export interface TasteReportContentProps {
 
 export function TasteReportContent({ data, categoryId, canEdit }: TasteReportContentProps) {
     const [isAdding, startTransition] = useTransition()
+    const [addingItemName, setAddingItemName] = useState<string | null>(null)
     const [addedItems, setAddedItems] = useState<Set<string>>(new Set())
 
     const handleAddItem = (rec: { name: string, reason: string, medium?: string }) => {
+        setAddingItemName(rec.name)
         startTransition(async () => {
-            // 1. Search provider for this recommendation
-            const { searchMediaAction } = await import('@/lib/actions/media')
-            const searchQuery = rec.name
-            const response = await searchMediaAction(searchQuery, rec.medium || 'anime', rec.medium || null, categoryId || '')
+            try {
+                // 1. Search provider for this recommendation
+                const { searchMediaAction } = await import('@/lib/actions/media')
+                const searchQuery = rec.name
+                const response = await searchMediaAction(searchQuery, rec.medium || 'anime', rec.medium || null, categoryId || '')
 
-            let image = ''
-            let metadata = ''
-            let description = rec.reason
-            let tagIds: string[] = []
+                let image = ''
+                let metadata = ''
+                let description = rec.reason
+                let tagIds: string[] = []
 
-            if (response.success && response.data.length > 0) {
-                const match = response.data[0]
-                image = match.imageUrl || ''
-                metadata = JSON.stringify({
-                    externalId: match.id,
-                    year: match.year,
-                    type: match.type
-                })
+                if (response.success && response.data.length > 0) {
+                    const match = response.data[0]
+                    image = match.imageUrl || ''
+                    metadata = JSON.stringify({
+                        externalId: match.id,
+                        year: match.year,
+                        type: match.type
+                    })
 
-                // 2. Download image locally in background
-                if (image && image.startsWith('http')) {
-                    const { downloadImageFromUrl } = await import('@/lib/actions/upload')
-                    const localUrl = await downloadImageFromUrl(image).catch(() => null)
-                    if (localUrl) image = localUrl
-                }
+                    // 2. Download image locally in background
+                    if (image && image.startsWith('http')) {
+                        const { downloadImageFromUrl } = await import('@/lib/actions/upload')
+                        const localUrl = await downloadImageFromUrl(image).catch(() => null)
+                        if (localUrl) image = localUrl
+                    }
 
-                // 3. Use provider tags (fast) or fall back to AI (slow)
-                const { generateDescriptionAction, generateTagsAction } = await import('@/lib/actions/ai')
-                const aiType = rec.medium || 'anime'
-                const providerDescription = match.description || ''
+                    // 3. Use provider tags (fast) or fall back to AI (slow)
+                    const { generateDescriptionAction, generateTagsAction } = await import('@/lib/actions/ai')
+                    const aiType = rec.medium || 'anime'
+                    const providerDescription = match.description || ''
 
-                // Start description generation
-                const descPromise = generateDescriptionAction({ title: match.title, type: aiType, context: providerDescription })
-                    .catch(() => ({ description: rec.reason }))
+                    // Start description generation
+                    const descPromise = generateDescriptionAction({ title: match.title, type: aiType, context: providerDescription })
+                        .catch(() => ({ description: rec.reason }))
 
-                // Use provider tags if available (fast path), otherwise AI (slow path)
-                if (match.tags && match.tags.length > 0) {
-                    // Fast path: use provider tags directly with batch create
-                    const { createTagsBatch } = await import('@/lib/actions/tags')
-                    const validTags = await createTagsBatch(match.tags.slice(0, 8))
-                    tagIds = validTags.map(t => t.id)
-                } else {
-                    // Slow path: generate with AI
-                    const tagsResult = await generateTagsAction({ title: match.title, type: aiType, description: providerDescription }).catch(() => ({ tags: [] }))
-                    if (tagsResult.tags) {
+                    // Use provider tags if available (fast path), otherwise AI (slow path)
+                    if (match.tags && match.tags.length > 0) {
+                        // Fast path: use provider tags directly with batch create
                         const { createTagsBatch } = await import('@/lib/actions/tags')
-                        const rawTags = Array.isArray(tagsResult.tags)
-                            ? tagsResult.tags
-                            : String(tagsResult.tags).split(',').map(t => t.trim())
-                        const validTags = await createTagsBatch(rawTags.slice(0, 8))
+                        const validTags = await createTagsBatch(match.tags.slice(0, 8))
                         tagIds = validTags.map(t => t.id)
+                    } else {
+                        // Slow path: generate with AI
+                        const tagsResult = await generateTagsAction({ title: match.title, type: aiType, description: providerDescription }).catch(() => ({ tags: [] }))
+                        if (tagsResult.tags) {
+                            const { createTagsBatch } = await import('@/lib/actions/tags')
+                            const rawTags = Array.isArray(tagsResult.tags)
+                                ? tagsResult.tags
+                                : String(tagsResult.tags).split(',').map(t => t.trim())
+                            const validTags = await createTagsBatch(rawTags.slice(0, 8))
+                            tagIds = validTags.map(t => t.id)
+                        }
+                    }
+
+                    // Wait for description
+                    const descResult = await descPromise
+                    if (descResult.description) {
+                        description = descResult.description
                     }
                 }
 
-                // Wait for description
-                const descResult = await descPromise
-                if (descResult.description) {
-                    description = descResult.description
-                }
+                // 4. Create the item with full metadata
+                await createItemInternal({
+                    name: rec.name,
+                    description,
+                    categoryId: categoryId || '',
+                    image,
+                    tags: tagIds,
+                    metadata
+                })
+                setAddedItems(prev => new Set(prev).add(rec.name))
+            } finally {
+                setAddingItemName(null)
             }
-
-            // 4. Create the item with full metadata
-            await createItemInternal({
-                name: rec.name,
-                description,
-                categoryId: categoryId || '',
-                image,
-                tags: tagIds,
-                metadata
-            })
-            setAddedItems(prev => new Set(prev).add(rec.name))
         })
     }
 
@@ -307,7 +313,7 @@ export function TasteReportContent({ data, categoryId, canEdit }: TasteReportCon
                                         variant="success"
                                         isAdded={addedItems.has(rec.name)}
                                         onAdd={categoryId && canEdit ? () => handleAddItem({ name: rec.name, reason: rec.reason, medium: rec.medium }) : undefined}
-                                        isAdding={isAdding}
+                                        isAdding={addingItemName === rec.name}
                                     />
                                 ))}
                             </div>
@@ -334,7 +340,7 @@ export function TasteReportContent({ data, categoryId, canEdit }: TasteReportCon
                                             variant="danger"
                                             isAdded={addedItems.has(rec.name)}
                                             onAdd={categoryId && canEdit ? () => handleAddItem({ name: rec.name, reason: rec.warning, medium: rec.medium }) : undefined}
-                                            isAdding={isAdding}
+                                            isAdding={addingItemName === rec.name}
                                         />
                                     ))}
                                 </div>
@@ -404,7 +410,13 @@ function RecommendationCard({ item, variant, isAdded, onAdd, isAdding }: Recomme
                             disabled={isAdding || isAdded}
                             onClick={onAdd}
                         >
-                            {isAdded ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                            {isAdding ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
+                            ) : isAdded ? (
+                                <Check className="w-4 h-4" />
+                            ) : (
+                                <Plus className="w-4 h-4" />
+                            )}
                         </Button>
                     )}
                 </div>

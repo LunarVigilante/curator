@@ -28,12 +28,14 @@ export function TournamentModal({
     isOpen,
     onOpenChange,
     items,
-    categoryId
+    categoryId,
+    categoryName
 }: {
     isOpen: boolean
     onOpenChange: (open: boolean) => void
     items: any[]
     categoryId: string
+    categoryName: string
 }) {
     const [challengers, setChallengers] = useState<ChallengerItem[]>([])
     const [isSaving, setIsSaving] = useState(false)
@@ -47,8 +49,13 @@ export function TournamentModal({
     // Auto-match items without global_item_id to external services
     useEffect(() => {
         if (isOpen && items.length > 0) {
-            // Find items that need matching (no global_item_id)
-            const itemsNeedingMatch = items.filter((i: any) => !i.global_item_id)
+            // Find items that need matching (no global_item_id) OR need update (no tags)
+            const itemsNeedingMatch = items.filter((i: any) => {
+                if (!i.global_item_id) return true;
+                const gItem = i.global_item;
+                const hasTags = gItem?.cached_tags && Array.isArray(gItem.cached_tags) && gItem.cached_tags.length > 0;
+                return !hasTags;
+            })
             if (itemsNeedingMatch.length > 0) {
                 autoMatchItemsToGlobal(
                     itemsNeedingMatch.map((i: any) => ({ id: i.id, name: i.name, global_item_id: i.global_item_id })),

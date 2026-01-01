@@ -188,13 +188,84 @@ async function upsertGlobalItem(data: {
 }) {
     const supabase = await createClient()
 
+    // 3. Extract tags from metadata for cached_tags logic (Reusable)
+    let cachedTags: string[] = []
+    let parsedMeta: any = null
+    if (data.metadata) {
+        try {
+            parsedMeta = JSON.parse(data.metadata)
+            if (Array.isArray(parsedMeta.genres)) cachedTags.push(...parsedMeta.genres)
+            if (Array.isArray(parsedMeta.tags)) cachedTags.push(...parsedMeta.tags.slice(0, 10))
+            if (Array.isArray(parsedMeta.categories)) cachedTags.push(...parsedMeta.categories)
+            cachedTags = [...new Set(cachedTags)]
+
+            // DEBUG LOGGING
+            console.log(`[upsertGlobalItem] Title: "${data.title}"`)
+            console.log(`[upsertGlobalItem] Metadata Keys: ${Object.keys(parsedMeta).join(', ')}`)
+            if (parsedMeta.categories) console.log(`[upsertGlobalItem] Categories: ${JSON.stringify(parsedMeta.categories)}`)
+            console.log(`[upsertGlobalItem] Extracted Cached Tags: ${JSON.stringify(cachedTags)}`)
+        } catch (e) {
+            console.error('[upsertGlobalItem] Metadata parse error:', e)
+        }
+    } else {
+        console.log(`[upsertGlobalItem] No metadata provided for "${data.title}"`)
+    }
+
+    // UPDATE HELPER: If we found an existing item, check if we can improve it
+    const updateExisting = async (existing: any) => {
+        const updates: any = {}
+        let hasUpdates = false
+
+        // Update external_id if missing
+        if (!existing.external_id && data.externalId) {
+            updates.external_id = data.externalId
+            hasUpdates = true
+        }
+
+        // Update description if missing and present in new data
+        if (!existing.description && data.description) {
+            updates.description = data.description
+            hasUpdates = true
+        }
+
+        // Update cached_tags if missing
+        if ((!existing.cached_tags || existing.cached_tags.length === 0) && cachedTags.length > 0) {
+            updates.cached_tags = cachedTags
+            hasUpdates = true
+        }
+
+        // Update metadata if missing or we have more info (simple check)
+        if (!existing.metadata && parsedMeta) {
+            updates.metadata = parsedMeta
+            hasUpdates = true
+        }
+
+        // Update Image URL if missing
+        if (!existing.image_url && data.imageUrl) {
+            updates.image_url = data.imageUrl
+            hasUpdates = true
+        }
+
+        if (hasUpdates) {
+            console.log(`[upsertGlobalItem] Enhancing existing item "${existing.title}" with new data`)
+            const { data: updated, error } = await (supabase.from('global_items') as any)
+                .update(updates)
+                .eq('id', existing.id)
+                .select()
+                .single()
+
+            if (!error && updated) return updated
+        }
+        return existing
+    }
+
     // 1. Check for existing GlobalItem by externalId
     if (data.externalId) {
         const { data: existing } = await (supabase.from('global_items') as any)
             .select('*')
             .eq('external_id', data.externalId)
             .single()
-        if (existing) return existing
+        if (existing) return await updateExisting(existing)
     }
 
     // 2. Check for existing GlobalItem by exact title + image as fallback
@@ -203,26 +274,7 @@ async function upsertGlobalItem(data: {
         .eq('title', data.title)
         .eq('image_url', data.imageUrl || '')
         .single()
-    if (existingByTitle) return existingByTitle
-
-    // 3. Extract tags from metadata for cached_tags
-    let cachedTags: string[] = []
-    let parsedMeta: any = null
-    if (data.metadata) {
-        try {
-            parsedMeta = JSON.parse(data.metadata)
-            // Extract genres (priority)
-            if (Array.isArray(parsedMeta.genres)) {
-                cachedTags.push(...parsedMeta.genres)
-            }
-            // Extract tags (limit to high-relevance)
-            if (Array.isArray(parsedMeta.tags)) {
-                cachedTags.push(...parsedMeta.tags.slice(0, 10))
-            }
-            // Deduplicate
-            cachedTags = [...new Set(cachedTags)]
-        } catch { }
-    }
+    if (existingByTitle) return await updateExisting(existingByTitle)
 
     // 4. Create new GlobalItem with cached_tags populated
     const { data: newItem, error } = await (supabase.from('global_items') as any)
@@ -563,11 +615,12 @@ export async function autoMatchItemsToGlobal(
     const category = await getCategory(categoryId)
     if (!category) return results
 
-    // Filter items that need matching
-    const itemsToMatch = items.filter(i => !i.global_item_id)
+    // Filter items that need matching (either no global_item_id OR explicitly requested)
+    // We trust the caller to pass only items that need processing
+    const itemsToMatch = items
     if (itemsToMatch.length === 0) return results
 
-    console.log(`[AutoMatch] Matching ${itemsToMatch.length} items for category "${category.name}"`)
+    console.log(`[AutoMatch] Matching/Updating ${itemsToMatch.length} items for category "${category.name}"`)
 
     // Process items in batches to avoid rate limits
     for (const item of itemsToMatch) {

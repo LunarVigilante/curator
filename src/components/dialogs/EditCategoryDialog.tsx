@@ -146,6 +146,7 @@ export default function EditCategoryDialog({
                                 <option value="music_album">Music (Album)</option>
                                 <option value="game">Games</option>
                                 <option value="book">Books</option>
+                                <option value="audiobook">Audiobooks</option>
                                 <option value="podcast">Podcasts</option>
                                 <option value="board_game">Board Games</option>
                                 <option value="comic">Comics</option>

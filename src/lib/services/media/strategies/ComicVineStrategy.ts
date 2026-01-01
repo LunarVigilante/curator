@@ -206,7 +206,12 @@ export class ComicVineStrategy implements MediaStrategy {
                 if (year) descParts.push(`(${year})`);
 
                 // Get image URL (original_url for high-res)
-                const imageUrl = item.image?.original_url || item.image?.medium_url || item.image?.small_url || null;
+                let imageUrl = item.image?.original_url || item.image?.medium_url || item.image?.small_url || null;
+
+                // Append API key to image URL to avoid 403s and allow access
+                if (imageUrl && apiKey) {
+                    imageUrl = `${imageUrl}?api_key=${apiKey}`;
+                }
 
                 // Build tags from characters and concepts
                 const tags = [

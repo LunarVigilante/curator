@@ -94,11 +94,21 @@ export async function downloadImageFromUrl(url: string, folder = 'covers'): Prom
 
         console.log(`[downloadImageFromUrl] Downloading: ${url}`)
 
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        })
+        const isComicVine = url.includes('comicvine.gamespot.com')
+        const userAgent = isComicVine
+            ? 'Curator/1.0 (Personal Collection Manager)'
+            : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+        const headers: HeadersInit = {
+            'User-Agent': userAgent
+        }
+
+        if (isComicVine) {
+            headers['Referer'] = 'https://comicvine.gamespot.com/'
+            headers['Accept'] = 'image/webp,image/apng,image/*,*/*;q=0.8'
+        }
+
+        const response = await fetch(url, { headers })
 
         if (!response.ok) {
             throw new Error(`Failed to fetch image: ${response.statusText}`)

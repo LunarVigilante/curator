@@ -334,6 +334,7 @@ function getFilterTypeFromLabel(label: string): string {
         case 'books': return 'book'
         case 'music': return 'music'
         case 'podcasts': return 'podcast'
+        case 'audiobooks': return 'audiobook'
         case 'board games': return 'board_game'
         case 'comics': return 'comic'
         default: return label.toLowerCase().replace(' ', '_')

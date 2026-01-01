@@ -484,6 +484,7 @@ export default function AddItemDialog({
                                             alt="Preview"
                                             fill
                                             className="object-cover"
+                                            unoptimized={formData.image.startsWith('https://placehold.co')}
                                             onError={() => setFormData({ ...formData, image: 'https://placehold.co/200x300?text=Invalid+Image' })}
                                         />
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
