@@ -139,7 +139,23 @@ export class MediaService {
 
         console.log(`[MediaService] Using strategy: ${strategy.name} for category: "${categoryName}"${type ? ` (type: ${type})` : ''}`);
 
-        return await strategy.search(query, settings, type);
+        let results = await strategy.search(query, settings, type);
+
+        // Fallback: If Google Books returns no results, try Spotify Audiobooks
+        // User Request: "Audiobooks are missing many titles. can we use Spotify as a fallback for Google Books?"
+        if (strategy instanceof GoogleBooksStrategy && (results.data.length === 0 || !results.success)) {
+            console.log('[MediaService] Google Books found no results. Falling back to Spotify Audiobooks...');
+            const spotifyStrategy = this.strategyRegistry.get('audiobook'); // Maps to SpotifyAudiobooksStrategy
+            if (spotifyStrategy) {
+                const spotifyResults = await spotifyStrategy.search(query, settings, type);
+                if (spotifyResults.success && spotifyResults.data.length > 0) {
+                    console.log(`[MediaService] Spotify fallback found ${spotifyResults.data.length} results.`);
+                    return spotifyResults;
+                }
+            }
+        }
+
+        return results;
     }
 
     /**
