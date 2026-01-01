@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
@@ -46,17 +46,25 @@ export function TournamentModal({
     const [discoveryMode, setDiscoveryMode] = useState(true)
     const [matchLength, setMatchLength] = useState<number | 'endless'>(30)
 
+    const processedIds = useRef<Set<string>>(new Set())
+
     // Auto-match items without global_item_id to external services
     useEffect(() => {
         if (isOpen && items.length > 0) {
             // Find items that need matching (no global_item_id) OR need update (no tags)
             const itemsNeedingMatch = items.filter((i: any) => {
+                if (processedIds.current.has(i.id)) return false
+
                 if (!i.global_item_id) return true;
                 const gItem = i.global_item;
                 const hasTags = gItem?.cached_tags && Array.isArray(gItem.cached_tags) && gItem.cached_tags.length > 0;
                 return !hasTags;
             })
+
             if (itemsNeedingMatch.length > 0) {
+                // Mark as processed immediately to prevent double-firing
+                itemsNeedingMatch.forEach((i: any) => processedIds.current.add(i.id))
+
                 autoMatchItemsToGlobal(
                     itemsNeedingMatch.map((i: any) => ({ id: i.id, name: i.name, global_item_id: i.global_item_id })),
                     categoryId
@@ -65,10 +73,13 @@ export function TournamentModal({
                         setMatchedData(new Map(results))
                         toast.success(`Auto-matched ${results.size} items to metadata`)
                     }
-                }).catch(err => console.error('[AutoMatch] Error:', err))
+                }).catch(err => {
+                    console.error('[AutoMatch] Error:', err)
+                    // On error, remove from processed so we can try again later? Or better to fail silently to avoid loops.
+                })
             }
         }
-    }, [isOpen, categoryId]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isOpen, categoryId, items]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
     // Helper to strip year suffix from names like "The Fountain (2006)"

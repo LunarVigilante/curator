@@ -105,7 +105,17 @@ export async function downloadImageFromUrl(url: string, folder = 'covers'): Prom
 
         if (isComicVine) {
             headers['Referer'] = 'https://comicvine.gamespot.com/'
-            headers['Accept'] = 'image/webp,image/apng,image/*,*/*;q=0.8'
+            headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
+            headers['Accept-Language'] = 'en-US,en;q=0.9'
+            headers['Cache-Control'] = 'max-age=0'
+            headers['Sec-Ch-Ua'] = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
+            headers['Sec-Ch-Ua-Mobile'] = '?0'
+            headers['Sec-Ch-Ua-Platform'] = '"Windows"'
+            headers['Sec-Fetch-Dest'] = 'document'
+            headers['Sec-Fetch-Mode'] = 'navigate'
+            headers['Sec-Fetch-Site'] = 'none'
+            headers['Sec-Fetch-User'] = '?1'
+            headers['Upgrade-Insecure-Requests'] = '1'
         }
 
         const response = await fetch(url, { headers })
