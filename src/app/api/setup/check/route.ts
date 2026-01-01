@@ -1,34 +1,32 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 
 export async function GET() {
     try {
-        const supabase = await createClient()
+        // Use service role client to bypass RLS for setup check
+        const supabase = createServiceRoleClient()
 
-        // Try using an RPC function first (if it exists)
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_profile_count')
-
-        if (!rpcError && rpcData !== null) {
-            const setupRequired = rpcData === 0
-            return NextResponse.json({ setupRequired })
-        }
-
-        // Fallback: count profiles (may return 0 if RLS blocks)
         const { count, error } = await supabase
             .from('profiles')
             .select('*', { count: 'exact', head: true })
 
-        // If we get an error or null count, check auth.users as a backup
-        if (error || count === null) {
-            // If profiles query fails, assume setup is done (to avoid loop)
-            return NextResponse.json({ setupRequired: false })
+        if (error) {
+            console.error('Setup check query error:', error)
+            return NextResponse.json({ setupRequired: false, error: error.message })
         }
 
-        const setupRequired = count === 0
+        const setupRequired = (count ?? 0) === 0
+        console.log('Setup check: profiles count =', count, ', setupRequired =', setupRequired)
 
         return NextResponse.json({ setupRequired })
-    } catch {
-        // On any error, assume setup is not required to avoid blocking users
-        return NextResponse.json({ setupRequired: false })
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error'
+        console.error('Setup check error:', message)
+
+        // If service role key is missing, skip setup (user can configure manually)
+        if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+            return NextResponse.json({ setupRequired: false, error: 'Service role key not configured' })
+        }
+        return NextResponse.json({ setupRequired: false, error: 'Check failed' })
     }
 }

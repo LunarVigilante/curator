@@ -14,10 +14,20 @@ export default async function middleware(request: NextRequest) {
     let response = NextResponse.next({ request })
     const pathname = request.nextUrl.pathname
 
+    // Check for required environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+        // Skip middleware if Supabase is not configured
+        console.warn('Supabase environment variables not configured. Skipping middleware.')
+        return response
+    }
+
     // Create Supabase client for middleware
     const supabase = createServerClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+        supabaseUrl,
+        supabaseAnonKey,
         {
             cookies: {
                 getAll() {

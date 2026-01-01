@@ -29,6 +29,7 @@ CREATE TABLE profiles (
     profile_views INTEGER DEFAULT 0,
     preferences JSONB,
     role user_role DEFAULT 'USER',
+    email_verified BOOLEAN DEFAULT FALSE,
     is_locked_out BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -337,6 +338,7 @@ CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
 
 -- ============================================================================
 -- AUTH SYNC TRIGGER (Creates profile when user signs up)
+-- Syncs role and email_verified from user metadata, handles conflicts
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -345,14 +347,34 @@ LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
 BEGIN
-    INSERT INTO public.profiles (id, email, name, created_at, updated_at)
+    INSERT INTO public.profiles (
+        id, 
+        email, 
+        name, 
+        role,
+        email_verified,
+        created_at, 
+        updated_at
+    )
     VALUES (
         NEW.id,
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+        COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'USER'),
+        COALESCE((NEW.raw_user_meta_data->>'email_verified')::boolean, false),
         NOW(),
         NOW()
-    );
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        name = COALESCE(EXCLUDED.name, profiles.name),
+        role = CASE 
+            WHEN EXCLUDED.role = 'ADMIN' THEN 'ADMIN'::user_role 
+            ELSE profiles.role 
+        END,
+        email_verified = COALESCE(EXCLUDED.email_verified, profiles.email_verified),
+        updated_at = NOW();
+    
     RETURN NEW;
 END;
 $$;
@@ -372,9 +394,10 @@ ALTER TABLE items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
 
--- Profiles: Own profile + public profiles
+-- Profiles: Own profile + public profiles + service role
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Public profiles are viewable" ON profiles FOR SELECT USING (is_public = true);
+CREATE POLICY "Service role can read profiles" ON profiles FOR SELECT USING (true);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
 
 -- Categories: Own + public + featured

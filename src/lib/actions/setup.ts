@@ -1,20 +1,31 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { seedDefaultCategories } from './categories'
 
 /**
  * Check if the application needs initial setup (no users exist).
+ * Uses service role to bypass RLS.
  */
 export async function isSetupRequired(): Promise<boolean> {
-    const supabase = await createClient()
+    try {
+        const supabase = createServiceRoleClient()
 
-    const { count, error } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
+        const { count, error } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
 
-    if (error) return true
-    return count === 0
+        if (error) {
+            console.error('isSetupRequired query error:', error)
+            return false
+        }
+
+        return count === 0
+    } catch (error) {
+        console.error('isSetupRequired error:', error)
+        return false
+    }
 }
 
 /**
