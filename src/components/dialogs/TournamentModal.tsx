@@ -247,6 +247,16 @@ function TournamentGame({
 
     const [itemA, itemB] = currentPair
 
+    // Keyboard support for voting
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowLeft') handleVote(itemA.id)
+            if (e.key === 'ArrowRight') handleVote(itemB.id)
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [itemA, itemB]) // eslint-disable-line react-hooks/exhaustive-deps
+
     return (
         <DialogContent className="max-w-[90vw] h-[80vh] p-0 gap-0 bg-black border-none overflow-hidden flex flex-col">
             <DialogTitle className="sr-only">Tournament Match</DialogTitle>

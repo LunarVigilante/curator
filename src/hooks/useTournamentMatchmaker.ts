@@ -49,7 +49,15 @@ export function useTournamentMatchmaker(
         // Only run if discoveryMode is ON
         if (settings.discoveryMode) {
             const activeChallengers = challengers.filter(c => !ignoredIds.has(c.id))
-            const isDiscoveryRound = activeChallengers.length > 0 && Math.random() < 0.20 // 20% chance
+            // Discovery Probability:
+            // Base: 20%
+            // Boost: Up to 50% more if collection is small (< 50 items)
+            // Formula: 0.2 + (0.5 * (1 - (pool.length / 50))) clamped to [0.2, 0.7]
+            const adaptiveChance = pool.length < 50
+                ? 0.2 + (0.5 * (1 - (pool.length / 50)))
+                : 0.2
+
+            const isDiscoveryRound = activeChallengers.length > 0 && Math.random() < adaptiveChance
 
             if (isDiscoveryRound) {
                 const userItem = pool[Math.floor(Math.random() * pool.length)]
