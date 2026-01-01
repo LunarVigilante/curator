@@ -10,41 +10,59 @@ export type ChallengerItem = {
     origin: 'TMDB' | 'RAWG' | 'GOOGLE_BOOKS' | 'LASTFM' | 'OTHER'
 }
 
-export async function fetchChallengers(categoryName: string, existingItemNames: string[]): Promise<ChallengerItem[]> {
+import { searchMediaAction } from './media'
+
+export async function fetchChallengers(categoryName: string, existingItemNames: string[], categoryId: string): Promise<ChallengerItem[]> {
     // Determine domain based on category name (simple heuristic)
     let domain = 'General'
     if (/movie|film|cinema/i.test(categoryName)) domain = 'Movies'
     if (/game/i.test(categoryName)) domain = 'Video Games'
     if (/book|read/i.test(categoryName)) domain = 'Books'
     if (/music|song|album/i.test(categoryName)) domain = 'Music'
+    if (/anime|manga/i.test(categoryName)) domain = 'Anime'
 
     try {
         const prompt = `
-            Suggest 5 "Hidden Gem" or "Critically Acclaimed" items for the category: "${categoryName}" (${domain}).
+            Suggest 3 "Hidden Gem" or "Critically Acclaimed" items for the category: "${categoryName}" (${domain}).
             
             Constraint: Do NOT suggest any of these items (User already has them):
             ${existingItemNames.slice(0, 50).join(', ')}
 
             Return ONLY a JSON array of objects with:
             - name: string
-            - description: string (very brief, 10-15 words)
             - year: string
             
-            Example: [{"name": "The Godfather", "description": "Mafia masterpiece...", "year": "1972"}]
+            Example: [{"name": "The Godfather", "year": "1972"}]
         `
 
         const response = await callLLMWithConfig(prompt)
         const cleaned = cleanLLMResponse(response)
         const suggestions = JSON.parse(cleaned)
 
-        // Transform into ChallengerItems
-        return suggestions.map((s: any, index: number) => ({
-            id: `challenger-${Date.now()}-${index}`,
-            name: `${s.name} (${s.year || 'Unknown'})`,
-            description: s.description,
-            image: null, // We'd need a real search API to get images. For now, use placeholder.
-            origin: 'OTHER'
+        // Resolve metadata for suggestions in parallel
+        const validChallengers: ChallengerItem[] = []
+
+        await Promise.all(suggestions.map(async (s: any) => {
+            try {
+                // Search for the item to get real metadata (image, description, ID)
+                const searchResults = await searchMediaAction(s.name, categoryName, null, categoryId)
+
+                if (searchResults.success && searchResults.data && searchResults.data.length > 0) {
+                    const match = searchResults.data[0]
+                    validChallengers.push({
+                        id: match.id,
+                        name: match.title, // Use official title
+                        image: match.imageUrl || null,
+                        description: match.description || '',
+                        origin: 'TMDB' // Generic origin, could be refined
+                    })
+                }
+            } catch (err) {
+                console.error(`Failed to resolve metadata for challenger: ${s.name}`, err)
+            }
         }))
+
+        return validChallengers
 
     } catch (error) {
         console.error('Failed to fetch challengers:', error)

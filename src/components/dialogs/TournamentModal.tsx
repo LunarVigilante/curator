@@ -94,6 +94,15 @@ export function TournamentModal({
     // The previous logic handled "tournamentItems" being empty inside the hook, causing the error.
     // Now we conditionally render the game ONLY when we have enough items.
 
+    // Fetch challengers on mount (now with categoryId for better metadata resolution)
+    useEffect(() => {
+        if (isOpen && challengers.length === 0 && items.length > 0) {
+            fetchChallengers(categoryName, items.map(i => i.name), categoryId)
+                .then(setChallengers)
+                .catch(err => console.error(err))
+        }
+    }, [isOpen, categoryName, items, challengers.length, categoryId])
+
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             {tournamentItems.length >= 2 ? (
