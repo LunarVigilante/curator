@@ -12,6 +12,7 @@ import Image from 'next/image'
 import { toast } from 'sonner'
 import { updateItemScores, addChallengerItem, ignoreItem, submitMatchActivity } from '@/lib/actions/items'
 import { fetchChallengers, ChallengerItem } from '@/lib/actions/discovery'
+import { assignTiersFromElo } from '@/lib/actions/tiers'
 
 type TournamentItem = {
     id: string
@@ -59,7 +60,7 @@ export function TournamentModal({
         }
     }, [isOpen, categoryId, items, challengers.length])
 
-    const { currentPair, vote, skip, ignore, eloScores, roundCount } = useTournamentMatchmaker(
+    const { currentPair, vote, skip, ignore, eloScores, roundCount, isComplete } = useTournamentMatchmaker(
         tournamentItems,
         challengers,
         { discoveryMode, matchLength }
@@ -101,17 +102,59 @@ export function TournamentModal({
         setIsSaving(true)
         try {
             const updates = Array.from(eloScores.entries()).map(([id, elo]) => ({ id, elo }))
-            await updateItemScores(updates)
-            toast.success(`Tournament Complete! ${updates.length} ratings updated.`)
+
+            // Assign tiers based on ELO scores
+            const result = await assignTiersFromElo(updates, categoryId)
+
+            toast.success(`Tournament Complete! ${result.updated} items ranked into tiers S-F.`)
             onOpenChange(false)
-        } catch {
+        } catch (err) {
+            console.error('Tournament save error:', err)
             toast.error("Failed to save tournament results.")
         } finally {
             setIsSaving(false)
         }
     }
 
-    if (!currentPair) return null
+    // Show completion screen when tournament is done
+    if (isComplete || !currentPair) {
+        return (
+            <Dialog open={isOpen} onOpenChange={onOpenChange}>
+                <DialogContent className="max-w-md bg-black border-white/10">
+                    <DialogTitle className="sr-only">Tournament Complete</DialogTitle>
+                    <div className="p-8 text-center space-y-6">
+                        <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-yellow-500 to-amber-600 flex items-center justify-center">
+                            <Trophy className="w-10 h-10 text-white" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-white mb-2">Tournament Complete!</h2>
+                            <p className="text-zinc-400">You completed {roundCount} rounds.</p>
+                        </div>
+                        <p className="text-sm text-zinc-500">
+                            Click below to save your results and assign tiers (S-F) to all items based on their final ELO scores.
+                        </p>
+                        <Button
+                            onClick={handleEndTournament}
+                            disabled={isSaving}
+                            className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-bold"
+                        >
+                            {isSaving ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Saving & Assigning Tiers...
+                                </>
+                            ) : (
+                                <>
+                                    <Check className="w-4 h-4 mr-2" />
+                                    Save Results & Assign Tiers
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        )
+    }
     const [itemA, itemB] = currentPair
 
     return (

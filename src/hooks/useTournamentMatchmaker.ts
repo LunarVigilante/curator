@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { calculateElo } from '@/lib/elo'
 import { ChallengerItem } from '@/lib/actions/discovery'
 
@@ -24,11 +24,22 @@ export function useTournamentMatchmaker(
     const [roundCount, setRoundCount] = useState(0)
     const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set())
 
+    // Check if tournament is complete
+    const isComplete = useMemo(() => {
+        if (settings.matchLength === 'endless') return false
+        return roundCount >= settings.matchLength
+    }, [roundCount, settings.matchLength])
+
     // Helper to get current score
     const getScore = useCallback((id: string) => eloScores.get(id) || 1200, [eloScores])
 
     // Generate a new pair
-    const generatePair = useCallback(() => {
+    const generatePair = useCallback((): [TournamentItem, TournamentItem] | null => {
+        // If match limit reached, return null
+        if (settings.matchLength !== 'endless' && roundCount >= settings.matchLength) {
+            return null
+        }
+
         // Filter out ignored items
         const activeItems = initialItems.filter(i => !ignoredIds.has(i.id))
 
@@ -106,7 +117,7 @@ export function useTournamentMatchmaker(
 
         return [itemA, itemB] as [TournamentItem, TournamentItem]
 
-    }, [initialItems, challengers, getScore, ignoredIds, settings])
+    }, [initialItems, challengers, getScore, ignoredIds, settings, roundCount])
 
     // Initialize current pair lazily
     const [currentPair, setCurrentPair] = useState<[TournamentItem, TournamentItem] | null>(() => {
@@ -148,8 +159,15 @@ export function useTournamentMatchmaker(
         newMap.set(loser.id, newLoserScore)
         setEloScores(newMap)
 
-        setRoundCount(prev => prev + 1)
-        setCurrentPair(generatePair())
+        const newRoundCount = roundCount + 1
+        setRoundCount(newRoundCount)
+
+        // Check if we've reached the match limit
+        if (settings.matchLength !== 'endless' && newRoundCount >= settings.matchLength) {
+            setCurrentPair(null) // Stop generating pairs
+        } else {
+            setCurrentPair(generatePair())
+        }
 
         return { winner, loser, newWinnerScore, newLoserScore }
     }
@@ -176,6 +194,7 @@ export function useTournamentMatchmaker(
         skip,
         ignore,
         eloScores,
-        roundCount
+        roundCount,
+        isComplete
     }
 }
