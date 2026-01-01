@@ -83,7 +83,7 @@ serve(async (req) => {
         const basePath = record.name.replace(/\.[^.]+$/, '') // Remove extension
         const results: Record<string, boolean> = {}
 
-        for (const [sizeName, width] of Object.entries(SIZES)) {
+        for (const [sizeName, _width] of Object.entries(SIZES)) {
             const variantPath = `${basePath}_${sizeName}.webp`
 
             try {

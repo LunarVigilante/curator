@@ -90,17 +90,69 @@ export function TournamentModal({
             })
     }, [items, matchedData])
 
-    // Fetch challengers on mount
-    useEffect(() => {
-        if (isOpen && challengers.length === 0) {
-            fetchChallengers(categoryId, items.map(i => i.name))
-                .then(setChallengers)
-                .catch(err => console.error(err))
-        }
-    }, [isOpen, categoryId, items, challengers.length])
+    // If no items, show empty state or loading (managed by parent or this dialog showing different content)
+    // The previous logic handled "tournamentItems" being empty inside the hook, causing the error.
+    // Now we conditionally render the game ONLY when we have enough items.
 
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            {tournamentItems.length >= 2 ? (
+                <TournamentGame
+                    items={tournamentItems}
+                    challengers={challengers}
+                    categoryId={categoryId}
+                    onComplete={onOpenChange}
+                    discoveryMode={discoveryMode}
+                    matchLength={matchLength}
+                    onSettingsChange={(d, m) => { setDiscoveryMode(d); setMatchLength(m); }}
+                />
+            ) : (
+                <DialogContent className="max-w-md bg-black border-white/10">
+                    <DialogTitle className="sr-only">Not Enough Items</DialogTitle>
+                    <div className="p-8 text-center space-y-6">
+                        <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center">
+                            <Trophy className="w-10 h-10 text-white" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-white mb-2">Not Enough Items</h2>
+                            <p className="text-zinc-400">You need at least 2 items in this category to start a tournament.</p>
+                        </div>
+                        <Button
+                            onClick={() => onOpenChange(false)}
+                            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white"
+                        >
+                            Close
+                        </Button>
+                    </div>
+                </DialogContent>
+            )}
+        </Dialog>
+    )
+}
+
+function TournamentGame({
+    items,
+    challengers,
+    categoryId,
+    onComplete,
+    discoveryMode,
+    matchLength,
+    onSettingsChange
+}: {
+    items: TournamentItem[],
+    challengers: ChallengerItem[],
+    categoryId: string,
+    onComplete: (open: boolean) => void,
+    discoveryMode: boolean,
+    matchLength: number | 'endless',
+    onSettingsChange: (discovery: boolean, match: number | 'endless') => void
+}) {
+    const [isSaving, setIsSaving] = useState(false)
+    const [settingsOpen, setSettingsOpen] = useState(false)
+
+    // Hook called here - guaranteed to have items >= 2
     const { currentPair, vote, skip, ignore, eloScores, roundCount, isComplete } = useTournamentMatchmaker(
-        tournamentItems,
+        items,
         challengers,
         { discoveryMode, matchLength }
     )
@@ -146,7 +198,7 @@ export function TournamentModal({
             const result = await assignTiersFromElo(updates, categoryId)
 
             toast.success(`Tournament Complete! ${result.updated} items ranked into tiers S-F.`)
-            onOpenChange(false)
+            onComplete(false)
         } catch (err) {
             console.error('Tournament save error:', err)
             toast.error("Failed to save tournament results.")
@@ -156,229 +208,185 @@ export function TournamentModal({
     }
 
     // Show completion screen when tournament is done
-    // But distinguish between "not enough items" vs "actually completed rounds"
     if (isComplete || !currentPair) {
-        // If no rounds were completed but we're showing this screen,
-        // it means we couldn't generate pairs (not enough items)
-        const isNoItemsAvailable = roundCount === 0 && !currentPair
-
         return (
-            <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="max-w-md bg-black border-white/10">
-                    <DialogTitle className="sr-only">Tournament {isNoItemsAvailable ? 'Error' : 'Complete'}</DialogTitle>
-                    <div className="p-8 text-center space-y-6">
-                        <div className={`mx-auto w-20 h-20 rounded-full flex items-center justify-center ${isNoItemsAvailable
-                            ? 'bg-gradient-to-br from-red-500 to-red-700'
-                            : 'bg-gradient-to-br from-yellow-500 to-amber-600'
-                            }`}>
-                            <Trophy className="w-10 h-10 text-white" />
-                        </div>
-                        <div>
-                            <h2 className="text-2xl font-bold text-white mb-2">
-                                {isNoItemsAvailable ? 'Not Enough Items' : 'Tournament Complete!'}
-                            </h2>
-                            <p className="text-zinc-400">
-                                {isNoItemsAvailable
-                                    ? 'You need at least 2 items in this category to start a tournament.'
-                                    : `You completed ${roundCount} rounds.`}
-                            </p>
-                        </div>
-                        {isNoItemsAvailable ? (
-                            <Button
-                                onClick={() => onOpenChange(false)}
-                                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white"
-                            >
-                                Close
-                            </Button>
+            <DialogContent className="max-w-md bg-black border-white/10">
+                <DialogTitle className="sr-only">Tournament Complete</DialogTitle>
+                <div className="p-8 text-center space-y-6">
+                    <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-yellow-500 to-amber-600 flex items-center justify-center">
+                        <Trophy className="w-10 h-10 text-white" />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-2">Tournament Complete!</h2>
+                        <p className="text-zinc-400">You completed {roundCount} rounds.</p>
+                    </div>
+                    <p className="text-sm text-zinc-500">
+                        Click below to save your results and assign tiers (S-F) to all items based on their final ELO scores.
+                    </p>
+                    <Button
+                        onClick={handleEndTournament}
+                        disabled={isSaving}
+                        className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-bold"
+                    >
+                        {isSaving ? (
+                            <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Saving & Assigning Tiers...
+                            </>
                         ) : (
                             <>
-                                <p className="text-sm text-zinc-500">
-                                    Click below to save your results and assign tiers (S-F) to all items based on their final ELO scores.
-                                </p>
-                                <Button
-                                    onClick={handleEndTournament}
-                                    disabled={isSaving}
-                                    className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-black font-bold"
-                                >
-                                    {isSaving ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                            Saving & Assigning Tiers...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Check className="w-4 h-4 mr-2" />
-                                            Save Results & Assign Tiers
-                                        </>
-                                    )}
-                                </Button>
+                                <Check className="w-4 h-4 mr-2" />
+                                Save Results & Assign Tiers
                             </>
                         )}
-                    </div>
-                </DialogContent>
-            </Dialog>
+                    </Button>
+                </div>
+            </DialogContent>
         )
     }
+
     const [itemA, itemB] = currentPair
 
     return (
-        <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-[90vw] h-[80vh] p-0 gap-0 bg-black border-none overflow-hidden flex flex-col">
-                <DialogTitle className="sr-only">Tournament Match</DialogTitle>
-
-                {/* Header */}
-                <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50 pointer-events-none">
-                    {/* Top Left: End/Save */}
-                    <div className="pointer-events-auto">
-                        <Button
-                            onClick={handleEndTournament}
-                            disabled={isSaving}
-                            variant="ghost"
-                            className="text-zinc-400 hover:text-white"
-                        >
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="w-4 h-4 mr-2" />
-                                    End Session
-                                </>
-                            )}
-                        </Button>
-                    </div>
-
-                    {/* Top Right: Settings & Round Info */}
-                    <div className="flex items-center gap-4 pointer-events-auto">
-                        <div className="flex items-center gap-2 text-zinc-500 font-mono text-sm tracking-widest bg-black/50 px-3 py-1 rounded-full border border-white/10 backdrop-blur">
-                            <Trophy className="w-3 h-3 text-yellow-500" />
-                            <span>ROUND {roundCount + 1}</span>
-                            {matchLength !== 'endless' && <span className="text-zinc-700">/ {matchLength}</span>}
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-zinc-400 hover:text-white"
-                            onClick={() => setSettingsOpen(true)}
-                        >
-                            <Settings className="w-5 h-5" />
-                        </Button>
-                    </div>
+        <DialogContent className="max-w-[90vw] h-[80vh] p-0 gap-0 bg-black border-none overflow-hidden flex flex-col">
+            <DialogTitle className="sr-only">Tournament Match</DialogTitle>
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50 pointer-events-none">
+                {/* Top Left: End/Save */}
+                <div className="pointer-events-auto">
+                    <Button
+                        onClick={handleEndTournament}
+                        disabled={isSaving}
+                        variant="ghost"
+                        className="text-zinc-400 hover:text-white"
+                    >
+                        {isSaving ? (
+                            <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Saving...
+                            </>
+                        ) : (
+                            <>
+                                <Save className="w-4 h-4 mr-2" />
+                                End Session
+                            </>
+                        )}
+                    </Button>
                 </div>
 
-                {/* Settings Modal (Nested Dialog) */}
-                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                    <DialogContent className="bg-zinc-950 border-white/10 sm:max-w-md">
-                        <DialogTitle className="text-white">Tournament Settings</DialogTitle>
-
-                        <div className="space-y-6 pt-4">
-                            {/* Discovery Mode */}
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                    <h4 className="text-sm font-medium text-white">Discovery Mode</h4>
-                                    <p className="text-xs text-zinc-500">Show me new movies I haven&apos;t ranked yet.</p>
-                                </div>
-                                <Switch checked={discoveryMode} onCheckedChange={setDiscoveryMode} />
-                            </div>
-
-                            {/* Session Length */}
-                            <div className="space-y-3">
-                                <h4 className="text-sm font-medium text-white">Session Length</h4>
-                                <div className="flex gap-2">
-                                    {[10, 30, 50].map(len => (
-                                        <Button
-                                            key={len}
-                                            variant={matchLength === len ? "secondary" : "outline"}
-                                            onClick={() => setMatchLength(len as number)}
-                                            className="flex-1 h-10 border-white/10"
-                                        >
-                                            {len}
-                                        </Button>
-                                    ))}
-                                    <Button
-                                        variant={matchLength === 'endless' ? "secondary" : "outline"}
-                                        onClick={() => setMatchLength('endless')}
-                                        className="flex-1 h-10 border-white/10 font-serif italic"
-                                    >
-                                        ∞
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Pro Tip */}
-                            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex gap-3 items-start">
-                                <Info className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-                                <p className="text-xs text-blue-200">
-                                    <span className="font-bold text-blue-400">Pro Tip: </span>
-                                    {matchLength === 'endless' && "Endless mode is great for casual browsing, but set a limit for accurate rankings."}
-                                    {typeof matchLength === 'number' && matchLength < 20 && "Quick sessions focus on high-impact pairings to fix your top tiers fast."}
-                                    {typeof matchLength === 'number' && matchLength >= 20 && "30+ rounds gives us enough data to separate your S-Tier from A-Tier with 90% confidence."}
-                                </p>
-                            </div>
-
-                            <Button onClick={() => setSettingsOpen(false)} className="w-full bg-white text-black hover:bg-zinc-200">
-                                Save Settings
-                            </Button>
-                        </div>
-                    </DialogContent>
-                </Dialog>
-
-                {/* Split Arena */}
-                <div className="flex-1 flex flex-col md:flex-row h-full relative">
-                    <ContenderCard item={itemA} onClick={() => handleVote(itemA.id)} />
-
-                    {/* VS Badge */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none">
-                        <div className="bg-black rounded-full p-4 border-4 border-zinc-900 shadow-2xl">
-                            <span className="text-3xl font-black italic text-zinc-200">VS</span>
-                        </div>
+                {/* Top Right: Settings & Round Info */}
+                <div className="flex items-center gap-4 pointer-events-auto">
+                    <div className="flex items-center gap-2 text-zinc-500 font-mono text-sm tracking-widest bg-black/50 px-3 py-1 rounded-full border border-white/10 backdrop-blur">
+                        <Trophy className="w-3 h-3 text-yellow-500" />
+                        <span>ROUND {roundCount + 1}</span>
+                        {matchLength !== 'endless' && <span className="text-zinc-700">/ {matchLength}</span>}
                     </div>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-zinc-400 hover:text-white"
+                        onClick={() => setSettingsOpen(true)}
+                    >
+                        <Settings className="w-5 h-5" />
+                    </Button>
+                </div>
+            </div>
 
-                    {/* Skip Button - Centered horizontally, below VS */}
-                    <div className="absolute top-[65%] left-1/2 -translate-x-1/2 z-50">
-                        <Popover>
-                            <PopoverTrigger asChild>
+            {/* Settings Modal (Nested Dialog) */}
+            <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                <DialogContent className="bg-zinc-950 border-white/10 sm:max-w-md">
+                    <DialogTitle className="text-white">Tournament Settings</DialogTitle>
+                    <div className="space-y-6 pt-4">
+                        {/* Discovery Mode */}
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                                <h4 className="text-sm font-medium text-white">Discovery Mode</h4>
+                                <p className="text-xs text-zinc-500">Show me new movies I haven&apos;t ranked yet.</p>
+                            </div>
+                            <Switch checked={discoveryMode} onCheckedChange={(c) => onSettingsChange(c, matchLength)} />
+                        </div>
+
+                        {/* Session Length */}
+                        <div className="space-y-3">
+                            <h4 className="text-sm font-medium text-white">Session Length</h4>
+                            <div className="flex gap-2">
+                                {[10, 30, 50].map(len => (
+                                    <Button
+                                        key={len}
+                                        variant={matchLength === len ? "secondary" : "outline"}
+                                        onClick={() => onSettingsChange(discoveryMode, len as number)}
+                                        className="flex-1 h-10 border-white/10"
+                                    >
+                                        {len}
+                                    </Button>
+                                ))}
+                                <Button
+                                    variant={matchLength === 'endless' ? "secondary" : "outline"}
+                                    onClick={() => onSettingsChange(discoveryMode, 'endless')}
+                                    className="flex-1 h-10 border-white/10 font-serif italic"
+                                >
+                                    ∞
+                                </Button>
+                            </div>
+                        </div>
+
+                        <Button onClick={() => setSettingsOpen(false)} className="w-full bg-white text-black hover:bg-zinc-200">
+                            Save Settings
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Split Arena */}
+            <div className="flex-1 flex flex-col md:flex-row h-full relative">
+                <ContenderCard item={itemA} onClick={() => handleVote(itemA.id)} />
+                {/* VS Badge */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none">
+                    <div className="bg-black rounded-full p-4 border-4 border-zinc-900 shadow-2xl">
+                        <span className="text-3xl font-black italic text-zinc-200">VS</span>
+                    </div>
+                </div>
+                {/* Skip Button */}
+                <div className="absolute top-[65%] left-1/2 -translate-x-1/2 z-50">
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-zinc-500 hover:text-white hover:bg-white/10 rounded-full px-6 backdrop-blur-sm transition-all shadow-lg border border-white/5"
+                            >
+                                <SkipForward className="w-4 h-4 mr-2" />
+                                Skip / Haven&apos;t Seen
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 bg-zinc-900 border-white/10 p-2 text-zinc-200" side="bottom">
+                            <div className="grid gap-1">
+                                <Button variant="ghost" className="justify-start text-zinc-300 hover:text-white hover:bg-white/10" onClick={skip}>
+                                    Skip this match
+                                </Button>
+                                <div className="h-px bg-white/10 my-1" />
+                                <p className="text-xs text-zinc-500 px-2 py-1 font-medium">NEVER SHOW AGAIN</p>
                                 <Button
                                     variant="ghost"
-                                    size="sm"
-                                    className="text-zinc-500 hover:text-white hover:bg-white/10 rounded-full px-6 backdrop-blur-sm transition-all shadow-lg border border-white/5"
+                                    className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 truncate"
+                                    onClick={() => { ignore(itemA.id); ignoreItem(itemA.id); }}
                                 >
-                                    <SkipForward className="w-4 h-4 mr-2" />
-                                    Skip / Haven&apos;t Seen
+                                    Ignore &quot;{itemA.name}&quot;
                                 </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-56 bg-zinc-900 border-white/10 p-2 text-zinc-200" side="bottom">
-                                <div className="grid gap-1">
-                                    <Button variant="ghost" className="justify-start text-zinc-300 hover:text-white hover:bg-white/10" onClick={skip}>
-                                        Skip this match
-                                    </Button>
-                                    <div className="h-px bg-white/10 my-1" />
-                                    <p className="text-xs text-zinc-500 px-2 py-1 font-medium">NEVER SHOW AGAIN</p>
-                                    <Button
-                                        variant="ghost"
-                                        className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 truncate"
-                                        onClick={() => { ignore(itemA.id); ignoreItem(itemA.id); }}
-                                    >
-                                        Ignore &quot;{itemA.name}&quot;
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 truncate"
-                                        onClick={() => { ignore(itemB.id); ignoreItem(itemB.id); }}
-                                    >
-                                        Ignore &quot;{itemB.name}&quot;
-                                    </Button>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
-                    </div>
-
-                    <ContenderCard item={itemB} onClick={() => handleVote(itemB.id)} />
+                                <Button
+                                    variant="ghost"
+                                    className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 truncate"
+                                    onClick={() => { ignore(itemB.id); ignoreItem(itemB.id); }}
+                                >
+                                    Ignore &quot;{itemB.name}&quot;
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
                 </div>
-            </DialogContent>
-        </Dialog>
+                <ContenderCard item={itemB} onClick={() => handleVote(itemB.id)} />
+            </div>
+        </DialogContent>
     )
 }
 
