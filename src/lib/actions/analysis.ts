@@ -498,9 +498,10 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     const categorySpecificRules = isTVShows
         ? `
     TV SHOWS CATEGORY RULES:
-    4. NEVER recommend specific seasons (e.g., "True Detective (Season 1)"). Always recommend the SERIES as a whole.
-    5. NEVER recommend anime series for TV Shows - anime belongs in a separate category.
-    6. Focus on live-action Western TV series only.
+    4. ONLY recommend COMPLETE SERIES - NEVER specific seasons like "True Detective (Season 1)", "Mindhunter (Season 2+)", "Fargo (Season 2)", etc.
+    5. If a show has multiple seasons, recommend the SHOW NAME ONLY (e.g., "True Detective" not "True Detective (Season 1)").
+    6. NEVER recommend anime series for TV Shows - anime belongs in a separate category.
+    7. Focus on live-action Western TV series only.
         `
         : ''
 
@@ -512,13 +513,14 @@ export async function analyzeUserTaste(categoryId?: string): Promise<TasteAnalys
     Potential "Likely Miss" Candidates (High quality items that might clash with user tags):
     ${candidatesStr || "None identified from database."}
 
-    CRITICAL EXCLUSION LIST - NEVER recommend these items (user already rated them):
+    ⚠️ CRITICAL EXCLUSION LIST - The user has ALREADY RATED these items. NEVER recommend them in EITHER section:
     ${excludedItemsList}
 
     Rules:
-    1. NEVER recommend items from the exclusion list above - these are items the user has ALREADY RATED.
+    1. ⚠️ NEVER recommend items from the exclusion list above IN EITHER recommendations OR anti_recommendations - these are items the user has ALREADY RATED.
     2. Provide 'matchScore' (0-100).
-    3. Anti-Recommendations:
+    3. Anti-Recommendations ("Likely Misses"):
+       - MUST NOT include any items from the exclusion list above.
        - Select items that are POPULAR or HIGHLY RATED but fundamentally clash with the user's specific preferences (Attribute Conflict).
        - You may use the provided "Likely Miss Candidates" or your own knowledge of "Famous but polarizing" items.
        - WARNING FORMAT: A single sentence starting with 'While popular for...'.

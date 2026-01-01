@@ -262,7 +262,14 @@ CREATE POLICY "Authenticated users can create global items"
   ON public.global_items FOR INSERT
   WITH CHECK (auth.role() = 'authenticated');
 
--- Admins can update global items (fix AI-generated content)
+-- Authenticated users can update global items (for AI-generated tags/descriptions)
+-- This is needed because tags are generated after initial insert
+CREATE POLICY "Authenticated users can update global items"
+  ON public.global_items FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
+
+-- Admins can also update global items (explicit policy for admin tools)
 CREATE POLICY "Admins can update global items"
   ON public.global_items FOR UPDATE
   USING (
