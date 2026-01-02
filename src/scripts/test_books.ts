@@ -8,7 +8,7 @@ dotenv.config();
 async function test() {
     console.log("Testing Google Books Strategy...");
     const strategy = new GoogleBooksStrategy();
-    const settings = await SystemConfigService.getSettings();
+    // const settings = await SystemConfigService.getSettings();
 
     // Mock settings if DB fetch fails or just rely on env
     const mockSettings = {

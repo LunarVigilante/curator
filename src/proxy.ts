@@ -111,14 +111,11 @@ export default async function middleware(request: NextRequest) {
         }
     } else {
         // User is NOT logged in
-        // Block /register for invite-only system
-        if (pathname.startsWith('/register')) {
-            return NextResponse.redirect(new URL('/login', request.url))
-        }
+        // Note: /register is allowed - invite code validation happens at form submission
 
-        // Block sign-up API
+        // Block sign-up API for non-invite flows
         if (pathname.startsWith('/auth/signup')) {
-            return new NextResponse("Public registration is disabled.", { status: 403 })
+            return new NextResponse("Public registration is disabled. Use an invite code.", { status: 403 })
         }
     }
 

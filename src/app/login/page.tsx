@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Eye, EyeOff, Lock, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -114,9 +115,14 @@ export default function LoginPage() {
                             ) : 'Sign In'}
                         </Button>
 
-                        <div className="flex items-center justify-center gap-2 text-zinc-500">
-                            <Lock size={12} />
-                            <span className="text-xs font-medium uppercase tracking-wider">Registration is Invite Only</span>
+                        <div className="flex flex-col items-center gap-2 text-zinc-500">
+                            <div className="flex items-center gap-2">
+                                <Lock size={12} />
+                                <span className="text-xs font-medium uppercase tracking-wider">Registration is Invite Only</span>
+                            </div>
+                            <Link href="/register" className="text-xs text-blue-400 hover:text-blue-300 hover:underline transition-colors">
+                                Have an invite code? Register here →
+                            </Link>
                         </div>
                     </CardFooter>
                 </form>
