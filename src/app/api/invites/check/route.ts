@@ -12,18 +12,25 @@ export async function GET(request: Request) {
     try {
         const supabase = await createClient()
 
-        const { data: invite, error } = await supabase
+        // Fetch invite without filtering by is_used - check use_count instead
+        const { data: invite, error } = await (supabase as any)
             .from('invites')
             .select('*')
             .eq('code', code)
-            .eq('is_used', false)
             .single()
 
         if (error || !invite) {
-            return NextResponse.json({ valid: false, message: 'Invalid or expired code' })
+            return NextResponse.json({ valid: false, message: 'Invalid code' })
         }
 
-        return NextResponse.json({ valid: true, message: 'Valid code' })
+        // Check if invite has uses remaining
+        const useCount = invite.use_count || 0
+        const maxUses = invite.max_uses || 1
+        if (useCount >= maxUses) {
+            return NextResponse.json({ valid: false, message: 'This code has reached its usage limit' })
+        }
+
+        return NextResponse.json({ valid: true, message: `Valid code (${maxUses - useCount} uses remaining)` })
     } catch (error) {
         console.error('Invite check error:', error)
         return NextResponse.json({ valid: false, message: 'Error checking code' }, { status: 500 })

@@ -1,6 +1,0 @@
-
-> curator@0.1.0 typecheck
-> tsc --noEmit
-
-curator/src/components/dialogs/TournamentModal.tsx(56,13): error TS2554: Expected 3 arguments, but got 2.
-curator/src/components/rating/TierListBoard.tsx(481,18): error TS2741: Property 'categoryName' is missing in type '{ isOpen: boolean; onOpenChange: Dispatch<SetStateAction<boolean>>; items: Item[]; categoryId: string; }' but required in type '{ isOpen: boolean; onOpenChange: (open: boolean) => void; items: any[]; categoryId: string; categoryName: string; }'.

@@ -10,6 +10,8 @@ interface Invite {
     used_at: string | null
     created_by: string
     used_by: string | null
+    max_uses: number
+    use_count: number
 }
 
 // GET - List all invites
@@ -37,7 +39,9 @@ export async function GET() {
         const mapped = ((result || []) as Invite[]).map((invite) => ({
             id: invite.id,
             code: invite.code,
-            isUsed: invite.is_used,
+            isUsed: invite.use_count >= invite.max_uses,
+            maxUses: invite.max_uses,
+            useCount: invite.use_count,
             createdAt: invite.created_at,
             usedAt: invite.used_at,
             createdBy: invite.created_by,
@@ -52,7 +56,7 @@ export async function GET() {
 }
 
 // POST - Generate new invite code
-export async function POST() {
+export async function POST(request: Request) {
     try {
         const session = await getSession()
         if (!session) {
@@ -61,6 +65,17 @@ export async function POST() {
 
         if (!(await isAdmin())) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+
+        // Parse optional maxUses from body (default: 1)
+        let maxUses = 1
+        try {
+            const body = await request.json()
+            if (body.maxUses && typeof body.maxUses === 'number' && body.maxUses >= 1) {
+                maxUses = Math.floor(body.maxUses)
+            }
+        } catch {
+            // No body or invalid JSON, use default
         }
 
         const supabase = await createClient()
@@ -76,6 +91,8 @@ export async function POST() {
                 code,
                 created_by: session.user.id,
                 is_used: false,
+                max_uses: maxUses,
+                use_count: 0,
             })
             .select()
             .single()
@@ -87,7 +104,9 @@ export async function POST() {
         return NextResponse.json({
             id: invite.id,
             code: invite.code,
-            isUsed: invite.is_used,
+            isUsed: false,
+            maxUses: invite.max_uses,
+            useCount: invite.use_count,
             createdAt: invite.created_at,
             createdBy: invite.created_by,
             creatorName: session.profile?.name,

@@ -317,6 +317,8 @@ CREATE TABLE invites (
     code TEXT UNIQUE NOT NULL,
     created_by UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
     is_used BOOLEAN DEFAULT FALSE,
+    max_uses INTEGER DEFAULT 1,
+    use_count INTEGER DEFAULT 0,
     used_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     used_at TIMESTAMPTZ
@@ -461,3 +463,40 @@ CREATE POLICY "Service role full access to media" ON storage.objects
 FOR ALL TO service_role
 USING (bucket_id = 'media')
 WITH CHECK (bucket_id = 'media');
+
+-- ============================================================================
+-- INVITES: RLS Policies
+-- ============================================================================
+
+ALTER TABLE public.invites ENABLE ROW LEVEL SECURITY;
+
+-- Admins can view all invites
+CREATE POLICY "Admins can view invites" ON public.invites FOR SELECT
+USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));
+
+-- Admins can create invites
+CREATE POLICY "Admins can create invites" ON public.invites FOR INSERT
+WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));
+
+-- Admins can manage (update/delete) invites
+CREATE POLICY "Admins can manage invites" ON public.invites FOR ALL
+USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));
+
+-- Index for faster lookups on active invites
+CREATE INDEX idx_invites_active ON public.invites(code) WHERE use_count < max_uses;
+
+-- ============================================================================
+-- ADMIN PERMISSIONS: Additional Policies
+-- ============================================================================
+
+-- Admins can view ALL categories (including private)
+CREATE POLICY "Admins can view all categories" ON public.categories FOR SELECT
+USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));
+
+-- Admins can view ALL profiles
+CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT
+USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));
+
+-- Admins can manage all profiles (update/delete)
+CREATE POLICY "Admins can manage all profiles" ON public.profiles FOR ALL
+USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));

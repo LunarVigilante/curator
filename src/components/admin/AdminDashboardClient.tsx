@@ -7,6 +7,7 @@ import AdminSystemConfig from './AdminSystemConfig';
 import EmailTemplates from './EmailTemplates';
 import { UserPlus, Settings2, Layout, Mail, Trash2, Copy, Loader2, Ticket } from 'lucide-react';
 import FeaturedContent from './FeaturedContent';
+import { RegisteredUsersTable } from './RegisteredUsersTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -14,6 +15,8 @@ interface Invite {
     id: string;
     code: string;
     isUsed: boolean;
+    maxUses: number;
+    useCount: number;
     createdAt: string;
     usedAt: string | null;
     creatorName: string | null;
@@ -31,6 +34,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
     const [invites, setInvites] = useState<Invite[]>([]);
     const [isLoadingInvites, setIsLoadingInvites] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [maxUses, setMaxUses] = useState(1);
 
     // Fetch invites on mount
     useEffect(() => {
@@ -53,11 +57,16 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
     const handleGenerateInvite = async () => {
         setIsGenerating(true);
         try {
-            const res = await fetch('/api/admin/invites', { method: 'POST' });
+            const res = await fetch('/api/admin/invites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maxUses }),
+            });
             if (res.ok) {
                 const newInvite = await res.json();
                 setInvites(prev => [newInvite, ...prev]);
-                toast.success(`Invite code ${newInvite.code} generated!`);
+                toast.success(`Invite code ${newInvite.code} generated! (${maxUses} use${maxUses > 1 ? 's' : ''})`);
+                setMaxUses(1); // Reset to default
             } else {
                 toast.error('Failed to generate invite');
             }
@@ -172,6 +181,19 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                                 <p className="text-sm text-zinc-400 mb-4">
                                     Create a unique 8-character code for new user registration.
                                 </p>
+                                <div className="flex gap-2 mb-4">
+                                    <div className="flex-1">
+                                        <label className="text-xs text-zinc-500 block mb-1">Max Uses</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={100}
+                                            value={maxUses}
+                                            onChange={e => setMaxUses(Math.max(1, parseInt(e.target.value) || 1))}
+                                            className="w-full p-2 rounded-md bg-zinc-900/50 border border-white/10 text-white text-sm"
+                                        />
+                                    </div>
+                                </div>
                                 <Button
                                     onClick={handleGenerateInvite}
                                     disabled={isGenerating}
@@ -183,7 +205,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                                             Generating...
                                         </>
                                     ) : (
-                                        'Generate New Code'
+                                        `Generate ${maxUses > 1 ? `(${maxUses} uses)` : 'New Code'}`
                                     )}
                                 </Button>
                             </div>
@@ -236,6 +258,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                                             <tr>
                                                 <th className="px-4 py-3">Code</th>
                                                 <th className="px-4 py-3">Status</th>
+                                                <th className="px-4 py-3">Usage</th>
                                                 <th className="px-4 py-3">Created By</th>
                                                 <th className="px-4 py-3">Created At</th>
                                                 <th className="px-4 py-3 text-right">Actions</th>
@@ -258,10 +281,15 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         {invite.isUsed ? (
-                                                            <Badge variant="secondary" className="bg-zinc-800 text-zinc-500 hover:bg-zinc-800">Used</Badge>
+                                                            <Badge variant="secondary" className="bg-zinc-800 text-zinc-500 hover:bg-zinc-800">Exhausted</Badge>
                                                         ) : (
                                                             <Badge className="bg-green-500/20 text-green-400 hover:bg-green-500/30 border-green-500/50">Active</Badge>
                                                         )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-zinc-300">
+                                                        <span className={invite.isUsed ? 'text-zinc-500' : 'text-white'}>
+                                                            {invite.useCount || 0} / {invite.maxUses || 1}
+                                                        </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-zinc-300">
                                                         {invite.creatorName || invite.creatorEmail}
@@ -286,6 +314,9 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                             )}
                         </div>
                     </div>
+
+                    {/* REGISTERED USERS */}
+                    <RegisteredUsersTable />
                 </TabsContent>
 
                 {/* SYSTEM CONFIG TAB */}

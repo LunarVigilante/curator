@@ -42,15 +42,21 @@ export async function register(prevState: any, formData: FormData) {
     }
 
     try {
-        // 1. Validate Invite
+        // 1. Validate Invite - check use_count < max_uses
         const { data: invite, error: inviteError } = await (supabase.from('invites') as any)
             .select('*')
             .eq('code', inviteCode)
-            .eq('is_used', false)
             .single()
 
         if (inviteError || !invite) {
-            return { errors: { inviteCode: 'Invalid or expired invite code' } }
+            return { errors: { inviteCode: 'Invalid invite code' } }
+        }
+
+        // Check if invite still has uses remaining
+        const useCount = invite.use_count || 0
+        const maxUses = invite.max_uses || 1
+        if (useCount >= maxUses) {
+            return { errors: { inviteCode: 'This invite code has reached its usage limit' } }
         }
 
         // 2. Create User
@@ -68,10 +74,12 @@ export async function register(prevState: any, formData: FormData) {
             return { message: signUpError?.message || 'Failed to create user' }
         }
 
-        // 3. Consume Invite
+        // 3. Consume Invite - increment use_count and set is_used if exhausted
+        const newUseCount = useCount + 1
         await (supabase.from('invites') as any)
             .update({
-                is_used: true,
+                use_count: newUseCount,
+                is_used: newUseCount >= maxUses,
                 used_by: authData.user.id,
                 used_at: new Date().toISOString(),
             })
