@@ -80,3 +80,32 @@ export async function isFollowingUser(followerId: string, targetUserId: string) 
 
     return !!data
 }
+
+/**
+ * Get taste compatibility score between two users
+ * Uses hybrid ELO + vector similarity (when embeddings available)
+ * @returns 0-100 percentage, or -1 if insufficient data (< 5 shared items)
+ */
+export async function getTasteCompatibility(
+    currentUserId: string,
+    targetUserId: string
+): Promise<number> {
+    if (currentUserId === targetUserId) {
+        return 100 // Perfect match with yourself
+    }
+
+    const supabase = await createClient()
+
+    const { data, error } = await (supabase.rpc as any)('get_taste_compatibility', {
+        user_a_id: currentUserId,
+        user_b_id: targetUserId,
+    })
+
+    if (error) {
+        console.error('Taste compatibility error:', error)
+        return -1
+    }
+
+    return data ?? -1
+}
+

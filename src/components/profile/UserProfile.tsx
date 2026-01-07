@@ -1,5 +1,5 @@
 import { getUserById } from "@/lib/actions/users";
-import { calculateTasteMatch } from "@/lib/matchmaking";
+import { getTasteCompatibility } from "@/lib/actions/social";
 import { getSession } from "@/lib/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TasteMatchBadge } from "./TasteMatchBadge";
@@ -22,7 +22,9 @@ export async function UserProfile({ userId }: UserProfileProps) {
     let matchScore: number | null = null;
 
     if (session && !isOwnProfile) {
-        matchScore = await calculateTasteMatch(session.user.id, userId);
+        // Uses hybrid ELO + vector similarity via database RPC
+        const score = await getTasteCompatibility(session.user.id, userId);
+        matchScore = score >= 0 ? score : null; // -1 means insufficient data
     }
 
     return (
