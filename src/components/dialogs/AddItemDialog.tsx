@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createItem } from '@/lib/actions/items'
-import { Plus, X, Image as ImageIcon, Loader2, Search } from 'lucide-react'
+import { Plus, X, Image as ImageIcon, Loader2, Search, Sparkles } from 'lucide-react'
 import Image from 'next/image'
 import TagSelector from '@/components/tags/TagSelector'
 import ImageCropper from '@/components/ImageCropper'
@@ -30,6 +30,9 @@ export default function AddItemDialog({
     const [isPending, startTransition] = useTransition()
     const [imageToCrop, setImageToCrop] = useState<string | null>(null)
     const [mediaResults, setMediaResults] = useState<MediaResult[]>([])
+    const [searchMode, setSearchMode] = useState<'title' | 'describe'>('title')
+    const [isVectorSearching, setIsVectorSearching] = useState(false)
+    const [vectorResults, setVectorResults] = useState<Array<{ id: string; title: string; posterUrl: string | null; similarity: number }>>([]);
 
     // Parse Metadata to get Type (handle both string and object)
     const categoryType = (() => {
@@ -95,6 +98,44 @@ export default function AddItemDialog({
                 setMediaResults([])
             }
         })
+    }
+
+    // Vector search function (Describe It mode)
+    const handleVectorSearch = async () => {
+        if (!formData.name || formData.name.length < 5) {
+            toast.error('Enter at least 5 characters to describe what you\'re looking for')
+            return
+        }
+        setIsVectorSearching(true)
+        setVectorResults([])
+        try {
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/search-global-items`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}`,
+                    },
+                    body: JSON.stringify({
+                        query: formData.name,
+                        matchThreshold: 0.5,
+                        matchCount: 10
+                    })
+                }
+            )
+            if (!response.ok) throw new Error('Search failed')
+            const data = await response.json()
+            setVectorResults(data.results || [])
+            if (data.results?.length === 0) {
+                toast.info('No matches found. Try switching to Title Search.')
+            }
+        } catch (error) {
+            console.error('Vector search error:', error)
+            toast.error('Smart search failed. Please try again.')
+        } finally {
+            setIsVectorSearching(false)
+        }
     }
 
     // Auto-search when name changes (debounced)
@@ -300,7 +341,31 @@ export default function AddItemDialog({
 
                     <div className="grid gap-4 py-4">
                         <div className="grid gap-2">
-                            <Label htmlFor="name" className="font-sans">Name</Label>
+                            <Label htmlFor="name" className="font-sans">{searchMode === 'title' ? 'Name' : 'Describe what you\'re looking for'}</Label>
+
+                            {/* Search Mode Toggle */}
+                            <div className="flex gap-1 mb-2">
+                                <Button
+                                    type="button"
+                                    variant={searchMode === 'title' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => { setSearchMode('title'); setVectorResults([]); }}
+                                    className="flex-1 gap-1.5 text-xs"
+                                >
+                                    <Search className="h-3.5 w-3.5" />
+                                    Title Search
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant={searchMode === 'describe' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => { setSearchMode('describe'); setMediaResults([]); }}
+                                    className="flex-1 gap-1.5 text-xs"
+                                >
+                                    <Sparkles className="h-3.5 w-3.5" />
+                                    Describe It
+                                </Button>
+                            </div>
                             <div className="flex gap-2">
                                 <Input
                                     id="name"
@@ -323,21 +388,28 @@ export default function AddItemDialog({
                                     type="button"
                                     variant="outline"
                                     size="icon"
-                                    onClick={handleManualSearch}
-                                    disabled={isPending || formData.name.length < 3}
+                                    onClick={searchMode === 'title' ? handleManualSearch : handleVectorSearch}
+                                    disabled={(searchMode === 'title' ? isPending : isVectorSearching) || formData.name.length < (searchMode === 'title' ? 3 : 5)}
                                     className="shrink-0"
-                                    title="Search providers"
+                                    title={searchMode === 'title' ? 'Search providers' : 'Smart search'}
                                 >
-                                    {isPending ? (
+                                    {(searchMode === 'title' ? isPending : isVectorSearching) ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
+                                    ) : searchMode === 'title' ? (
                                         <Search className="h-4 w-4" />
+                                    ) : (
+                                        <Sparkles className="h-4 w-4" />
                                     )}
                                 </Button>
                             </div>
                             {/* Search Status */}
-                            {isPending && formData.name.length >= 3 && (
+                            {isPending && searchMode === 'title' && formData.name.length >= 3 && (
                                 <div className="text-xs text-muted-foreground animate-pulse">Searching...</div>
+                            )}
+                            {isVectorSearching && (
+                                <div className="text-xs text-muted-foreground animate-pulse flex items-center gap-1.5">
+                                    <Sparkles className="h-3 w-3" /> Finding AI matches...
+                                </div>
                             )}
 
                             {/* Media Results Selection */}
@@ -388,6 +460,70 @@ export default function AddItemDialog({
                                         ))}
                                     </div>
                                 </div>
+                            )}
+
+                            {/* Vector Search Results (Describe It mode) */}
+                            {vectorResults.length > 0 && (
+                                <div className="mt-2 grid grid-cols-1 gap-2 p-2 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-lg border border-purple-500/20">
+                                    <div className="flex items-center justify-between px-2">
+                                        <span className="text-xs font-medium text-purple-300 flex items-center gap-1.5">
+                                            <Sparkles className="h-3 w-3" /> AI Matches
+                                        </span>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 text-[10px]"
+                                            onClick={() => setVectorResults([])}
+                                        >
+                                            <X className="h-3 w-3 mr-1" /> Clear
+                                        </Button>
+                                    </div>
+                                    <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                        {vectorResults.map((result, idx) => (
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                className="flex items-start gap-3 p-2 rounded hover:bg-white/5 transition-colors text-left w-full"
+                                                onClick={() => {
+                                                    // Fill form with vector result
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        name: result.title,
+                                                        image: result.posterUrl || prev.image,
+                                                    }))
+                                                    setVectorResults([])
+                                                    toast.success(`Selected: ${result.title}`)
+                                                }}
+                                            >
+                                                {result.posterUrl ? (
+                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden relative">
+                                                        <Image src={result.posterUrl} alt={result.title} fill className="object-cover" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 flex items-center justify-center">
+                                                        <ImageIcon className="w-4 h-4 text-zinc-600" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0 py-0.5">
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <span className="font-medium text-sm truncate text-zinc-200">{result.title}</span>
+                                                        <span className="text-[10px] text-purple-400 bg-purple-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                                                            <Sparkles className="h-2.5 w-2.5" />
+                                                            {Math.round(result.similarity * 100)}%
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* No Vector Results Message */}
+                            {searchMode === 'describe' && vectorResults.length === 0 && !isVectorSearching && formData.name.length >= 5 && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    No matches found in our database. Try switching to &apos;Title Search&apos; to find it from the global catalog.
+                                </p>
                             )}
                         </div>
 

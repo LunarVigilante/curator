@@ -63,6 +63,43 @@ $$;
 GRANT EXECUTE ON FUNCTION public.search_items TO authenticated;
 
 -- ============================================================================
+-- SEARCH ITEMS BY VECTOR: Simplified search returning id, title, posterUrl
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.search_items_by_vector(
+    query_embedding extensions.vector(1024),
+    match_threshold FLOAT DEFAULT 0.7,
+    match_count INT DEFAULT 10
+)
+RETURNS TABLE (
+    id UUID,
+    title TEXT,
+    "posterUrl" TEXT,
+    similarity FLOAT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        g.id,
+        g.title,
+        g.image_url AS "posterUrl",
+        (1 - (g.embedding <=> query_embedding))::FLOAT AS similarity
+    FROM global_items g
+    WHERE g.embedding IS NOT NULL
+      AND (1 - (g.embedding <=> query_embedding)) > match_threshold
+    ORDER BY g.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.search_items_by_vector TO authenticated;
+GRANT EXECUTE ON FUNCTION public.search_items_by_vector TO anon;
+
+-- ============================================================================
 -- TASTE COMPATIBILITY: Hybrid ELO + Vector similarity
 -- Returns 0-100 (percentage) or -1 if insufficient data (< 5 shared items)
 -- Uses embeddings for semantic similarity when available
