@@ -12,7 +12,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "backfill:embeddings": "npx tsx src/scripts/backfill-embeddings.ts",
-    "seed:content": "npx tsx src/scripts/seed-content.ts"
+    "seed:content": "npx tsx src/scripts/seed-content.ts",
+    "deep-import:tmdb": "npx tsx src/scripts/deep-import-tmdb.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
