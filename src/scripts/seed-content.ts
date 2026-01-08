@@ -1,10 +1,13 @@
 import 'dotenv/config';
 import { createServiceRoleClient } from '../lib/supabase/service-role';
+import { callLLM } from '../lib/llm';
+import { SystemConfigService } from '../lib/services/SystemConfigService';
 
 /**
  * Bulk content seeding script for Curator
  * Seeds movies from TMDB, board games from BGG, and books from Google Books
  * Generates Voyage AI embeddings for each item
+ * Uses the same LLM configuration as the app for descriptions
  */
 
 // ============================================================================
@@ -14,12 +17,9 @@ import { createServiceRoleClient } from '../lib/supabase/service-role';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const GOOGLE_BOOKS_API_KEY = process.env.GOOGLE_BOOKS_API_KEY;
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const EMBEDDING_MODEL = "voyage-3";
-const REWRITE_MODEL = "anthropic/claude-3-haiku"; // Fast & cheap
 const REWRITE_CONCURRENCY = 5; // Max concurrent rewrite requests
 const BATCH_SIZE = 50;
 const API_DELAY_MS = 300; // Delay between API calls to avoid rate limits
@@ -71,55 +71,83 @@ function createLimiter(concurrency: number) {
 
 const rewriteLimiter = createLimiter(REWRITE_CONCURRENCY);
 
-/**
- * Rewrite a movie description using LLM to be atmospheric and cinematic
- * Falls back to original if rewriting fails
- */
-async function rewriteDescription(title: string, originalOverview: string): Promise<string> {
-    if (!OPENROUTER_API_KEY || !originalOverview) {
-        return originalOverview;
+// Cache for LLM config (fetched once at startup)
+let llmConfig: { provider: string; apiKey: string; model?: string; endpoint?: string } | null = null;
+
+async function getLLMConfig() {
+    if (llmConfig) return llmConfig;
+
+    const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
+    let apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
+    const model = await SystemConfigService.getDecryptedConfig('llm_model');
+    const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
+
+    // Fallback to provider-specific keys
+    if (!apiKey) {
+        switch (provider) {
+            case 'anthropic': apiKey = await SystemConfigService.getDecryptedConfig('anthropic_api_key'); break;
+            case 'openai': apiKey = await SystemConfigService.getDecryptedConfig('openai_api_key'); break;
+            case 'openrouter': apiKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key'); break;
+            case 'google': apiKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key'); break;
+        }
     }
 
-    try {
-        const response = await fetch(OPENROUTER_API_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                "HTTP-Referer": "https://curator-app.com",
-                "X-Title": "Curator"
-            },
-            body: JSON.stringify({
-                model: REWRITE_MODEL,
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are a curator for a high-end, neon-noir cinema app. Rewrite the following movie plot summary to be short (max 2 sentences), atmospheric, and compelling. Avoid spoilers. Focus on the vibe. Do not use hashtags."
-                    },
-                    {
-                        role: "user",
-                        content: `Movie: ${title}. Plot: ${originalOverview}`
-                    }
-                ],
-                max_tokens: 150,
-                temperature: 0.7
-            })
-        });
+    // Ultimate fallback
+    if (!apiKey) {
+        apiKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key') ||
+            await SystemConfigService.getDecryptedConfig('anthropic_api_key') ||
+            await SystemConfigService.getDecryptedConfig('openai_api_key') ||
+            await SystemConfigService.getDecryptedConfig('google_ai_api_key') || '';
+    }
 
-        if (!response.ok) {
-            console.warn(`⚠️ Rewrite failed for "${title}": ${response.status}`);
+    llmConfig = { provider, apiKey, model: model || undefined, endpoint: endpoint || undefined };
+    return llmConfig;
+}
+
+/**
+ * Generate a description using the same format as the app's generateDescriptionAction
+ * Falls back to original if generation fails
+ */
+async function generateDescription(title: string, type: string, originalOverview: string): Promise<string> {
+    try {
+        const config = await getLLMConfig();
+        if (!config.apiKey) {
+            console.warn(`⚠️ No LLM API key configured, using original description`);
             return originalOverview;
         }
 
-        const data = await response.json();
-        const rewritten = data.choices?.[0]?.message?.content?.trim();
+        const systemPrompt = `You are an expert curator and critic. Generate a compelling description for the given item.
 
-        if (rewritten && rewritten.length > 20) {
-            return rewritten;
+DESCRIPTION FORMAT:
+1. Body: Maximum 50 words. Focus on plot summary first, then the vibe/atmosphere.
+2. Footer: After the body, append exactly this format on a new line after a double newline:
+
+Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
+
+Return ONLY the description text. No JSON, no markdown, no quotes.`;
+
+        const userPrompt = `Generate a description for:
+Title: ${title}
+Type: ${type}
+Additional Context: ${originalOverview}`;
+
+        const response = await callLLM({
+            userPrompt,
+            systemPrompt,
+            apiKey: config.apiKey,
+            provider: config.provider,
+            model: config.model,
+            endpoint: config.endpoint,
+            timeoutMs: 60000
+        });
+
+        const description = response.trim();
+        if (description && description.length > 20) {
+            return description;
         }
         return originalOverview;
     } catch (error) {
-        console.warn(`⚠️ Rewrite error for "${title}":`, error);
+        console.warn(`⚠️ Description generation failed for "${title}":`, error);
         return originalOverview;
     }
 }
@@ -244,9 +272,9 @@ async function seedMovies(supabase: any): Promise<{ success: number; skipped: nu
             continue;
         }
 
-        // Rewrite description with LLM (with concurrency limit)
+        // Generate description with LLM (with concurrency limit) - same as when user adds items
         const styledDescription = await rewriteLimiter(() =>
-            rewriteDescription(movie.title, movie.overview)
+            generateDescription(movie.title, 'Movie', movie.overview)
         );
 
         // Generate embedding using the styled description
