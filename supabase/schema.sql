@@ -509,7 +509,7 @@ USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND 
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
 -- ⚠️ IMPORTANT: Vector dimension (1024) must match your embedding model!
--- mistralai/mistral-embed = 1024, openai/text-embedding-3-small = 1536
+-- voyage-3 (Voyage AI) = 1024, mistralai/mistral-embed = 1024
 
 -- Add embedding column to global_items
 ALTER TABLE public.global_items 

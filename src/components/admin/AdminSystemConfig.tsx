@@ -48,6 +48,9 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     const [metronUsername, setMetronUsername] = useState(settings?.['metron_username'] || '');
     const [metronPassword, setMetronPassword] = useState(settings?.['metron_password'] || '');
 
+    // Voyage AI (Embeddings)
+    const [voyageApiKey, setVoyageApiKey] = useState(settings?.['voyage_api_key'] || '');
+
     // Media API Endpoints (Custom URLs)
     const [tmdbApiUrl, setTmdbApiUrl] = useState(settings?.['tmdb_api_url'] || 'https://api.themoviedb.org/3');
     const [rawgApiUrl, setRawgApiUrl] = useState(settings?.['rawg_api_url'] || 'https://api.rawg.io/api');
@@ -247,6 +250,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 comicVineApiUrl,
                 bggApiUrl,
                 itunesApiUrl,
+                // Voyage AI
+                voyageApiKey,
                 // Feature Flags
                 featureAiCritic: enableAiCritic ? 'true' : 'false',
                 featureSmartSort: enableSmartSort ? 'true' : 'false',
@@ -442,6 +447,39 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                         <Button type="submit" disabled={isLoading}>
                             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Save LLM Configuration
+                        </Button>
+                    </CardFooter>
+                </form>
+            </Card>
+
+            {/* Voyage AI Embeddings */}
+            <Card className="border-white/10 bg-black/20 backdrop-blur-sm">
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Brain className="h-5 w-5 text-blue-500" />
+                        <CardTitle>Voyage AI Embeddings</CardTitle>
+                    </div>
+                    <CardDescription>
+                        API key for generating vector embeddings used in taste compatibility and item search.
+                    </CardDescription>
+                </CardHeader>
+                <form onSubmit={handleSaveConfig}>
+                    <CardContent className="space-y-4">
+                        <div className="grid gap-2">
+                            <Label>Voyage API Key</Label>
+                            <Input
+                                type="password"
+                                value={voyageApiKey}
+                                onChange={e => setVoyageApiKey(e.target.value)}
+                                placeholder="pa-..."
+                            />
+                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://dash.voyageai.com/" target="_blank" className="underline hover:text-white">dash.voyageai.com</a></p>
+                        </div>
+                    </CardContent>
+                    <CardFooter className="pt-4">
+                        <Button type="submit" disabled={isLoading}>
+                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Voyage API Key
                         </Button>
                     </CardFooter>
                 </form>

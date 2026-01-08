@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 -- ============================================================================
 -- ADD EMBEDDING COLUMN TO GLOBAL ITEMS
 -- ⚠️ IMPORTANT: Vector dimension (1024) must match your embedding model!
--- mistralai/mistral-embed = 1024, openai/text-embedding-3-small = 1536
+-- voyage-3 (Voyage AI) = 1024, mistralai/mistral-embed = 1024
 -- ============================================================================
 
 ALTER TABLE public.global_items 

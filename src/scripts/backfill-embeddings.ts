@@ -2,44 +2,65 @@ import 'dotenv/config';
 import { createServiceRoleClient } from '../lib/supabase/service-role';
 
 /**
- * Backfill script for generating embeddings for existing items in the database.
- * Uses OpenRouter with the mistralai/mistral-embed model.
+ * Backfill script for generating embeddings for existing items using Voyage AI.
+ * Uses voyage-3 model (1024 dimensions) with batch support.
  */
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const EMBEDDING_MODEL = "mistralai/mistral-embed"; // 1024 dimensions
-const BATCH_SIZE = 10;
-const DELAY_MS = 1000; // 1 second delay between batches
+const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
+const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
+const EMBEDDING_MODEL = "voyage-3"; // 1024 dimensions
+const BATCH_SIZE = 50; // Voyage allows up to 128, but 50 is safer for large texts
+const DELAY_MS = 500; // 500ms delay between batches
 
-if (!OPENROUTER_API_KEY) {
-    console.error("❌ Error: OPENROUTER_API_KEY is not set in environment variables.");
+if (!VOYAGE_API_KEY) {
+    console.error("❌ Error: VOYAGE_API_KEY is not set in environment variables.");
     process.exit(1);
 }
 
-async function generateEmbedding(text: string): Promise<number[] | null> {
+interface VoyageEmbeddingResponse {
+    object: string;
+    data: Array<{
+        object: string;
+        embedding: number[];
+        index: number;
+    }>;
+    model: string;
+    usage: {
+        total_tokens: number;
+    };
+}
+
+interface ItemToEmbed {
+    id: string;
+    title: string;
+    description: string | null;
+}
+
+async function generateEmbeddingsBatch(texts: string[]): Promise<number[][] | null> {
     try {
-        const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+        const response = await fetch(VOYAGE_API_URL, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "Curator App",
+                "Authorization": `Bearer ${VOYAGE_API_KEY}`,
             },
             body: JSON.stringify({
                 model: EMBEDDING_MODEL,
-                input: text,
+                input: texts, // Voyage requires input as array
             }),
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error(`❌ OpenRouter API Error: ${response.status}`, errorData);
+            const errorText = await response.text();
+            console.error(`❌ Voyage API Error: ${response.status}`, errorText);
             return null;
         }
 
-        const data = await response.json();
-        return data.data[0].embedding;
+        const data: VoyageEmbeddingResponse = await response.json();
+        // Sort by index to ensure correct order
+        return data.data
+            .sort((a, b) => a.index - b.index)
+            .map(item => item.embedding);
     } catch (error) {
         console.error("❌ Network Error during embedding generation:", error);
         return null;
@@ -67,24 +88,48 @@ async function backfill() {
         return;
     }
 
-    console.log(`🚀 Found ${items.length} items to process.`);
+    const typedItems = items as unknown as ItemToEmbed[];
+    console.log(`🚀 Found ${typedItems.length} items to process in batches of ${BATCH_SIZE}.`);
 
     let successCount = 0;
     let failCount = 0;
+    let totalBatches = Math.ceil(typedItems.length / BATCH_SIZE);
 
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i] as any;
-        const text = item.description
-            ? `${item.title}: ${item.description}`
-            : item.title;
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        const start = batchIndex * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, typedItems.length);
+        const batch = typedItems.slice(start, end);
 
-        console.log(`[${i + 1}/${items.length}] Processing: ${item.title}...`);
+        console.log(`\n📦 Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})...`);
 
-        const embedding = await generateEmbedding(text);
+        // Prepare texts for this batch
+        const texts = batch.map(item =>
+            item.description
+                ? `${item.title}: ${item.description}`
+                : item.title
+        );
 
-        if (embedding) {
+        const embeddings = await generateEmbeddingsBatch(texts);
+
+        if (!embeddings) {
+            console.error(`❌ Batch ${batchIndex + 1} failed entirely.`);
+            failCount += batch.length;
+            continue;
+        }
+
+        // Update each item with its embedding
+        for (let i = 0; i < batch.length; i++) {
+            const item = batch[i];
+            const embedding = embeddings[i];
+
+            if (!embedding) {
+                console.error(`❌ No embedding returned for item ${item.id}`);
+                failCount++;
+                continue;
+            }
+
             const { error: updateError } = await (supabase.from('global_items') as any)
-                .update({ embedding: embedding })
+                .update({ embedding })
                 .eq('id', item.id);
 
             if (updateError) {
@@ -93,12 +138,12 @@ async function backfill() {
             } else {
                 successCount++;
             }
-        } else {
-            failCount++;
         }
 
-        // Delay to avoid hitting rate limits too hard
-        if (i < items.length - 1) {
+        console.log(`✅ Batch ${batchIndex + 1} complete. Running total: ${successCount} success, ${failCount} fail.`);
+
+        // Delay between batches
+        if (batchIndex < totalBatches - 1) {
             await new Promise(resolve => setTimeout(resolve, DELAY_MS));
         }
     }

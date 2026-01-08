@@ -1,21 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import OpenAI from "npm:openai@4";
 
-// OpenRouter-compatible client using OpenAI SDK
-const openrouter = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: Deno.env.get("OPENROUTER_API_KEY"),
-});
+const VOYAGE_API_KEY = Deno.env.get("VOYAGE_API_KEY");
+const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
+const EMBEDDING_MODEL = "voyage-3"; // 1024 dimensions
 
 const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
-
-// Embedding model - 1024 dimensions
-// Options: mistralai/mistral-embed, cohere/embed-english-v3.0
-const EMBEDDING_MODEL = "mistralai/mistral-embed";
 
 interface WebhookPayload {
     type: "INSERT" | "UPDATE";
@@ -29,12 +22,52 @@ interface WebhookPayload {
     old_record?: Record<string, unknown>;
 }
 
+interface VoyageEmbeddingResponse {
+    object: string;
+    data: Array<{
+        object: string;
+        embedding: number[];
+        index: number;
+    }>;
+    model: string;
+    usage: {
+        total_tokens: number;
+    };
+}
+
+async function generateEmbedding(text: string): Promise<number[] | null> {
+    const response = await fetch(VOYAGE_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${VOYAGE_API_KEY}`,
+        },
+        body: JSON.stringify({
+            model: EMBEDDING_MODEL,
+            input: [text], // Voyage requires input as array
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        console.error(`Voyage API error: ${response.status}`, error);
+        return null;
+    }
+
+    const data: VoyageEmbeddingResponse = await response.json();
+    return data.data[0].embedding;
+}
+
 Deno.serve(async (req: Request) => {
     try {
+        if (!VOYAGE_API_KEY) {
+            throw new Error("VOYAGE_API_KEY is not set");
+        }
+
         const payload: WebhookPayload = await req.json();
         const { record, type } = payload;
 
-        // Skip if no title or already has embedding (unless description changed)
+        // Skip if no title
         if (!record?.id || !record?.title) {
             return new Response(
                 JSON.stringify({ skipped: true, reason: "no title" }),
@@ -56,20 +89,18 @@ Deno.serve(async (req: Request) => {
             }
         }
 
-        // Construct text for embedding: "Title: Description"
+        // Construct text for embedding
         const text = record.description
             ? `${record.title}: ${record.description}`
             : record.title;
 
         console.log(`Generating embedding for: ${record.id} - "${text.slice(0, 50)}..."`);
 
-        // Generate embedding via OpenRouter
-        const response = await openrouter.embeddings.create({
-            model: EMBEDDING_MODEL,
-            input: text,
-        });
+        const embedding = await generateEmbedding(text);
 
-        const embedding = response.data[0].embedding;
+        if (!embedding) {
+            throw new Error("Failed to generate embedding");
+        }
 
         // Save embedding back to database
         const { error } = await supabase
@@ -92,7 +123,8 @@ Deno.serve(async (req: Request) => {
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
         );
-    } catch (error) {
+    } catch (err) {
+        const error = err as Error;
         console.error("Embedding generation error:", error);
         return new Response(
             JSON.stringify({ error: error.message }),

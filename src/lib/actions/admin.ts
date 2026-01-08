@@ -105,6 +105,7 @@ export async function updateSystemConfig(data: {
     featureSmartSort?: string
     featureRecommendations?: string
     featureChallenges?: string
+    voyageApiKey?: string
 }) {
     const session = await assertAdmin()
     console.log('[Admin] updateSystemConfig called by user:', session.user.id)
@@ -147,6 +148,9 @@ export async function updateSystemConfig(data: {
     if (data.comicVineApiUrl) await upsertSetting('comicvine_api_url', data.comicVineApiUrl, 'MEDIA', false)
     if (data.bggApiUrl) await upsertSetting('bgg_api_url', data.bggApiUrl, 'MEDIA', false)
     if (data.itunesApiUrl) await upsertSetting('itunes_api_url', data.itunesApiUrl, 'MEDIA', false)
+
+    // Voyage AI (Embeddings)
+    if (data.voyageApiKey) await upsertSetting('voyage_api_key', data.voyageApiKey, 'EMBEDDINGS', true)
 
     // Feature Flags
     if (data.featureAiCritic !== undefined) await upsertSetting('feature_ai_critic', data.featureAiCritic, 'FEATURE', false)
