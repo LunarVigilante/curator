@@ -15,10 +15,23 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 ALTER TABLE public.global_items 
 ADD COLUMN IF NOT EXISTS embedding extensions.vector(1024);
 
+-- Add external_ids for storing provider IDs (tmdb, imdb, bgg, google_books, etc.)
+ALTER TABLE public.global_items 
+ADD COLUMN IF NOT EXISTS external_ids JSONB DEFAULT '{}';
+
+-- Add metadata for additional item data
+ALTER TABLE public.global_items 
+ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
+
 -- Create HNSW index for fast similarity search
 CREATE INDEX IF NOT EXISTS idx_global_items_embedding 
 ON public.global_items 
 USING hnsw (embedding extensions.vector_cosine_ops);
+
+-- Create GIN index for fast external_ids lookups
+CREATE INDEX IF NOT EXISTS idx_global_items_external_ids 
+ON public.global_items 
+USING gin (external_ids);
 
 -- ============================================================================
 -- SEARCH ITEMS: Find similar items by embedding
