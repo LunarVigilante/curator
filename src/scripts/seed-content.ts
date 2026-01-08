@@ -14,9 +14,13 @@ import { createServiceRoleClient } from '../lib/supabase/service-role';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const GOOGLE_BOOKS_API_KEY = process.env.GOOGLE_BOOKS_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const EMBEDDING_MODEL = "voyage-3";
+const REWRITE_MODEL = "anthropic/claude-3-haiku"; // Fast & cheap
+const REWRITE_CONCURRENCY = 5; // Max concurrent rewrite requests
 const BATCH_SIZE = 50;
 const API_DELAY_MS = 300; // Delay between API calls to avoid rate limits
 const EMBED_DELAY_MS = 500; // Delay between embedding batches
@@ -44,6 +48,81 @@ interface VoyageEmbeddingResponse {
 // ============================================================================
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Simple concurrency limiter
+function createLimiter(concurrency: number) {
+    let active = 0;
+    const queue: (() => void)[] = [];
+
+    return async <T>(fn: () => Promise<T>): Promise<T> => {
+        while (active >= concurrency) {
+            await new Promise<void>(resolve => queue.push(resolve));
+        }
+        active++;
+        try {
+            return await fn();
+        } finally {
+            active--;
+            const next = queue.shift();
+            if (next) next();
+        }
+    };
+}
+
+const rewriteLimiter = createLimiter(REWRITE_CONCURRENCY);
+
+/**
+ * Rewrite a movie description using LLM to be atmospheric and cinematic
+ * Falls back to original if rewriting fails
+ */
+async function rewriteDescription(title: string, originalOverview: string): Promise<string> {
+    if (!OPENROUTER_API_KEY || !originalOverview) {
+        return originalOverview;
+    }
+
+    try {
+        const response = await fetch(OPENROUTER_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "HTTP-Referer": "https://curator-app.com",
+                "X-Title": "Curator"
+            },
+            body: JSON.stringify({
+                model: REWRITE_MODEL,
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a curator for a high-end, neon-noir cinema app. Rewrite the following movie plot summary to be short (max 2 sentences), atmospheric, and compelling. Avoid spoilers. Focus on the vibe. Do not use hashtags."
+                    },
+                    {
+                        role: "user",
+                        content: `Movie: ${title}. Plot: ${originalOverview}`
+                    }
+                ],
+                max_tokens: 150,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            console.warn(`⚠️ Rewrite failed for "${title}": ${response.status}`);
+            return originalOverview;
+        }
+
+        const data = await response.json();
+        const rewritten = data.choices?.[0]?.message?.content?.trim();
+
+        if (rewritten && rewritten.length > 20) {
+            return rewritten;
+        }
+        return originalOverview;
+    } catch (error) {
+        console.warn(`⚠️ Rewrite error for "${title}":`, error);
+        return originalOverview;
+    }
+}
 
 async function generateEmbedding(text: string, retries = 1): Promise<number[] | null> {
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -165,8 +244,13 @@ async function seedMovies(supabase: any): Promise<{ success: number; skipped: nu
             continue;
         }
 
-        // Generate embedding
-        const text = `${movie.title}: ${movie.overview}`;
+        // Rewrite description with LLM (with concurrency limit)
+        const styledDescription = await rewriteLimiter(() =>
+            rewriteDescription(movie.title, movie.overview)
+        );
+
+        // Generate embedding using the styled description
+        const text = `${movie.title}: ${styledDescription}`;
         const embedding = await generateEmbedding(text);
 
         if (!embedding) {
@@ -178,14 +262,15 @@ async function seedMovies(supabase: any): Promise<{ success: number; skipped: nu
         // Format and insert
         const item: GlobalItem = {
             title: movie.title,
-            description: movie.overview,
+            description: styledDescription,
             image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
             category_type: 'movie',
             external_ids: { tmdb: movie.id },
             metadata: {
                 release_date: movie.release_date,
                 vote_average: movie.vote_average,
-                source: 'tmdb_seed'
+                source: 'tmdb_seed',
+                original_overview: movie.overview // Keep original for reference
             },
             embedding
         };
