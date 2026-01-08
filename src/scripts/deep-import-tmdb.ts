@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createServiceRoleClient } from '../lib/supabase/service-role';
 import { callLLM } from '../lib/llm';
-import { SystemConfigService } from '../lib/services/SystemConfigService';
+import { decrypt } from '../lib/encryption';
 
 /**
  * Deep TMDB Import Script
@@ -112,37 +112,52 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // LLM Config cache
 let llmConfig: { provider: string; apiKey: string; model?: string; endpoint?: string } | null = null;
 
-async function getLLMConfig() {
+/**
+ * Fetch LLM config directly from database using service role client
+ * (SystemConfigService uses Next.js cookies() which fails in standalone scripts)
+ */
+async function getLLMConfig(supabase: any) {
     if (llmConfig) return llmConfig;
 
-    const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
-    let apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
-    const model = await SystemConfigService.getDecryptedConfig('llm_model');
-    const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
+    // Helper to fetch and decrypt a single setting
+    async function getSetting(key: string): Promise<string | null> {
+        const { data } = await (supabase.from('system_settings') as any)
+            .select('value')
+            .eq('key', key)
+            .single();
+        return data?.value ? decrypt(data.value) : null;
+    }
 
+    const provider = await getSetting('llm_provider') || 'openrouter';
+    let apiKey = await getSetting('llm_api_key');
+    const model = await getSetting('llm_model');
+    const endpoint = await getSetting('llm_endpoint');
+
+    // Fallback to provider-specific keys
     if (!apiKey) {
         switch (provider) {
-            case 'anthropic': apiKey = await SystemConfigService.getDecryptedConfig('anthropic_api_key'); break;
-            case 'openai': apiKey = await SystemConfigService.getDecryptedConfig('openai_api_key'); break;
-            case 'openrouter': apiKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key'); break;
-            case 'google': apiKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key'); break;
+            case 'anthropic': apiKey = await getSetting('anthropic_api_key'); break;
+            case 'openai': apiKey = await getSetting('openai_api_key'); break;
+            case 'openrouter': apiKey = await getSetting('openrouter_api_key'); break;
+            case 'google': apiKey = await getSetting('google_ai_api_key'); break;
         }
     }
 
+    // Ultimate fallback
     if (!apiKey) {
-        apiKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key') ||
-            await SystemConfigService.getDecryptedConfig('anthropic_api_key') ||
-            await SystemConfigService.getDecryptedConfig('openai_api_key') ||
-            await SystemConfigService.getDecryptedConfig('google_ai_api_key') || '';
+        apiKey = await getSetting('openrouter_api_key') ||
+            await getSetting('anthropic_api_key') ||
+            await getSetting('openai_api_key') ||
+            await getSetting('google_ai_api_key') || '';
     }
 
-    llmConfig = { provider, apiKey, model: model || undefined, endpoint: endpoint || undefined };
+    llmConfig = { provider, apiKey: apiKey || '', model: model || undefined, endpoint: endpoint || undefined };
     return llmConfig;
 }
 
-async function generateDescription(title: string, originalOverview: string): Promise<string> {
+async function generateDescription(supabase: any, title: string, originalOverview: string): Promise<string> {
     try {
-        const config = await getLLMConfig();
+        const config = await getLLMConfig(supabase);
         if (!config.apiKey) return originalOverview;
 
         const systemPrompt = `You are an expert curator and critic. Generate a compelling description for the given item.
@@ -238,7 +253,7 @@ async function importMovie(supabase: any, movie: TMDBMovie): Promise<boolean> {
     }
 
     // Generate description (uses LLM if configured)
-    const description = await generateDescription(movie.title, movie.overview);
+    const description = await generateDescription(supabase, movie.title, movie.overview);
 
     // Generate embedding (if enabled)
     let embedding: number[] | null = null;
@@ -332,7 +347,7 @@ async function main() {
 
     // Pre-load LLM config
     console.log('🔧 Loading LLM configuration...');
-    const llmConf = await getLLMConfig();
+    const llmConf = await getLLMConfig(supabase);
     console.log(`   • Provider: ${llmConf.provider}`);
     console.log(`   • API Key: ${llmConf.apiKey ? '✓ configured' : '✗ not configured'}`);
     console.log('═'.repeat(60));
