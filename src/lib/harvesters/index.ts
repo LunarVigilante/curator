@@ -3,6 +3,7 @@
  * Re-exports all harvester functions for easy importing
  */
 
+export { harvestMovies } from './movies';
 export { harvestTvShows } from './tv-shows';
 export { harvestAnime } from './anime';
 export { harvestBoardGames } from './board-games';

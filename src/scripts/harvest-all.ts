@@ -20,6 +20,7 @@
 import 'dotenv/config';
 import { createServiceRoleClient } from '../lib/supabase/service-role';
 import {
+    harvestMovies,
     harvestTvShows,
     harvestAnime,
     harvestBoardGames,
@@ -35,13 +36,14 @@ import { getLLMConfig } from '../lib/harvesters/shared';
 // CONFIGURATION
 // ============================================================================
 
-type HarvesterName = 'tv' | 'anime' | 'boardgames' | 'videogames' | 'books' | 'music' | 'podcasts';
+type HarvesterName = 'movies' | 'tv' | 'anime' | 'boardgames' | 'videogames' | 'books' | 'music' | 'podcasts';
 
 const HARVESTERS: Record<HarvesterName, {
     name: string;
     emoji: string;
     fn: (supabase: ReturnType<typeof createServiceRoleClient>) => Promise<HarvestResult>;
 }> = {
+    movies: { name: 'Movies', emoji: '🎬', fn: harvestMovies },
     tv: { name: 'TV Shows', emoji: '📺', fn: harvestTvShows },
     anime: { name: 'Anime', emoji: '🎌', fn: harvestAnime },
     boardgames: { name: 'Board Games', emoji: '🎲', fn: harvestBoardGames },
