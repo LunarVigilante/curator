@@ -4,6 +4,7 @@ import * as path from 'path';
 import { createServiceRoleClient } from '../lib/supabase/service-role';
 import { callLLM } from '../lib/llm';
 import { decrypt } from '../lib/encryption';
+import { generateTags, ensureTags } from '../lib/harvesters/shared';
 
 /**
  * Deep TMDB Import Script
@@ -73,6 +74,7 @@ interface GlobalItem {
     external_ids: Record<string, any>;
     metadata: Record<string, any>;
     embedding?: number[];
+    cached_tags?: { id: string, name: string }[];
 }
 
 // ============================================================================
@@ -262,6 +264,10 @@ async function importMovie(supabase: any, movie: TMDBMovie): Promise<boolean> {
         embedding = await generateEmbedding(text);
     }
 
+    // Generate tags
+    const tagNames = await generateTags(supabase, movie.title, description, 'Movie');
+    const validTags = await ensureTags(supabase, tagNames);
+
     // Prepare item for upsert
     const item: GlobalItem = {
         title: movie.title,
@@ -278,7 +284,8 @@ async function importMovie(supabase: any, movie: TMDBMovie): Promise<boolean> {
             genre_ids: movie.genre_ids,
             source: 'tmdb_deep_import',
             original_overview: movie.overview
-        }
+        },
+        cached_tags: validTags
     };
 
     if (embedding) {
@@ -299,6 +306,7 @@ async function importMovie(supabase: any, movie: TMDBMovie): Promise<boolean> {
                 description: item.description,
                 image_url: item.image_url,
                 metadata: item.metadata,
+                cached_tags: validTags,
                 ...(embedding ? { embedding } : {})
             })
             .eq('id', existing[0].id);

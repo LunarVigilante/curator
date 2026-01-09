@@ -1,14 +1,18 @@
 /**
- * Video Games Harvester - RAWG API
- * Fetches top-rated video games from RAWG
+ * Video Games Harvester - RAWG API (Massive Import)
+ * Fetches games from RAWG with pagination
+ * Targets ~2,000 games (50 pages × 40 per page)
+ * NOTE: RAWG has strict rate limits - 1 second delay between requests
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
 
 const RAWG_API_KEY = process.env.RAWG_API_KEY;
-const API_DELAY_MS = 300;
-const LIMIT = 100;
+const API_DELAY_MS = 1000;  // RAWG is strict - 1 second between pages
+const DETAIL_DELAY_MS = 500;  // Delay for detail fetches
+const MAX_PAGES = 50;
+const PAGE_SIZE = 40;
 
 interface RAWGGame {
     id: number;
@@ -24,8 +28,33 @@ interface RAWGGame {
     developers?: { name: string }[];
 }
 
+// Cache for game details to avoid refetching
+const detailCache = new Map<number, string>();
+
+async function fetchGameDescription(gameId: number): Promise<string> {
+    if (detailCache.has(gameId)) {
+        return detailCache.get(gameId)!;
+    }
+
+    try {
+        const detailUrl = `https://api.rawg.io/api/games/${gameId}?key=${RAWG_API_KEY}`;
+        const detailRes = await fetch(detailUrl);
+        if (detailRes.ok) {
+            const detail = await detailRes.json();
+            const desc = detail.description_raw || '';
+            detailCache.set(gameId, desc);
+            return desc;
+        }
+    } catch {
+        // Return empty on error
+    }
+    return '';
+}
+
 export async function harvestVideoGames(supabase: ReturnType<typeof createServiceRoleClient>): Promise<HarvestResult> {
-    console.log('\n🎮 HARVESTING VIDEO GAMES (RAWG)...');
+    console.log('\n🎮 HARVESTING VIDEO GAMES (RAWG - Deep Import)...');
+    console.log(`   📋 Config: ${MAX_PAGES} pages × ${PAGE_SIZE} per page = ~${MAX_PAGES * PAGE_SIZE} games target`);
+    console.log(`   ⚠️  Note: RAWG has strict rate limits. This will take a while.`);
 
     if (!RAWG_API_KEY) {
         console.error('❌ RAWG_API_KEY not set');
@@ -33,78 +62,107 @@ export async function harvestVideoGames(supabase: ReturnType<typeof createServic
     }
 
     const games: RAWGGame[] = [];
-    const pageSize = 40;
-    const pagesToFetch = Math.ceil(LIMIT / pageSize);
+    const gameIds = new Set<number>();
 
-    // Fetch list
-    for (let page = 1; page <= pagesToFetch; page++) {
-        const url = `https://api.rawg.io/api/games?key=${RAWG_API_KEY}&ordering=-rating&page_size=${pageSize}&page=${page}`;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+        const url = `https://api.rawg.io/api/games?key=${RAWG_API_KEY}&ordering=-rating&page_size=${PAGE_SIZE}&page=${page}`;
+
         try {
             const response = await fetch(url);
-            if (!response.ok) throw new Error(`RAWG error: ${response.status}`);
+
+            if (!response.ok) {
+                if (response.status === 429) {
+                    console.warn('   ⏳ Rate limited, waiting 30s...');
+                    await sleep(30000);
+                    page--;  // Retry this page
+                    continue;
+                }
+                throw new Error(`RAWG error: ${response.status}`);
+            }
+
             const data = await response.json();
-            games.push(...data.results);
+            const results = data.results || [];
+
+            for (const game of results) {
+                if (!gameIds.has(game.id)) {
+                    gameIds.add(game.id);
+                    games.push(game);
+                }
+            }
+
+            if ((page % 10 === 0) || page === MAX_PAGES) {
+                console.log(`   🎮 Games: Page ${page}/${MAX_PAGES} processed (${games.length} total)`);
+            }
+
+            // Stop if no more results
+            if (!data.next) {
+                console.log(`   📄 Reached end of results at page ${page}`);
+                break;
+            }
+
             await sleep(API_DELAY_MS);
         } catch (error) {
-            console.error(`❌ RAWG fetch error (page ${page}):`, error);
+            console.error(`   ❌ RAWG fetch error (page ${page}):`, error);
+            // Continue to next page
         }
     }
 
-    const limitedGames = games.slice(0, LIMIT);
-    console.log(`📊 Fetched ${limitedGames.length} video games`);
+    console.log(`\n📊 Fetched ${games.length} unique video games`);
 
     let success = 0, skipped = 0, failed = 0;
 
-    for (let i = 0; i < limitedGames.length; i++) {
-        const game = limitedGames[i];
+    for (let i = 0; i < games.length; i++) {
+        const game = games[i];
 
-        // Fetch game details for description (list endpoint doesn't include it)
-        let description = '';
         try {
-            const detailUrl = `https://api.rawg.io/api/games/${game.id}?key=${RAWG_API_KEY}`;
-            const detailRes = await fetch(detailUrl);
-            if (detailRes.ok) {
-                const detail = await detailRes.json();
-                description = detail.description_raw || '';
-            }
-            await sleep(API_DELAY_MS);
-        } catch {
-            // Use empty description
+            // Fetch game description (with caching and delay)
+            const description = await fetchGameDescription(game.id);
+            await sleep(DETAIL_DELAY_MS);
+
+            // AI rewrite with limiter
+            const finalDescription = await aiLimiter(() =>
+                rewriteDescription(supabase, game.name, description, 'Video Game')
+            );
+
+            // Generate tags
+            const tagNames = await aiLimiter(() =>
+                generateTags(supabase, game.name, finalDescription, 'Video Game')
+            );
+            const validTags = await ensureTags(supabase, tagNames);
+
+            // Generate embedding
+            const embedding = await generateEmbedding(`${game.name}: ${finalDescription}`);
+
+            const item: HarvestItem = {
+                title: game.name,
+                description: finalDescription,
+                image_url: game.background_image,
+                category_type: 'VIDEO_GAME',
+                external_ids: { rawg: game.id },
+                metadata: {
+                    released: game.released,
+                    rating: game.rating,
+                    ratings_count: game.ratings_count,
+                    metacritic: game.metacritic,
+                    genres: game.genres?.map(g => g.name) || [],
+                    platforms: game.platforms?.map(p => p.platform.name) || [],
+                    source: 'rawg_harvest',
+                    original_description: description
+                },
+                cached_tags: validTags,
+                ...(embedding ? { embedding } : {})
+            };
+
+            const result = await upsertItem(supabase, item, 'rawg', game.id);
+            if (result) success++;
+            else failed++;
+        } catch (error) {
+            console.error(`   ❌ Failed to process "${game.name}":`, error);
+            failed++;
         }
 
-        // AI rewrite with limiter
-        const finalDescription = await aiLimiter(() =>
-            rewriteDescription(supabase, game.name, description, 'Video Game')
-        );
-
-        // Generate embedding
-        const embedding = await generateEmbedding(`${game.name}: ${finalDescription}`);
-
-        const item: HarvestItem = {
-            title: game.name,
-            description: finalDescription,
-            image_url: game.background_image,
-            category_type: 'VIDEO_GAME',
-            external_ids: { rawg: game.id },
-            metadata: {
-                released: game.released,
-                rating: game.rating,
-                ratings_count: game.ratings_count,
-                metacritic: game.metacritic,
-                genres: game.genres?.map(g => g.name) || [],
-                platforms: game.platforms?.map(p => p.platform.name) || [],
-                source: 'rawg_harvest',
-                original_description: description
-            },
-            ...(embedding ? { embedding } : {})
-        };
-
-        const result = await upsertItem(supabase, item, 'rawg', game.id);
-        if (result) success++;
-        else failed++;
-
-        if ((i + 1) % 25 === 0) {
-            console.log(`   🎮 Video Games: ${i + 1}/${limitedGames.length} (${success} added)`);
+        if ((i + 1) % 100 === 0) {
+            console.log(`   🎮 Video Games: ${i + 1}/${games.length} (${success} added, ${failed} failed)`);
         }
     }
 

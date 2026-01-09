@@ -1,26 +1,50 @@
 /**
- * Podcasts Harvester - iTunes Search API
- * Fetches top podcasts from iTunes charts
+ * Podcasts Harvester - iTunes Search API (Massive Import)
+ * Fetches podcasts by iterating through genre IDs
+ * Each genre: fetch top 200
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
 
-const API_DELAY_MS = 300;
-const LIMIT = 100;
+const API_DELAY_MS = 500;  // iTunes is fairly generous but be respectful
 
-// iTunes podcast genres for variety
-const GENRES = [
-    'Society \u0026 Culture',
-    'True Crime',
-    'Comedy',
-    'News',
-    'Business',
-    'Health \u0026 Fitness',
-    'Technology',
-    'Arts',
-    'Sports',
-    'Science'
+// iTunes Podcast Genre IDs
+// https://affiliate.itunes.apple.com/resources/documentation/genre-mapping/
+const GENRE_IDS = [
+    { id: 1301, name: 'Arts' },
+    { id: 1303, name: 'Comedy' },
+    { id: 1304, name: 'Education' },
+    { id: 1305, name: 'Kids & Family' },
+    { id: 1307, name: 'Health & Fitness' },
+    { id: 1309, name: 'TV & Film' },
+    { id: 1310, name: 'Music' },
+    { id: 1311, name: 'News' },
+    { id: 1314, name: 'Religion & Spirituality' },
+    { id: 1315, name: 'Science' },
+    { id: 1316, name: 'Sports' },
+    { id: 1318, name: 'Technology' },
+    { id: 1321, name: 'Business' },
+    { id: 1324, name: 'Society & Culture' },
+    { id: 1325, name: 'True Crime' },
+    { id: 1488, name: 'History' },
+    { id: 1489, name: 'Leisure' },
+    { id: 1543, name: 'Fiction' },
+    { id: 1544, name: 'Government' },
+];
+
+// Additional search terms for more coverage
+const SEARCH_TERMS = [
+    'top podcasts',
+    'best podcasts 2024',
+    'popular podcasts',
+    'new podcasts',
+    'trending podcasts',
+    'award winning podcast',
+    'interview podcast',
+    'storytelling podcast',
+    'documentary podcast',
+    'investigative podcast',
 ];
 
 interface iTunesPodcast {
@@ -32,39 +56,83 @@ interface iTunesPodcast {
     genres: string[];
     trackCount: number;
     feedUrl: string;
-    description?: string;
+    collectionExplicitness: string;
+    primaryGenreName: string;
+}
+
+async function fetchPodcastsByGenre(genreId: number): Promise<iTunesPodcast[]> {
+    // iTunes doesn't have a direct genre filter, so we use search with genre term
+    const genre = GENRE_IDS.find(g => g.id === genreId);
+    if (!genre) return [];
+
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(genre.name + ' podcast')}&entity=podcast&limit=200&country=US`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`iTunes error: ${response.status}`);
+        const data = await response.json();
+        return data.results || [];
+    } catch (error) {
+        console.error(`   ❌ iTunes fetch error (genre ${genre.name}):`, error);
+        return [];
+    }
+}
+
+async function fetchPodcastsByTerm(term: string): Promise<iTunesPodcast[]> {
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=podcast&limit=200&country=US`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`iTunes error: ${response.status}`);
+        const data = await response.json();
+        return data.results || [];
+    } catch (error) {
+        console.error(`   ❌ iTunes fetch error (term "${term}"):`, error);
+        return [];
+    }
 }
 
 export async function harvestPodcasts(supabase: ReturnType<typeof createServiceRoleClient>): Promise<HarvestResult> {
-    console.log('\n🎙️ HARVESTING PODCASTS (iTunes)...');
+    console.log('\n🎙️ HARVESTING PODCASTS (iTunes - Deep Import)...');
+    console.log(`   📋 Config: ${GENRE_IDS.length} genres + ${SEARCH_TERMS.length} search terms`);
 
     const podcasts: iTunesPodcast[] = [];
     const podcastIds = new Set<number>();
-    const resultsPerGenre = Math.ceil(LIMIT / GENRES.length);
 
-    // Search for each genre
-    for (const genre of GENRES) {
-        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(genre)}&entity=podcast&limit=${resultsPerGenre}&country=US`;
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`iTunes error: ${response.status}`);
-            const data = await response.json();
+    // Fetch by genre
+    console.log('\n   📂 Fetching podcasts by genre...');
+    for (let i = 0; i < GENRE_IDS.length; i++) {
+        const genre = GENRE_IDS[i];
+        const results = await fetchPodcastsByGenre(genre.id);
 
-            for (const podcast of data.results || []) {
-                if (!podcastIds.has(podcast.trackId)) {
-                    podcastIds.add(podcast.trackId);
-                    podcasts.push(podcast);
-                }
+        for (const podcast of results) {
+            if (!podcastIds.has(podcast.trackId)) {
+                podcastIds.add(podcast.trackId);
+                podcasts.push(podcast);
             }
-            await sleep(API_DELAY_MS);
-        } catch (error) {
-            console.error(`❌ iTunes fetch error (${genre}):`, error);
         }
+
+        console.log(`   🎙️ Genre ${i + 1}/${GENRE_IDS.length} (${genre.name}): ${podcasts.length} unique total`);
+        await sleep(API_DELAY_MS);
     }
 
-    // Also fetch top podcasts (empty term returns popular)
+    // Fetch by search terms
+    console.log('\n   🔍 Fetching podcasts by search terms...');
+    for (const term of SEARCH_TERMS) {
+        const results = await fetchPodcastsByTerm(term);
+
+        for (const podcast of results) {
+            if (!podcastIds.has(podcast.trackId)) {
+                podcastIds.add(podcast.trackId);
+                podcasts.push(podcast);
+            }
+        }
+        await sleep(API_DELAY_MS);
+    }
+
+    // Also fetch "top" podcasts with empty query
     try {
-        const topUrl = 'https://itunes.apple.com/search?term=podcast&entity=podcast&limit=50&country=US';
+        const topUrl = 'https://itunes.apple.com/search?term=podcast&entity=podcast&limit=200&country=US';
         const response = await fetch(topUrl);
         if (response.ok) {
             const data = await response.json();
@@ -76,52 +144,71 @@ export async function harvestPodcasts(supabase: ReturnType<typeof createServiceR
             }
         }
     } catch {
-        // Continue with what we have
+        // Continue
     }
 
-    const limitedPodcasts = podcasts.slice(0, LIMIT);
-    console.log(`📊 Fetched ${limitedPodcasts.length} podcasts`);
+    console.log(`\n📊 Fetched ${podcasts.length} unique podcasts`);
 
     let success = 0, skipped = 0, failed = 0;
 
-    for (let i = 0; i < limitedPodcasts.length; i++) {
-        const podcast = limitedPodcasts[i];
-        const originalDesc = `${podcast.trackName} by ${podcast.artistName}. A ${podcast.genres?.[0] || 'general'} podcast with ${podcast.trackCount || 'many'} episodes.`;
+    for (let i = 0; i < podcasts.length; i++) {
+        const podcast = podcasts[i];
 
-        // AI rewrite with limiter
-        const description = await aiLimiter(() =>
-            rewriteDescription(supabase, podcast.trackName, originalDesc, 'Podcast')
-        );
-
-        // Generate embedding
-        const embedding = await generateEmbedding(`${podcast.trackName}: ${description}`);
-
-        const item: HarvestItem = {
-            title: podcast.trackName,
-            description,
-            image_url: podcast.artworkUrl600 || null,
-            category_type: 'PODCAST',
-            external_ids: { itunes_podcast: podcast.trackId },
-            metadata: {
-                artist_name: podcast.artistName,
-                genres: podcast.genres || [],
-                track_count: podcast.trackCount,
-                release_date: podcast.releaseDate,
-                feed_url: podcast.feedUrl,
-                source: 'itunes_harvest'
-            },
-            ...(embedding ? { embedding } : {})
-        };
-
-        const result = await upsertItem(supabase, item, 'itunes_podcast', podcast.trackId);
-        if (result) success++;
-        else failed++;
-
-        if ((i + 1) % 25 === 0) {
-            console.log(`   🎙️ Podcasts: ${i + 1}/${limitedPodcasts.length} (${success} added)`);
+        if (!podcast.trackName) {
+            skipped++;
+            continue;
         }
 
-        await sleep(100);
+        try {
+            const originalDesc = `${podcast.trackName} by ${podcast.artistName}. A ${podcast.primaryGenreName || podcast.genres?.[0] || 'general'} podcast with ${podcast.trackCount || 'many'} episodes.`;
+
+            // AI rewrite with limiter
+            const description = await aiLimiter(() =>
+                rewriteDescription(supabase, podcast.trackName, originalDesc, 'Podcast')
+            );
+
+            // Generate tags
+            const tagNames = await aiLimiter(() =>
+                generateTags(supabase, podcast.trackName, description, 'Podcast')
+            );
+            const validTags = await ensureTags(supabase, tagNames);
+
+            // Generate embedding
+            const embedding = await generateEmbedding(`${podcast.trackName}: ${description}`);
+
+            const item: HarvestItem = {
+                title: podcast.trackName,
+                description,
+                image_url: podcast.artworkUrl600 || null,
+                category_type: 'PODCAST',
+                external_ids: { itunes_podcast: podcast.trackId },
+                metadata: {
+                    artist_name: podcast.artistName,
+                    genres: podcast.genres || [],
+                    primary_genre: podcast.primaryGenreName,
+                    track_count: podcast.trackCount,
+                    release_date: podcast.releaseDate,
+                    feed_url: podcast.feedUrl,
+                    explicit: podcast.collectionExplicitness,
+                    source: 'itunes_harvest'
+                },
+                cached_tags: validTags,
+                ...(embedding ? { embedding } : {})
+            };
+
+            const result = await upsertItem(supabase, item, 'itunes_podcast', podcast.trackId);
+            if (result) success++;
+            else failed++;
+        } catch (error) {
+            console.error(`   ❌ Failed to process "${podcast.trackName}":`, error);
+            failed++;
+        }
+
+        if ((i + 1) % 100 === 0) {
+            console.log(`   🎙️ Podcasts: ${i + 1}/${podcasts.length} (${success} added, ${failed} failed)`);
+        }
+
+        await sleep(50);
     }
 
     console.log(`✅ Podcasts: ${success} added, ${skipped} skipped, ${failed} failed`);

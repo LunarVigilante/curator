@@ -144,3 +144,7 @@ Deno.serve(async (req: Request) => {
         );
     }
 });
+
+/*
+ * Note: If you are seeing 500 errors, ensure VOYAGE_API_KEY is set in Supabase Secrets.
+ */

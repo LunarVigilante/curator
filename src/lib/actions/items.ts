@@ -58,6 +58,7 @@ export async function getItems(
         name: item.global_item?.title || item.name || 'Untitled',
         description: item.global_item?.description || item.description,
         image: item.global_item?.image_url || item.image,
+        categoryType: item.global_item?.category_type,
         tags: item.tags?.map((t: any) => t.tag) || [],
         ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : []
     }))
@@ -92,6 +93,7 @@ export async function getItem(id: string) {
         name: item.global_item?.title || item.name || 'Untitled',
         description: item.global_item?.description || item.description,
         image: item.global_item?.image_url || item.image,
+        categoryType: item.global_item?.category_type,
         tags: item.tags?.map((t: any) => t.tag) || [],
         ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : [],
         category: item.category
@@ -117,7 +119,8 @@ const updateItemSchema = z.object({
     tags: z.array(z.string()).optional(),
     notes: z.string().optional(),
     tier: z.string().optional(),
-    rank: z.number().optional()
+    rank: z.number().optional(),
+    categoryType: z.string().optional()
 })
 
 export async function createItemInternal(input: z.input<typeof createItemSchema>) {
@@ -185,6 +188,7 @@ async function upsertGlobalItem(data: {
     description?: string | null
     imageUrl?: string | null
     metadata?: string | null
+    categoryType?: string | null
 }) {
     const supabase = await createClient()
 
@@ -246,6 +250,12 @@ async function upsertGlobalItem(data: {
             hasUpdates = true
         }
 
+        // Update category_type if provided (Correction)
+        if (data.categoryType && existing.category_type !== data.categoryType) {
+            updates.category_type = data.categoryType
+            hasUpdates = true
+        }
+
         if (hasUpdates) {
             console.log(`[upsertGlobalItem] Enhancing existing item "${existing.title}" with new data`)
             const { data: updated, error } = await (supabase.from('global_items') as any)
@@ -285,6 +295,7 @@ async function upsertGlobalItem(data: {
             image_url: data.imageUrl,
             metadata: parsedMeta,
             cached_tags: cachedTags.length > 0 ? cachedTags : null,
+            category_type: data.categoryType
         })
         .select()
         .single()
@@ -300,7 +311,8 @@ const createItemFormSchema = zfd.formData({
     category: zfd.text(z.string().uuid()),
     image: zfd.text(z.string().optional().default("")),
     metadata: zfd.text(z.string().optional().nullable()),
-    tags: zfd.text(z.string().optional())
+    tags: zfd.text(z.string().optional()),
+    categoryType: zfd.text(z.string().optional())
 })
 
 export async function createItem(formData: FormData) {
@@ -338,7 +350,7 @@ export async function createItem(formData: FormData) {
 export async function updateItemInternal(id: string, input: z.input<typeof updateItemSchema>) {
     const data = updateItemSchema.parse(input)
     const supabase = await createClient()
-    const { name, description, categoryId, image, metadata, tags: tagIds, notes, tier, rank } = data
+    const { name, description, categoryId, image, metadata, tags: tagIds, notes, tier, rank, categoryType } = data
 
     // Fetch existing item to get globalItemId
     const { data: existingItem, error: fetchError } = await (supabase.from('items') as any)
@@ -366,6 +378,7 @@ export async function updateItemInternal(id: string, input: z.input<typeof updat
         if (description !== undefined) globalUpdateData.description = description
         if (finalImage) globalUpdateData.image_url = finalImage
         if (metadata) globalUpdateData.metadata = JSON.parse(metadata)
+        if (categoryType) globalUpdateData.category_type = categoryType
 
         if (Object.keys(globalUpdateData).length > 0) {
             await (supabase.from('global_items') as any)
@@ -415,7 +428,8 @@ const updateItemFormSchema = zfd.formData({
     notes: zfd.text(z.string().optional()),
     tier: zfd.text(z.string().optional()),
     rank: zfd.text(z.string().optional()),
-    tags: zfd.text(z.string().optional())
+    tags: zfd.text(z.string().optional()),
+    categoryType: zfd.text(z.string().optional())
 })
 
 export async function updateItem(id: string, formData: FormData) {
@@ -450,6 +464,7 @@ export async function updateItem(id: string, formData: FormData) {
     if (tier) cleanData.tier = tier
     if (rankStr) cleanData.rank = Number(rankStr)
     if (tagIds !== undefined) cleanData.tags = tagIds
+    if (formData.get('categoryType')) cleanData.categoryType = formData.get('categoryType') as string
 
     await updateItemInternal(id, cleanData)
 }

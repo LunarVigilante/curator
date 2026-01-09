@@ -71,6 +71,7 @@ export type Item = {
     eloScore: number
     numericalRating?: number
     createdAt?: Date
+    categoryType: string | null
 }
 
 type CustomRank = {
@@ -131,6 +132,14 @@ export default function TierListBoard({
     const [showStats, setShowStats] = useState(false)
     const [mounted, setMounted] = useState(false)
     const [, startTransition] = useTransition()
+
+    // Parse collection type from metadata to enforce schema
+    const collectionType = categoryMetadata ? (() => {
+        try {
+            const parsed = typeof categoryMetadata === 'string' ? JSON.parse(categoryMetadata) : categoryMetadata
+            return parsed?.type || null
+        } catch { return null }
+    })() : null
 
     // Optimistic UI for items
     const [optimisticItems, updateOptimisticItem] = useOptimistic(
@@ -371,6 +380,7 @@ export default function TierListBoard({
                                 flashItem={flashItem}
                                 editingItemId={editingItemId}
                                 onEditingItemIdChange={onEditingItemIdChange}
+                                collectionType={collectionType}
                             />
                         ))}
                     </SortableContext>
@@ -432,6 +442,7 @@ export default function TierListBoard({
                         flashItem={flashItem}
                         editingItemId={editingItemId}
                         onEditingItemIdChange={onEditingItemIdChange}
+                        collectionType={collectionType}
                     />
                 )}
 
@@ -500,7 +511,8 @@ function TierRow({
     onHoverChange,
     flashItem,
     editingItemId,
-    onEditingItemIdChange
+    onEditingItemIdChange,
+    collectionType
 }: {
     rank: CustomRank | { id: string, name: string, color: string | null },
     items: Item[],
@@ -512,6 +524,7 @@ function TierRow({
     flashItem?: { id: string, type: 'move' | 'delete' | 'edit' | 'unranked' } | null
     editingItemId?: string | null
     onEditingItemIdChange?: (id: string | null) => void
+    collectionType?: string | null
 }) {
     const [isEditing, setIsEditing] = useState(false)
     const [name, setName] = useState(rank.name)
@@ -634,7 +647,6 @@ function TierRow({
                     {items.map(item => (
                         <DraggableItem
                             key={item.id}
-                            item={item}
                             categoryId={categoryId}
                             tileSize={tileSize}
                             hoveredItemId={hoveredItemId}
@@ -642,6 +654,7 @@ function TierRow({
                             flashItem={flashItem}
                             editingItemId={editingItemId}
                             onEditingItemIdChange={onEditingItemIdChange}
+                            item={collectionType ? { ...item, categoryType: collectionType } : item}
                         />
                     ))}
                 </div>
@@ -659,7 +672,8 @@ function UnrankedPool({
     onHoverChange,
     flashItem,
     editingItemId,
-    onEditingItemIdChange
+    onEditingItemIdChange,
+    collectionType
 }: {
     items: Item[],
     categoryId: string,
@@ -670,6 +684,7 @@ function UnrankedPool({
     flashItem?: { id: string, type: 'move' | 'delete' | 'edit' | 'unranked' } | null
     editingItemId?: string | null
     onEditingItemIdChange?: (id: string | null) => void
+    collectionType?: string | null
 }) {
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'az' | 'za'>('newest')
 
@@ -750,7 +765,6 @@ function UnrankedPool({
                     {sortedItems.map(item => (
                         <DraggableItem
                             key={item.id}
-                            item={item}
                             categoryId={categoryId}
                             tileSize={tileSize}
                             hoveredItemId={hoveredItemId}
@@ -758,6 +772,7 @@ function UnrankedPool({
                             flashItem={flashItem}
                             editingItemId={editingItemId}
                             onEditingItemIdChange={onEditingItemIdChange}
+                            item={collectionType ? { ...item, categoryType: collectionType } : item}
                         />
                     ))}
                     {items.length === 0 && (
@@ -919,6 +934,7 @@ function DraggableItem({
                     open={isEditing}
                     onOpenChange={setIsEditing}
                     categoryId={categoryId}
+                    disableCategorySelect={true}
                 />
             )}
 

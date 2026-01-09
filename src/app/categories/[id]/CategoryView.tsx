@@ -19,6 +19,7 @@ type Item = {
     ratings: { tier: string | null, value: number }[]
     tags: { id: string; name: string }[]
     eloScore: number
+    categoryType: string | null
 }
 
 type CustomRank = {

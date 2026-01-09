@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { downloadImageFromUrl } from './upload'
-import { DEFAULT_CATEGORIES } from '@/lib/constants'
+import { DEFAULT_CATEGORIES, normalizeCategory } from '@/lib/constants'
 import { getSession } from '@/lib/auth'
 
 export async function seedDefaultCategories(userId: string) {
@@ -272,7 +272,7 @@ export async function getPublicCategories(
     }
 
     if (type && type !== 'All') {
-        const dbType = getFilterTypeFromLabel(type)
+        const dbType = normalizeCategory(type)
         queryBuilder = queryBuilder.contains('metadata', { type: dbType })
     }
 
@@ -325,18 +325,3 @@ export async function getUserCategories(userId: string) {
     }))
 }
 
-function getFilterTypeFromLabel(label: string): string {
-    switch (label.toLowerCase()) {
-        case 'movies': return 'movie'
-        case 'tv shows': return 'tv'
-        case 'anime': return 'anime'
-        case 'video games': return 'game'
-        case 'books': return 'book'
-        case 'music': return 'music'
-        case 'podcasts': return 'podcast'
-        case 'audiobooks': return 'audiobook'
-        case 'board games': return 'board_game'
-        case 'comics': return 'comic'
-        default: return label.toLowerCase().replace(' ', '_')
-    }
-}

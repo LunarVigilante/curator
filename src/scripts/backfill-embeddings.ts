@@ -34,6 +34,7 @@ interface ItemToEmbed {
     id: string;
     title: string;
     description: string | null;
+    cached_tags: Array<{ id: string; name: string }> | null;
 }
 
 async function generateEmbeddingsBatch(texts: string[]): Promise<number[][] | null> {
@@ -72,11 +73,10 @@ async function backfill() {
 
     console.log("🔍 Fetching items without embeddings...");
 
-    // Fetch items that don't have embeddings
+    // Fetch ALL items to regenerate embeddings with new format (includes tags)
     const { data: items, error: fetchError } = await supabase
         .from('global_items')
-        .select('id, title, description')
-        .is('embedding', null);
+        .select('id, title, description, cached_tags');
 
     if (fetchError) {
         console.error("❌ Error fetching items:", fetchError);
@@ -102,12 +102,18 @@ async function backfill() {
 
         console.log(`\n📦 Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})...`);
 
-        // Prepare texts for this batch
-        const texts = batch.map(item =>
-            item.description
-                ? `${item.title}: ${item.description}`
-                : item.title
-        );
+        // Prepare texts for this batch (now includes tags for richer semantic matching)
+        const texts = batch.map(item => {
+            const parts = [item.title];
+            if (item.description) {
+                parts.push(item.description);
+            }
+            if (item.cached_tags && item.cached_tags.length > 0) {
+                const tagNames = item.cached_tags.map(t => t.name).join(', ');
+                parts.push(`Tags: ${tagNames}`);
+            }
+            return parts.join('. ');
+        });
 
         const embeddings = await generateEmbeddingsBatch(texts);
 

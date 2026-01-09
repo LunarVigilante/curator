@@ -37,7 +37,21 @@ export async function generateDescriptionAction(input: z.input<typeof generateDe
         const { title, type, context } = generateDescriptionSchema.parse(input)
         const supabase = await createClient()
 
-        // 1. Check Cache
+        // Refusal patterns - don't use cached descriptions that contain these
+        const REFUSAL_PATTERNS = [
+            "I can't generate", "I cannot generate", "I am unable to",
+            "I'm not able to", "I apologize, but", "I can't help with",
+            "sexually explicit", "adult content", "harmful content",
+            "violates my safety", "I cannot fulfill", "As an AI",
+            "happy to help with those instead", "If you have other"
+        ];
+
+        const isRefusal = (text: string) => {
+            const lower = text.toLowerCase();
+            return REFUSAL_PATTERNS.some(p => lower.includes(p.toLowerCase()));
+        };
+
+        // 1. Check Cache (but skip if cached description is a refusal)
         const normalizedType = type.toUpperCase().replace(/\s+/g, '_');
         const { data: existingItem } = await (supabase.from('global_items') as any)
             .select('*')
@@ -45,9 +59,14 @@ export async function generateDescriptionAction(input: z.input<typeof generateDe
             .eq('category_type', normalizedType)
             .single()
 
-        if (existingItem?.description) {
+        if (existingItem?.description && !isRefusal(existingItem.description)) {
             console.log(`[AI Cache] Hit for description: "${title}"`);
             return { description: existingItem.description };
+        }
+
+        // If cached description was a refusal, log it
+        if (existingItem?.description && isRefusal(existingItem.description)) {
+            console.log(`[AI Cache] Skipping cached refusal for: "${title}" - regenerating...`);
         }
 
         // Fetch LLM config from database
@@ -77,14 +96,23 @@ export async function generateDescriptionAction(input: z.input<typeof generateDe
             throw new Error('LLM API Key not configured in System Settings')
         }
 
-        const systemPrompt = `You are an expert curator and critic. Generate a compelling description for the given item.
+        const systemPrompt = `You are an expert curator and critic optimizing descriptions for semantic search and discovery.
 
-DESCRIPTION FORMAT:
-1. Body: Maximum 50 words. Focus on plot summary first, then the vibe/atmosphere.
-2. Footer: After the body, append exactly this format on a new line after a double newline:
+DESCRIPTION FORMAT (150-250 words total):
 
+1. PREMISE (2-3 sentences): Core plot/concept and what makes it unique
+
+2. THEMES & TROPES (2-3 sentences): Explicitly name relevant themes and tropes that fans would search for:
+   - Character archetypes: "overpowered protagonist", "reluctant hero", "anti-hero", "chosen one"
+   - Story tropes: "isekai", "time loop", "found family", "enemies-to-lovers", "redemption arc"
+   - Themes: "power fantasy", "coming of age", "existential crisis", "revenge", "survival"
+
+3. TONE & APPEAL (1-2 sentences): Who would enjoy this and why. Mood keywords.
+
+4. FOOTER (on new line after double newline):
 Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
 
+CRITICAL: Include searchable keywords that match how fans describe this genre/type.
 Return ONLY the description text. No JSON, no markdown, no quotes.`;
 
         const userPrompt = `Generate a description for:
@@ -92,14 +120,17 @@ Title: ${sanitizeInput(title, 150)}
 Type: ${sanitizeInput(type, 50)}
 ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
 
-        const response = await callLLM({
+        // ============================================
+        // ATTEMPT 1: Primary Model
+        // ============================================
+        let response = await callLLM({
             userPrompt,
             systemPrompt,
             apiKey: finalApiKey,
             provider,
             model: model || undefined,
             endpoint: endpoint || undefined,
-            timeoutMs: 60000  // 60 seconds for description generation
+            timeoutMs: 60000
         });
 
         let description = response.trim();
@@ -110,18 +141,49 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
             } catch { }
         }
 
-        // 2. Update Cache
-        if (existingItem) {
-            await (supabase.from('global_items') as any)
-                .update({ description })
-                .eq('id', existingItem.id)
-        } else {
-            // Note: We don't have externalId or image here usually, just title/desc
-            await (supabase.from('global_items') as any).insert({
-                title,
-                description,
-                category_type: normalizedType
-            })
+        // Check for refusal - if so, try Grok
+        if (isRefusal(description)) {
+            console.log(`[AI] Primary model refused "${title}". Switching to Grok...`);
+
+            // ============================================
+            // ATTEMPT 2: Grok Fallback (same prompt, different model)
+            // ============================================
+            try {
+                response = await callLLM({
+                    userPrompt,  // Same prompt as primary
+                    systemPrompt,  // Same system prompt as primary
+                    apiKey: openrouterKey || finalApiKey,
+                    provider: 'openrouter',
+                    model: 'x-ai/grok-4.1-fast',
+                    timeoutMs: 60000
+                });
+
+                description = response.trim();
+
+                // If Grok also refused, use a generic placeholder
+                if (isRefusal(description)) {
+                    console.log(`[AI] Grok also refused "${title}". Using placeholder.`);
+                    description = `${title} - A ${type.toLowerCase()} title. No detailed description available.`;
+                }
+            } catch (grokError) {
+                console.log(`[AI] Grok fallback failed for "${title}". Using placeholder.`);
+                description = `${title} - A ${type.toLowerCase()} title. No detailed description available.`;
+            }
+        }
+
+        // 2. Update Cache (only if not a refusal)
+        if (!isRefusal(description)) {
+            if (existingItem) {
+                await (supabase.from('global_items') as any)
+                    .update({ description })
+                    .eq('id', existingItem.id)
+            } else {
+                await (supabase.from('global_items') as any).insert({
+                    title,
+                    description,
+                    category_type: normalizedType
+                })
+            }
         }
 
         return { description }

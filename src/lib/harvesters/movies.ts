@@ -1,16 +1,16 @@
 /**
- * Movies Harvester - TMDB
- * Fetches top-rated movies from The Movie Database
- * (Adapted from deep-import-tmdb.ts for the modular harvester pattern)
+ * Movies Harvester - TMDB (Massive Import)
+ * Fetches movies from TMDB using both top_rated and popular endpoints
+ * Targets ~2,000 movies (50 pages × 2 endpoints × 20 per page)
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const API_DELAY_MS = 300;
-const LIMIT = 100;
-const MIN_VOTE_COUNT = 50;
+const API_DELAY_MS = 250;  // 250ms between calls for rate limiting
+const MAX_PAGES = 50;      // 50 pages per endpoint
+const MIN_VOTE_COUNT = 50; // Minimum votes to consider quality content
 
 interface TMDBMovie {
     id: number;
@@ -25,8 +25,29 @@ interface TMDBMovie {
     original_language: string;
 }
 
+async function fetchTMDBMoviePage(endpoint: 'top_rated' | 'popular', page: number): Promise<TMDBMovie[]> {
+    const url = `https://api.themoviedb.org/3/movie/${endpoint}?api_key=${TMDB_API_KEY}&page=${page}`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            if (response.status === 429) {
+                console.warn('   ⏳ Rate limited, waiting 10s...');
+                await sleep(10000);
+                return fetchTMDBMoviePage(endpoint, page);
+            }
+            throw new Error(`TMDB error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.results || [];
+    } catch (error) {
+        console.error(`   ❌ TMDB fetch error (${endpoint} page ${page}):`, error);
+        return [];
+    }
+}
+
 export async function harvestMovies(supabase: ReturnType<typeof createServiceRoleClient>): Promise<HarvestResult> {
-    console.log('\n🎬 HARVESTING MOVIES (TMDB)...');
+    console.log('\n🎬 HARVESTING MOVIES (TMDB - Deep Import)...');
+    console.log(`   📋 Config: ${MAX_PAGES} pages × 2 endpoints = ~${MAX_PAGES * 40} movies target`);
 
     if (!TMDB_API_KEY) {
         console.error('❌ TMDB_API_KEY not set');
@@ -34,70 +55,89 @@ export async function harvestMovies(supabase: ReturnType<typeof createServiceRol
     }
 
     const movies: TMDBMovie[] = [];
-    const pagesToFetch = Math.ceil(LIMIT / 20);
+    const movieIds = new Set<number>();
 
-    // Fetch top rated movies
-    for (let page = 1; page <= pagesToFetch; page++) {
-        const url = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_API_KEY}&page=${page}`;
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`TMDB error: ${response.status}`);
-            const data = await response.json();
-            movies.push(...data.results);
+    // Fetch from both endpoints
+    const endpoints: ('top_rated' | 'popular')[] = ['top_rated', 'popular'];
+
+    for (const endpoint of endpoints) {
+        console.log(`\n   🔄 Fetching ${endpoint}...`);
+
+        for (let page = 1; page <= MAX_PAGES; page++) {
+            const pageMovies = await fetchTMDBMoviePage(endpoint, page);
+
+            // Dedupe by ID and filter by quality
+            for (const movie of pageMovies) {
+                if (!movieIds.has(movie.id) && movie.vote_count >= MIN_VOTE_COUNT) {
+                    movieIds.add(movie.id);
+                    movies.push(movie);
+                }
+            }
+
+            if ((page % 10 === 0) || page === MAX_PAGES) {
+                console.log(`   🎬 Movies (${endpoint}): Page ${page}/${MAX_PAGES} processed (${movies.length} total qualified)`);
+            }
+
             await sleep(API_DELAY_MS);
-        } catch (error) {
-            console.error(`❌ TMDB fetch error (page ${page}):`, error);
         }
     }
 
-    // Filter by vote count and limit
-    const qualifiedMovies = movies
-        .filter(m => m.vote_count >= MIN_VOTE_COUNT)
-        .slice(0, LIMIT);
-
-    console.log(`📊 Fetched ${qualifiedMovies.length} movies (min ${MIN_VOTE_COUNT} votes)`);
+    console.log(`\n📊 Fetched ${movies.length} unique movies (min ${MIN_VOTE_COUNT} votes)`);
 
     let success = 0, skipped = 0, failed = 0;
 
-    for (let i = 0; i < qualifiedMovies.length; i++) {
-        const movie = qualifiedMovies[i];
+    for (let i = 0; i < movies.length; i++) {
+        const movie = movies[i];
 
-        // AI rewrite with limiter
-        const description = await aiLimiter(() =>
-            rewriteDescription(supabase, movie.title, movie.overview, 'Movie')
-        );
+        try {
+            // AI rewrite with limiter
+            const description = await aiLimiter(() =>
+                rewriteDescription(supabase, movie.title, movie.overview, 'Movie')
+            );
 
-        // Generate embedding
-        const embedding = await generateEmbedding(`${movie.title}: ${description}`);
+            // Generate tags
+            const tagNames = await aiLimiter(() =>
+                generateTags(supabase, movie.title, description, 'Movie')
+            );
+            const validTags = await ensureTags(supabase, tagNames);
 
-        const item: HarvestItem = {
-            title: movie.title,
-            description,
-            image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
-            category_type: 'MOVIE',
-            external_ids: { tmdb: movie.id },
-            metadata: {
-                release_date: movie.release_date,
-                vote_average: movie.vote_average,
-                vote_count: movie.vote_count,
-                popularity: movie.popularity,
-                genre_ids: movie.genre_ids,
-                original_language: movie.original_language,
-                source: 'tmdb_harvest',
-                original_overview: movie.overview
-            },
-            ...(embedding ? { embedding } : {})
-        };
+            // Generate embedding
+            const embedding = await generateEmbedding(`${movie.title}: ${description}`);
 
-        const result = await upsertItem(supabase, item, 'tmdb', movie.id);
-        if (result) success++;
-        else failed++;
+            const item: HarvestItem = {
+                title: movie.title,
+                description,
+                image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
+                category_type: 'MOVIE',
+                external_ids: { tmdb: movie.id },
+                metadata: {
+                    release_date: movie.release_date,
+                    vote_average: movie.vote_average,
+                    vote_count: movie.vote_count,
+                    popularity: movie.popularity,
+                    genre_ids: movie.genre_ids,
+                    original_language: movie.original_language,
+                    media_type: 'movie',  // Distinguish from TV shows
+                    source: 'tmdb_harvest',
+                    original_overview: movie.overview
+                },
+                cached_tags: validTags,
+                ...(embedding ? { embedding } : {})
+            };
 
-        if ((i + 1) % 25 === 0) {
-            console.log(`   🎬 Movies: ${i + 1}/${qualifiedMovies.length} (${success} added)`);
+            const result = await upsertItem(supabase, item, 'tmdb', movie.id);
+            if (result) success++;
+            else failed++;
+        } catch (error) {
+            console.error(`   ❌ Failed to process "${movie.title}":`, error);
+            failed++;
         }
 
-        await sleep(100);
+        if ((i + 1) % 100 === 0) {
+            console.log(`   🎬 Movies: ${i + 1}/${movies.length} (${success} added, ${failed} failed)`);
+        }
+
+        await sleep(50);  // Small delay between DB operations
     }
 
     console.log(`✅ Movies: ${success} added, ${skipped} skipped, ${failed} failed`);

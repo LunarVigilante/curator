@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { supabase, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
-import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users } from "lucide-react";
+import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users, Database } from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -170,6 +170,12 @@ export function Navbar() {
                                             <Link href="/admin" className="flex items-center cursor-pointer">
                                                 <Shield className="mr-2 h-4 w-4" />
                                                 <span>Admin Dashboard</span>
+                                            </Link>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem asChild>
+                                            <Link href="/admin/data-browser" className="flex items-center cursor-pointer">
+                                                <Database className="mr-2 h-4 w-4" />
+                                                <span>Data Browser</span>
                                             </Link>
                                         </DropdownMenuItem>
                                     </>

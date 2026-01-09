@@ -15,6 +15,8 @@ import ImageCropper from '@/components/ImageCropper'
 import { toast } from 'sonner'
 import { MediaResult } from '@/lib/services/media/types'
 import Image from 'next/image'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CATEGORY_LABELS } from '@/lib/constants'
 
 type Item = {
     id: string
@@ -24,6 +26,7 @@ type Item = {
     categoryId: string | null
     metadata: string | null
     tags: { id: string; name: string }[]
+    categoryType: string | null
 }
 
 type Category = {
@@ -36,12 +39,14 @@ export default function EditItemDialog({
     item,
     open,
     onOpenChange,
-    categoryId
+    categoryId,
+    disableCategorySelect = false
 }: {
     item: Item
     open: boolean
     onOpenChange: (open: boolean) => void
     categoryId: string
+    disableCategorySelect?: boolean
 }) {
     const [isPending, startTransition] = useTransition()
     const [categories, setCategories] = useState<Category[]>([])
@@ -62,7 +67,8 @@ export default function EditItemDialog({
         imageUploadMode: 'url' as 'url' | 'upload',
         categoryId: item.categoryId || categoryId,
         tags: item.tags.map(t => t.id),
-        metadata: item.metadata || ''
+        metadata: item.metadata || '',
+        categoryType: item.categoryType
     })
 
     // Fetch all categories
@@ -96,7 +102,7 @@ export default function EditItemDialog({
         const { searchMediaAction } = await import('@/lib/actions/media')
 
         startTransition(async () => {
-            const response = await searchMediaAction(searchTerm, catName, null, formData.categoryId)
+            const response = await searchMediaAction(searchTerm, catName, formData.categoryType, formData.categoryId)
 
             if (response.success) {
                 setMediaResults(response.data)
@@ -140,6 +146,7 @@ export default function EditItemDialog({
             formDataObj.append('category', formData.categoryId)
             formDataObj.append('tags', JSON.stringify(formData.tags))
             formDataObj.append('metadata', formData.metadata)
+            if (formData.categoryType) formDataObj.append('categoryType', formData.categoryType)
 
             await updateItem(item.id, formDataObj)
             toast.success('Item updated successfully')
@@ -457,6 +464,25 @@ export default function EditItemDialog({
                                     />
                                 </div>
                             </div>
+                        </div>
+
+                        {/* Category Type Section */}
+                        <div className="grid gap-2">
+                            <Label>Category Type</Label>
+                            <Select
+                                value={formData.categoryType || ""}
+                                onValueChange={(val) => setFormData({ ...formData, categoryType: val })}
+                                disabled={disableCategorySelect}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select Type..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {Object.entries(CATEGORY_LABELS).sort((a, b) => a[1].localeCompare(b[1])).map(([key, label]) => (
+                                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
 

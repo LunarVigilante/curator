@@ -1,64 +1,61 @@
+
+export const CATEGORY_TYPES = {
+    MOVIE: 'MOVIE',
+    TV_SHOW: 'TV_SHOW',
+    BOOKS: 'BOOKS',
+    VIDEO_GAME: 'VIDEO_GAME',
+    BOARD_GAME: 'BOARD_GAME',
+    ANIME: 'ANIME',
+    MUSIC_ARTIST: 'MUSIC_ARTIST',
+    PODCAST: 'PODCAST',
+    COMICS: 'COMICS'
+} as const
+
+export const CATEGORY_LABELS: Record<string, string> = {
+    [CATEGORY_TYPES.MOVIE]: 'Movies',
+    [CATEGORY_TYPES.TV_SHOW]: 'TV Shows',
+    [CATEGORY_TYPES.BOOKS]: 'Books',
+    'BOOK': 'Books', // Fallback
+    [CATEGORY_TYPES.VIDEO_GAME]: 'Video Games',
+    [CATEGORY_TYPES.BOARD_GAME]: 'Board Games',
+    [CATEGORY_TYPES.ANIME]: 'Anime',
+    [CATEGORY_TYPES.MUSIC_ARTIST]: 'Artists',
+    'MUSIC': 'Artists',
+    [CATEGORY_TYPES.PODCAST]: 'Podcasts',
+    [CATEGORY_TYPES.COMICS]: 'Comics'
+}
+
 export const DEFAULT_CATEGORIES = [
-    {
-        name: "Anime",
-        type: "anime",
-        image: "/images/defaults/anime.jpg",
-        description: "Explore the vast world of Japanese animation, from high-octane action to slice-of-life dramas."
-    },
+    { name: 'Movies', description: 'Cinema and films', image: '', type: CATEGORY_TYPES.MOVIE },
+    { name: 'TV Shows', description: 'Television series', image: '', type: CATEGORY_TYPES.TV_SHOW },
+    { name: 'Books', description: 'Reading list', image: '', type: CATEGORY_TYPES.BOOKS },
+    { name: 'Video Games', description: 'Games played', image: '', type: CATEGORY_TYPES.VIDEO_GAME },
+    { name: 'Board Games', description: 'Tabletop games', image: '', type: CATEGORY_TYPES.BOARD_GAME },
+    { name: 'Anime', description: 'Japanese animation', image: '', type: CATEGORY_TYPES.ANIME },
+    { name: 'Music', description: 'Favorite artists and albums', image: '', type: CATEGORY_TYPES.MUSIC_ARTIST },
+    { name: 'Podcasts', description: 'Podcasts subscriptions', image: '', type: CATEGORY_TYPES.PODCAST },
+    { name: 'Comics', description: 'Comics and manga', image: '', type: CATEGORY_TYPES.COMICS }
+]
 
-    {
-        name: "TV Shows",
-        type: "tv",
-        image: "/images/defaults/tv.jpg",
-        description: "Track your favorite series, binge-worthy dramas, and sitcoms from broadcast and streaming platforms."
-    },
-    {
-        name: "Movies",
-        type: "movie",
-        image: "/images/defaults/movies.jpg",
-        description: "A collection of feature films, spanning blockbusters, indie gems, and cinematic classics."
-    },
-    {
-        name: "Video Games",
-        type: "game",
-        image: "/images/defaults/games.jpg",
-        description: "Rank and organize your interactive adventures, from retro classics to modern releases."
-    },
-    {
-        name: "Books",
-        type: "book",
-        image: "/images/defaults/books.jpg",
-        description: "Catalog your reading journey through novels, biographies, and literary masterpieces."
-    },
+export function normalizeCategory(cat: string | null): string {
+    if (!cat || cat.toUpperCase() === 'NULL') return 'null'
+    const upper = cat.toUpperCase().replace(/\s+/g, '_')
 
-    {
-        name: "Music",
-        type: "music_album",
-        image: "/images/defaults/music.jpg",
-        description: "Your personal library of albums, EPs, and sonic landscapes across all genres."
-    },
-    {
-        name: "Podcasts",
-        type: "podcast",
-        image: "/images/defaults/podcasts.jpg",
-        description: "Keep track of episodic audio series, discussions, and interviews on topics you love."
-    },
-    {
-        name: "Board Games",
-        type: "board_game",
-        image: "/images/defaults/board_games.jpg",
-        description: "Tabletop adventures, strategy games, and party favorites for your game nights."
-    },
-    {
-        name: "Comics",
-        type: "comic",
-        image: "/images/defaults/comics.jpg",
-        description: "Graphic novels, manga, and single issues from your favorite universes."
-    },
-    {
-        name: "Audiobooks",
-        type: "audiobook",
-        image: "/images/defaults/audiobooks.jpg",
-        description: "Listen to your favorite stories brought to life by talented narrators."
-    }
-];
+    // Map variations to canonical keys
+    if (upper === 'MOVIES' || upper === 'MOVIE') return CATEGORY_TYPES.MOVIE
+    if (upper === 'TV_SHOWS' || upper === 'TV_SHOW' || upper === 'TV') return CATEGORY_TYPES.TV_SHOW
+    if (upper === 'BOOKS' || upper === 'BOOK') return CATEGORY_TYPES.BOOKS
+    if (upper === 'GAMES' || upper === 'GAME') return CATEGORY_TYPES.VIDEO_GAME
+    if (upper === 'MUSIC') return CATEGORY_TYPES.MUSIC_ARTIST
+
+    return upper
+}
+
+export function formatCategoryLabel(cat: string | null): string {
+    if (!cat || cat === 'null' || cat === 'NULL') return 'Uncategorized'
+    const validCat = CATEGORY_LABELS[cat]
+    if (validCat) return validCat
+
+    // Fallback for unknown categories
+    return cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}

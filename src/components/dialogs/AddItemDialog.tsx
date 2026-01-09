@@ -109,23 +109,35 @@ export default function AddItemDialog({
         setIsVectorSearching(true)
         setVectorResults([])
         try {
-            const response = await fetch(
-                `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/search-global-items`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}`,
-                    },
-                    body: JSON.stringify({
-                        query: formData.name,
-                        matchThreshold: 0.5,
-                        matchCount: 10
-                    })
-                }
-            )
-            if (!response.ok) throw new Error('Search failed')
+            const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/search-global-items`
+            console.log('[VectorSearch] Calling:', url)
+            console.log('[VectorSearch] Query:', formData.name, '| Category:', categoryType || 'all')
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}`,
+                },
+                body: JSON.stringify({
+                    query: formData.name,
+                    matchThreshold: 0.3,  // Lowered from 0.5 for better recall
+                    matchCount: 10,
+                    categoryFilter: categoryType ? categoryType.toUpperCase() : null  // Normalize to uppercase
+                })
+            })
+
+            console.log('[VectorSearch] Response status:', response.status)
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                console.error('[VectorSearch] Error response:', errorText)
+                throw new Error('Search failed')
+            }
+
             const data = await response.json()
+            console.log('[VectorSearch] Results:', data)
+
             setVectorResults(data.results || [])
             if (data.results?.length === 0) {
                 toast.info('No matches found. Try switching to Title Search.')
@@ -138,9 +150,13 @@ export default function AddItemDialog({
         }
     }
 
-    // Auto-search when name changes (debounced)
+    // Auto-search when name changes (debounced) - only for title mode
     useEffect(() => {
         const search = async () => {
+            // Skip auto-search in describe mode (vector search requires explicit button click)
+            if (searchMode === 'describe') {
+                return
+            }
             // Skip search if we just selected a result OR if user has already selected
             if (skipNextSearchRef.current || hasSelectedRef.current) {
                 skipNextSearchRef.current = false
@@ -163,7 +179,7 @@ export default function AddItemDialog({
             })
         }
         search()
-    }, [debouncedName, categoryName, categoryType, categoryId])
+    }, [debouncedName, categoryName, categoryType, categoryId, searchMode])
 
     // Track which result is currently selected (for visual highlight)
     const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
@@ -273,14 +289,17 @@ export default function AddItemDialog({
         applyProviderTags()
     }
 
-    // Auto-select first result when search completes
+    // Auto-select first result when search completes (only in title mode)
     useEffect(() => {
+        // Skip auto-select in describe mode - user is typing a semantic query
+        if (searchMode === 'describe') return
+
         if (mediaResults.length > 0 && !hasSelectedRef.current) {
             // Auto-select first result but keep results visible for alternative selection
             selectResult(mediaResults[0], true)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- selectResult changes too often, we only want to react to new results
-    }, [mediaResults])
+    }, [mediaResults, searchMode])
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
