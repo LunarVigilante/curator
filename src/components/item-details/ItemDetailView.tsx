@@ -227,7 +227,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
             ================================================================ */}
             <div className="flex flex-wrap items-center gap-4 px-6 py-4 bg-zinc-900/80 border-y border-zinc-800">
                 {/* Rating */}
-                {item.vote_average && item.vote_average > 0 && (
+                {item.vote_average != null && item.vote_average > 0 && (
                     <div className="flex items-center gap-1.5">
                         <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                         <span className="text-white font-medium">{Number(item.vote_average).toFixed(1)}</span>
@@ -236,7 +236,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 )}
 
                 {/* Metacritic */}
-                {item.metacritic && item.metacritic > 0 && (
+                {item.metacritic != null && item.metacritic > 0 && (
                     <div className="flex items-center gap-1.5">
                         <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${item.metacritic >= 75 ? 'bg-green-600 text-white' :
                             item.metacritic >= 50 ? 'bg-yellow-600 text-black' :
@@ -249,7 +249,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 )}
 
                 {/* Complexity (Board Games) */}
-                {item.complexity && item.complexity > 0 && (
+                {item.complexity != null && item.complexity > 0 && (
                     <div className="flex items-center gap-1.5">
                         <Brain className="w-4 h-4 text-purple-400" />
                         <span className="text-white font-medium">{Number(item.complexity).toFixed(2)}</span>
@@ -258,7 +258,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 )}
 
                 {/* Runtime */}
-                {item.runtime && item.runtime > 0 && (
+                {item.runtime != null && item.runtime > 0 && (
                     <div className="flex items-center gap-1.5">
                         <Clock className="w-4 h-4 text-blue-400" />
                         <span className="text-white font-medium">{formatRuntime(item.runtime)}</span>
@@ -266,7 +266,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 )}
 
                 {/* Episodes */}
-                {item.episodes && item.episodes > 0 && (
+                {item.episodes != null && item.episodes > 0 && (
                     <div className="flex items-center gap-1.5">
                         <Tv className="w-4 h-4 text-pink-400" />
                         <span className="text-white font-medium">{item.episodes}</span>
@@ -275,7 +275,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 )}
 
                 {/* Player Count */}
-                {(item.min_players || item.max_players) && (
+                {((item.min_players != null && item.min_players > 0) || (item.max_players != null && item.max_players > 0)) && (
                     <div className="flex items-center gap-1.5">
                         <Users className="w-4 h-4 text-green-400" />
                         <span className="text-white font-medium">
@@ -288,7 +288,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 )}
 
                 {/* Board Game Playtime */}
-                {(item.min_playtime || item.max_playtime) && (
+                {((item.min_playtime != null && item.min_playtime > 0) || (item.max_playtime != null && item.max_playtime > 0)) && (
                     <div className="flex items-center gap-1.5">
                         <Clock className="w-4 h-4 text-orange-400" />
                         <span className="text-white font-medium">
