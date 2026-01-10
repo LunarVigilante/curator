@@ -139,6 +139,22 @@ export type Database = {
                     category_type: string | null
                     vector_text: string | null
                     last_metadata_update: string | null
+
+                    // Board Games
+                    min_players: number | null
+                    max_players: number | null
+                    min_playtime: number | null
+                    max_playtime: number | null
+                    min_age: number | null
+                    mechanics: string[] | null
+                    categories: string[] | null
+                    complexity: number | null
+                    designers: string[] | null
+                    artists: string[] | null
+                    publishers: string[] | null
+                    is_expansion: boolean | null
+                    bgg_id: number | null
+
                     created_at: string
                 }
                 Insert: {
@@ -155,6 +171,22 @@ export type Database = {
                     category_type?: string | null
                     vector_text?: string | null
                     last_metadata_update?: string | null
+
+                    // Board Games
+                    min_players?: number | null
+                    max_players?: number | null
+                    min_playtime?: number | null
+                    max_playtime?: number | null
+                    min_age?: number | null
+                    mechanics?: string[] | null
+                    categories?: string[] | null
+                    complexity?: number | null
+                    designers?: string[] | null
+                    artists?: string[] | null
+                    publishers?: string[] | null
+                    is_expansion?: boolean | null
+                    bgg_id?: number | null
+
                     created_at?: string
                 }
                 Update: {
@@ -171,6 +203,22 @@ export type Database = {
                     category_type?: string | null
                     vector_text?: string | null
                     last_metadata_update?: string | null
+
+                    // Board Games
+                    min_players?: number | null
+                    max_players?: number | null
+                    min_playtime?: number | null
+                    max_playtime?: number | null
+                    min_age?: number | null
+                    mechanics?: string[] | null
+                    categories?: string[] | null
+                    complexity?: number | null
+                    designers?: string[] | null
+                    artists?: string[] | null
+                    publishers?: string[] | null
+                    is_expansion?: boolean | null
+                    bgg_id?: number | null
+
                     created_at?: string
                 }
             }

@@ -84,12 +84,26 @@ CREATE TABLE global_items (
     romaji_title TEXT,
     original_creator TEXT,
 
-    -- Gaming specific
+    -- Gaming specific (Video Games & Board Games)
     platforms TEXT[],
     developers TEXT[],
     publishers TEXT[],
     playtime INTEGER,
     metacritic INTEGER,
+
+    -- Board Game specific
+    min_players INTEGER,
+    max_players INTEGER,
+    min_playtime INTEGER,
+    max_playtime INTEGER,
+    min_age INTEGER,
+    mechanics TEXT[],
+    categories TEXT[], -- Board game categories (e.g. "Economy", "Wargame")
+    complexity NUMERIC,
+    designers TEXT[],
+    artists TEXT[],
+    is_expansion BOOLEAN DEFAULT FALSE,
+    bgg_id INTEGER,
 
     -- Media specific
     cast TEXT[],
