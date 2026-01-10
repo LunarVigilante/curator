@@ -64,17 +64,46 @@ CREATE TABLE categories (
 
 CREATE TABLE global_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    external_id TEXT,
+    external_id TEXT, -- Legacy singular ID
+    external_ids JSONB DEFAULT '{}', -- Maps provider -> id (e.g. {"tmdb": "123", "anilist": "456"})
     source TEXT, -- 'tmdb', 'anilist', 'spotify', etc.
     title TEXT NOT NULL,
     description TEXT,
     image_url TEXT,
     release_year INTEGER,
-    metadata JSONB,
+    metadata JSONB DEFAULT '{}',
     cached_tags JSONB,
     category_type TEXT,
     vector_text TEXT,
     last_metadata_update TIMESTAMPTZ,
+    
+    -- Anime specific
+    episodes INTEGER,
+    season TEXT,
+    source_material TEXT,
+    romaji_title TEXT,
+    original_creator TEXT,
+
+    -- Gaming specific
+    platforms TEXT[],
+    developers TEXT[],
+    publishers TEXT[],
+    playtime INTEGER,
+    metacritic INTEGER,
+
+    -- Media specific
+    cast TEXT[],
+    director TEXT,
+    writer TEXT,
+    studio TEXT,
+    genres TEXT[],
+    content_rating TEXT,
+    runtime INTEGER,
+    vote_average NUMERIC,
+    trailer_url TEXT,
+    tagline TEXT,
+
+    embedding extensions.vector(1024),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(source, external_id)
 );
@@ -333,6 +362,8 @@ CREATE INDEX idx_items_category_id ON items(category_id);
 CREATE INDEX idx_items_global_item_id ON items(global_item_id);
 CREATE INDEX idx_categories_user_id ON categories(user_id);
 CREATE INDEX idx_global_items_source_external ON global_items(source, external_id);
+CREATE INDEX idx_global_items_external_ids ON global_items USING gin (external_ids);
+CREATE INDEX idx_global_items_embedding ON global_items USING hnsw (embedding extensions.vector_cosine_ops);
 CREATE INDEX idx_ratings_item_id ON ratings(item_id);
 CREATE INDEX idx_ratings_user_id ON ratings(user_id);
 CREATE INDEX idx_activities_user_id ON activities(user_id);
@@ -386,6 +417,78 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Handle email updates from auth.users
+CREATE OR REPLACE FUNCTION public.handle_user_email_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.profiles
+  SET email = NEW.email, updated_at = NOW()
+  WHERE id = NEW.id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_email_updated ON auth.users;
+CREATE TRIGGER on_auth_user_email_updated
+  AFTER UPDATE OF email ON auth.users
+  FOR EACH ROW
+  WHEN (OLD.email IS DISTINCT FROM NEW.email)
+  EXECUTE FUNCTION public.handle_user_email_update();
+
+-- Clean up profile when user is deleted
+CREATE OR REPLACE FUNCTION public.handle_user_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM public.profiles WHERE id = OLD.id;
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_deleted ON auth.users;
+CREATE TRIGGER on_auth_user_deleted
+  BEFORE DELETE ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_user_delete();
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+-- Check if current user is admin
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid()
+    AND role = 'ADMIN'
+  );
+$$;
+
+-- Get current user's profile
+CREATE OR REPLACE FUNCTION public.get_current_profile()
+RETURNS public.profiles
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT * FROM public.profiles WHERE id = auth.uid();
+$$;
+
+-- Computed Column: description_length for filtering
+CREATE OR REPLACE FUNCTION description_length(row global_items)
+RETURNS integer AS $$
+  SELECT char_length(COALESCE(row.description, ''));
+$$ LANGUAGE sql IMMUTABLE;
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -420,28 +523,46 @@ CREATE POLICY "Users can manage own ratings" ON ratings FOR ALL USING (auth.uid(
 -- System settings: Admin only via service role
 CREATE POLICY "Service role can access settings" ON system_settings FOR ALL USING (auth.role() = 'service_role');
 
+-- Tags: Anyone can read, authenticated can create, admins can manage
+ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can read tags" ON public.tags FOR SELECT USING (true);
+CREATE POLICY "Authenticated users can create tags" ON public.tags FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Admins can manage tags" ON public.tags FOR ALL USING (public.is_admin());
+
+-- Global Items: Anyone can read, authenticated can create/update (for AI enrichment)
+ALTER TABLE public.global_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can read global items" ON public.global_items FOR SELECT USING (true);
+CREATE POLICY "Authenticated users can create global items" ON public.global_items FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update global items" ON public.global_items FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Admins can manage global items" ON public.global_items FOR ALL USING (public.is_admin());
+
+-- Activities: Own policies
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own activities" ON public.activities FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create own activities" ON public.activities FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Public user activities are viewable" ON public.activities FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = activities.user_id AND profiles.is_public = true)
+);
+
 -- ============================================================================
 -- STORAGE: Media Bucket for File Uploads
 -- ============================================================================
 
 -- Create the 'media' bucket for all file uploads (avatars, covers, posters)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'media',
-    'media',
-    true, -- Public bucket for serving images
-    10485760, -- 10MB file size limit
-    ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-)
+VALUES 
+    ('media', 'media', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+    ('images', 'images', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+    ('covers', 'covers', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 ON CONFLICT (id) DO UPDATE SET
     public = EXCLUDED.public,
     file_size_limit = EXCLUDED.file_size_limit,
     allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- Storage RLS: Allow public read access
-CREATE POLICY "Public read access for media" ON storage.objects
-FOR SELECT TO public
-USING (bucket_id = 'media');
+-- Storage RLS: Allow public read access for all buckets
+CREATE POLICY "Public read access for media" ON storage.objects FOR SELECT TO public USING (bucket_id = 'media');
+CREATE POLICY "Public read access for images" ON storage.objects FOR SELECT TO public USING (bucket_id = 'images');
+CREATE POLICY "Public read access for covers" ON storage.objects FOR SELECT TO public USING (bucket_id = 'covers');
 
 -- Storage RLS: Allow authenticated users to upload
 CREATE POLICY "Authenticated users can upload media" ON storage.objects
@@ -561,6 +682,40 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.search_items TO authenticated;
+
+-- Simplified search returning specific fields for UI
+CREATE OR REPLACE FUNCTION public.search_items_by_vector(
+    query_embedding extensions.vector(1024),
+    match_threshold FLOAT DEFAULT 0.7,
+    match_count INT DEFAULT 10
+)
+RETURNS TABLE (
+    id UUID,
+    title TEXT,
+    "posterUrl" TEXT,
+    similarity FLOAT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        g.id,
+        g.title,
+        g.image_url AS "posterUrl",
+        (1 - (g.embedding <=> query_embedding))::FLOAT AS similarity
+    FROM global_items g
+    WHERE g.embedding IS NOT NULL
+      AND (1 - (g.embedding <=> query_embedding)) > match_threshold
+    ORDER BY g.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.search_items_by_vector TO authenticated;
+GRANT EXECUTE ON FUNCTION public.search_items_by_vector TO anon;
 
 -- ============================================================================
 -- TASTE COMPATIBILITY: Hybrid ELO + Vector similarity
