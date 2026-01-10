@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createServiceRoleClient } from '../lib/supabase/service-role';
-import { callLLM } from '../lib/llm';
-import { decrypt } from '../lib/encryption';
-import { generateTags, ensureTags } from '../lib/harvesters/shared';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { callLLM } from '@/lib/llm';
+import { decrypt } from '@/lib/encryption';
+import { generateTags, ensureTags } from '@/lib/harvesters/shared';
 
 /**
  * Deep TMDB Import Script

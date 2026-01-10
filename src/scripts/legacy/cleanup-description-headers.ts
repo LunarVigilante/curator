@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createServiceRoleClient } from '../lib/supabase/service-role';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
 /**
  * Cleanup script to remove section headers from descriptions.

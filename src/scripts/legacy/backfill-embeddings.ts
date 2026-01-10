@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createServiceRoleClient } from '../lib/supabase/service-role';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
 /**
  * Backfill script for generating embeddings for existing items using Voyage AI.

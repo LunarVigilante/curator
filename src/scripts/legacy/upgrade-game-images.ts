@@ -2,9 +2,9 @@
 import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
 import pLimit from 'p-limit'
-import { SteamGridDBService } from '../lib/services/steamgriddb'
-import { ImageService } from '../lib/services/image/imageService'
-import { Database } from '../lib/types/database';
+import { SteamGridDBService } from '@/lib/services/steamgriddb'
+import { ImageService } from '@/lib/services/image/imageService'
+import { Database } from '@/lib/types/database';
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!

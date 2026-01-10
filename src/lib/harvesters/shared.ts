@@ -17,6 +17,7 @@ export interface HarvestItem {
     category_type: string;
     external_ids: Record<string, any>;
     metadata: Record<string, any>;
+    release_year?: number | null;
     embedding?: number[];
     tags?: string[];
     cached_tags?: { id: string, name: string }[];
