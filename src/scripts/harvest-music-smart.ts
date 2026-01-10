@@ -7,7 +7,7 @@ import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep,
 import pLimit from 'p-limit';
 
 // Config
-const START_YEAR = 2025;
+const START_YEAR = 2026;
 const END_YEAR = 1980;
 const CONCURRENCY = 1; // Strict 1 for rate limits
 const DELAY_BETWEEN_ALBUMS = 2000; // 2 seconds for AudioDB
@@ -204,6 +204,8 @@ async function processAlbum(album: any, year: number) {
             description: description,
             image_url: finalImageUrl,
             category_type: categoryType,
+            source: 'spotify', // Required for unique constraint
+            external_id: spotifyId, // Required for unique constraint
             external_ids: { spotify: spotifyId },
             metadata: {
                 source: 'spotify_smart',
@@ -216,16 +218,14 @@ async function processAlbum(album: any, year: number) {
             cached_tags: validTags,
 
             // Core columns mapped 
-            // NOTE: 'creator' was removed because it is not in the schema.
             release_year: year,
 
             ...(embedding ? { vector_text: JSON.stringify(embedding) } : {})
         };
 
-        // PARANOID CHECK: Ensure no 'creator' key
-        if ('creator' in newItem) delete newItem['creator'];
-
-        const { error } = await supabase.from('global_items').insert(newItem);
+        const { error } = await supabase
+            .from('global_items')
+            .upsert(newItem, { onConflict: 'source,external_id' } as any);
 
         if (error) {
             console.error(`      ❌ DB Insert Error:`, error.message);
