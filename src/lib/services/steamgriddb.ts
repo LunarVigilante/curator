@@ -204,8 +204,8 @@ export class SteamGridDBService {
         if (steamAppId) {
             try {
                 gameId = await this.updateGameIdIfFound(async () => this.getGameIdBySteam(steamAppId));
-            } catch (e) {
-                // console.warn(`   ⚠️ Steam ID lookup failed for ${steamAppId}`);
+            } catch (_e) {
+                // Steam ID lookup failed
             }
         }
 

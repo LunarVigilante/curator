@@ -14,7 +14,7 @@ import {
     Film, Tv, Gamepad2, BookOpen, Music, Mic, Dice5,
     Trash2, Pencil, Sparkles, RefreshCw, ChevronLeft, ChevronRight,
     AlertTriangle, Image as ImageIcon, FileText, Search, ShieldAlert, LayoutGrid, X, Save,
-    Loader2, Wand2, Crop, Check, Key, Settings
+    Loader2, Wand2, Crop, Key, Settings
 } from 'lucide-react'
 import TagSelector from '@/components/tags/TagSelector'
 import ImageCropper from '@/components/ImageCropper'
@@ -60,13 +60,6 @@ const CATEGORY_ICONS: Record<string, { icon: React.ElementType; color: string; l
     [CATEGORY_TYPES.BOOKS]: { icon: BookOpen, color: 'text-yellow-400', label: 'Books' },
     [CATEGORY_TYPES.MUSIC_ARTIST]: { icon: Music, color: 'text-emerald-400', label: 'Music' },
     [CATEGORY_TYPES.PODCAST]: { icon: Mic, color: 'text-red-400', label: 'Podcasts' },
-}
-
-
-function getSourceFromItem(item: GlobalItem): string {
-    if (!item.external_ids) return 'unknown'
-    const keys = Object.keys(item.external_ids)
-    return keys[0] || 'unknown'
 }
 
 // Helper to safely parse cached_tags which may be in different formats due to migration
@@ -857,11 +850,12 @@ export default function DataBrowserPage() {
                                     >
                                         <div className="relative aspect-[2/3] bg-zinc-900">
                                             {item.image_url ? (
-                                                <img
+                                                <Image
                                                     src={item.image_url}
                                                     alt={item.title}
-                                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                                    loading="lazy"
+                                                    fill
+                                                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                                                    unoptimized
                                                 />
                                             ) : (
                                                 <div className="w-full h-full flex flex-col items-center justify-center text-zinc-700 p-4 text-center">

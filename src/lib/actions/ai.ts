@@ -166,7 +166,7 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
                     console.log(`[AI] Grok also refused "${title}". Using placeholder.`);
                     description = `${title} - A ${type.toLowerCase()} title. No detailed description available.`;
                 }
-            } catch (grokError) {
+            } catch (_grokError) {
                 console.log(`[AI] Grok fallback failed for "${title}". Using placeholder.`);
                 description = `${title} - A ${type.toLowerCase()} title. No detailed description available.`;
             }

@@ -83,7 +83,8 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
 
     console.log(`\n📊 Fetched ${shows.length} unique TV shows`);
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < shows.length; i++) {
         const show = shows[i];

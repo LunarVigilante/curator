@@ -210,7 +210,8 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
 
     console.log(`\n📊 Fetched ${games.length} board games`);
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < games.length; i++) {
         const game = games[i];
@@ -324,7 +325,8 @@ export async function processBGGIds(
         await sleep(API_DELAY_MS);
     }
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < games.length; i++) {
         const game = games[i];

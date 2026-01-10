@@ -1,5 +1,7 @@
 'use client'
 
+import { useMemo } from 'react'
+import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FilterPill, FilterPillList } from '@/components/ui/FilterPill'
@@ -82,12 +84,12 @@ function formatRuntime(minutes: number): string {
     return `${hours}h ${mins}m`
 }
 
-function getCategoryIcon(category: string | null) {
+function getCategoryIcon(category: string | null): React.ComponentType<{ className?: string }> {
     const cat = category?.toUpperCase() || ''
     if (cat.includes('MOVIE')) return Film
     if (cat.includes('TV')) return Tv
     if (cat.includes('ANIME')) return Sparkles
-    if (cat.includes('VIDEO') || cat.includes('GAME') && !cat.includes('BOARD')) return Gamepad2
+    if (cat.includes('VIDEO') || (cat.includes('GAME') && !cat.includes('BOARD'))) return Gamepad2
     if (cat.includes('BOARD')) return Dice5
     if (cat.includes('MUSIC') || cat.includes('ALBUM')) return Music
     return Film
@@ -130,7 +132,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailViewProps) {
     const category = normalizeCategory(item.category_type)
     const categorySlug = getCategorySlug(item.category_type)
-    const CategoryIcon = getCategoryIcon(item.category_type)
+    const CategoryIcon = useMemo(() => getCategoryIcon(item.category_type), [item.category_type])
     const meta = item.metadata || {}
 
     return (
@@ -152,10 +154,13 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 <div className="relative flex gap-6 p-6">
                     {/* Poster */}
                     {item.image_url ? (
-                        <img
+                        <Image
                             src={item.image_url}
                             alt={item.title}
+                            width={144}
+                            height={208}
                             className="w-36 h-52 object-cover rounded-lg shadow-2xl flex-shrink-0 border border-zinc-800"
+                            unoptimized
                         />
                     ) : (
                         <div className="w-36 h-52 bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 border border-zinc-800">
@@ -235,8 +240,8 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 {item.metacritic && item.metacritic > 0 && (
                     <div className="flex items-center gap-1.5">
                         <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${item.metacritic >= 75 ? 'bg-green-600 text-white' :
-                                item.metacritic >= 50 ? 'bg-yellow-600 text-black' :
-                                    'bg-red-600 text-white'
+                            item.metacritic >= 50 ? 'bg-yellow-600 text-black' :
+                                'bg-red-600 text-white'
                             }`}>
                             {item.metacritic}
                         </div>

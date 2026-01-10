@@ -128,7 +128,8 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
 
     console.log(`\n📊 Fetched ${animeList.length} unique anime`);
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < animeList.length; i++) {
         const anime = animeList[i];

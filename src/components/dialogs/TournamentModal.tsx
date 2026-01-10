@@ -79,7 +79,7 @@ export function TournamentModal({
                 })
             }
         }
-    }, [isOpen, categoryId, items]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isOpen, categoryId, items])
 
 
     // Helper to strip year suffix from names like "The Fountain (2006)"

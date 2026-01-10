@@ -109,7 +109,8 @@ export async function harvestVideoGames(supabase: ReturnType<typeof createServic
 
     console.log(`\n📊 Fetched ${games.length} unique video games`);
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < games.length; i++) {
         const game = games[i];

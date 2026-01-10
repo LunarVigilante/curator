@@ -209,7 +209,8 @@ export async function harvestMusic(supabase: ReturnType<typeof createServiceRole
     const filteredArtists = allArtists.filter(a => a.popularity >= 30);
     console.log(`\n📊 Fetched ${filteredArtists.length} unique artists (popularity >= 30)`);
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < filteredArtists.length; i++) {
         const artist = filteredArtists[i];

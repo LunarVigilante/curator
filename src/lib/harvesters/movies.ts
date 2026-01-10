@@ -84,7 +84,8 @@ export async function harvestMovies(supabase: ReturnType<typeof createServiceRol
 
     console.log(`\n📊 Fetched ${movies.length} unique movies (min ${MIN_VOTE_COUNT} votes)`);
 
-    let success = 0, skipped = 0, failed = 0;
+    let success = 0, failed = 0;
+    const skipped = 0;
 
     for (let i = 0; i < movies.length; i++) {
         const movie = movies[i];
