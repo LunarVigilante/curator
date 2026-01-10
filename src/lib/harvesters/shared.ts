@@ -353,6 +353,7 @@ export async function upsertItem(
     externalIdKey: string,
     externalIdValue: string | number
 ): Promise<boolean> {
+    // Check if item with same external_id already exists
     const { data: existing } = await supabase
         .from('global_items')
         .select('id')
@@ -360,13 +361,15 @@ export async function upsertItem(
         .limit(1);
 
     if (existing && existing.length > 0) {
-        // Update existing
+        // Update existing record
         const { error } = await (supabase.from('global_items') as any)
             .update({
                 description: item.description,
                 image_url: item.image_url,
                 metadata: item.metadata,
-                ...(item.cached_tags ? { cached_tags: item.cached_tags } : {})
+                release_year: item.release_year,
+                ...(item.cached_tags ? { cached_tags: item.cached_tags } : {}),
+                ...(item.embedding ? { embedding: item.embedding } : {})
             })
             .eq('id', (existing[0] as any).id);
 
@@ -375,11 +378,43 @@ export async function upsertItem(
             return false;
         }
     } else {
-        // Insert new
-        const { error } = await (supabase.from('global_items') as any).insert(item);
+        // Insert new - handle potential title conflicts
+        let titleToUse = item.title;
+
+        // Check if title already exists in this category (case-insensitive)
+        const { data: titleConflict } = await (supabase.from('global_items') as any)
+            .select('id, title')
+            .ilike('title', item.title)
+            .eq('category_type', item.category_type)
+            .limit(1);
+
+        if (titleConflict && titleConflict.length > 0) {
+            // Title conflict exists - append year if available
+            const year = item.release_year ||
+                (item.metadata?.release_date ? new Date(item.metadata.release_date).getFullYear() : null);
+
+            if (year && !item.title.includes(`(${year})`)) {
+                titleToUse = `${item.title} (${year})`;
+                console.log(`   ⚠️ Title conflict, using: "${titleToUse}"`);
+            } else {
+                // No year available or already has year, skip to avoid duplicate
+                console.log(`   ⏭️ Skipping duplicate title: "${item.title}"`);
+                return false;
+            }
+        }
+
+        const { error } = await (supabase.from('global_items') as any).insert({
+            ...item,
+            title: titleToUse
+        });
 
         if (error) {
-            console.error(`❌ Insert failed for "${item.title}":`, error.message);
+            // If still getting unique constraint violation, log and skip
+            if (error.code === '23505') {
+                console.log(`   ⏭️ Duplicate detected, skipping: "${titleToUse}"`);
+                return false;
+            }
+            console.error(`❌ Insert failed for "${titleToUse}":`, error.message);
             return false;
         }
     }
