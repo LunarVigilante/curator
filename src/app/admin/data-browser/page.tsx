@@ -548,11 +548,12 @@ export default function DataBrowserPage() {
 
     const getGridCols = () => {
         // Map 0-100 slider value to grid columns
-        // 0 = largest (fewest columns), 100 = smallest (most columns)
-        if (tileSize >= 80) return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10'
-        if (tileSize >= 60) return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
-        if (tileSize >= 40) return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
-        if (tileSize >= 20) return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+        // 0 = smallest (most columns), 100 = largest (fewest columns)
+        if (tileSize <= 15) return 'grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12'
+        if (tileSize <= 30) return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10'
+        if (tileSize <= 50) return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
+        if (tileSize <= 70) return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+        if (tileSize <= 85) return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
         return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
     }
 
