@@ -498,10 +498,15 @@ AS $$
 $$;
 
 -- Computed Column: description_length for filtering
-CREATE OR REPLACE FUNCTION description_length(row global_items)
-RETURNS integer AS $$
-  SELECT char_length(COALESCE(row.description, ''));
-$$ LANGUAGE sql IMMUTABLE;
+CREATE OR REPLACE FUNCTION description_length(item global_items)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+  SELECT char_length(COALESCE(item.description, ''));
+$$;
 
 -- ============================================================================
 -- ROW LEVEL SECURITY
@@ -547,7 +552,7 @@ CREATE POLICY "Admins can manage tags" ON public.tags FOR ALL USING (public.is_a
 ALTER TABLE public.global_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can read global items" ON public.global_items FOR SELECT USING (true);
 CREATE POLICY "Authenticated users can create global items" ON public.global_items FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "Authenticated users can update global items" ON public.global_items FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can update global items" ON public.global_items FOR UPDATE USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "Admins can manage global items" ON public.global_items FOR ALL USING (public.is_admin());
 
 -- Activities: Own policies
