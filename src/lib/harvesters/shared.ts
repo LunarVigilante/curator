@@ -234,7 +234,7 @@ Additional Context: ${originalDescription}`;
             if (!isRefusal(description) && description.length > 20) {
                 return description;
             }
-        } catch (_grokError) {
+        } catch {
             console.warn(`   ⚠️ Grok fallback failed for "${title}"`);
         }
 
@@ -244,7 +244,7 @@ Additional Context: ${originalDescription}`;
         console.error(`   ❌ All models refused "${title}". Using original description.`);
         return originalDescription;
 
-    } catch (_error) {
+    } catch {
         console.warn(`⚠️ Description rewrite failed for "${title}"`);
         return originalDescription;
     }
@@ -286,7 +286,7 @@ Description: ${description}`;
             .map(t => t.trim())
             .filter(t => t.length > 2 && t.length < 30) // Sanity check
             .slice(0, 8); // Max 8 tags
-    } catch (_error) {
+    } catch {
         console.warn(`⚠️ Tag generation failed for "${title}"`);
         return [];
     }

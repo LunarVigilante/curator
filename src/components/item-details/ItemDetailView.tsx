@@ -1,6 +1,5 @@
 'use client'
 
-import { useMemo } from 'react'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -84,15 +83,16 @@ function formatRuntime(minutes: number): string {
     return `${hours}h ${mins}m`
 }
 
-function getCategoryIcon(category: string | null): React.ComponentType<{ className?: string }> {
+// Declared outside of render to satisfy react-hooks/static-components
+function CategoryIcon({ category, className }: { category: string | null; className?: string }) {
     const cat = category?.toUpperCase() || ''
-    if (cat.includes('MOVIE')) return Film
-    if (cat.includes('TV')) return Tv
-    if (cat.includes('ANIME')) return Sparkles
-    if (cat.includes('VIDEO') || (cat.includes('GAME') && !cat.includes('BOARD'))) return Gamepad2
-    if (cat.includes('BOARD')) return Dice5
-    if (cat.includes('MUSIC') || cat.includes('ALBUM')) return Music
-    return Film
+    if (cat.includes('MOVIE')) return <Film className={className} />
+    if (cat.includes('TV')) return <Tv className={className} />
+    if (cat.includes('ANIME')) return <Sparkles className={className} />
+    if (cat.includes('VIDEO') || (cat.includes('GAME') && !cat.includes('BOARD'))) return <Gamepad2 className={className} />
+    if (cat.includes('BOARD')) return <Dice5 className={className} />
+    if (cat.includes('MUSIC') || cat.includes('ALBUM')) return <Music className={className} />
+    return <Film className={className} />
 }
 
 function normalizeCategory(category: string | null): string {
@@ -132,7 +132,6 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailViewProps) {
     const category = normalizeCategory(item.category_type)
     const categorySlug = getCategorySlug(item.category_type)
-    const CategoryIcon = useMemo(() => getCategoryIcon(item.category_type), [item.category_type])
     const meta = item.metadata || {}
 
     return (
@@ -164,7 +163,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                         />
                     ) : (
                         <div className="w-36 h-52 bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 border border-zinc-800">
-                            <CategoryIcon className="w-12 h-12 text-zinc-700" />
+                            <CategoryIcon category={item.category_type} className="w-12 h-12 text-zinc-700" />
                         </div>
                     )}
 
@@ -172,7 +171,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     <div className="flex-1 flex flex-col justify-end min-w-0">
                         {/* Category Badge */}
                         <Badge className="w-fit mb-2 bg-zinc-900 text-zinc-400 border-zinc-800">
-                            <CategoryIcon className="w-3 h-3 mr-1" />
+                            <CategoryIcon category={item.category_type} className="w-3 h-3 mr-1" />
                             {item.category_type?.replace(/_/g, ' ') || 'Unknown'}
                         </Badge>
 
