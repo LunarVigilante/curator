@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -101,9 +102,35 @@ function parseCachedTags(cached_tags: any): { id: string; name: string }[] {
 // ============================================================================
 
 export default function DataBrowserPage() {
+    const searchParams = useSearchParams()
+    const router = useRouter()
+
     const [items, setItems] = useState<GlobalItem[]>([])
     const [loading, setLoading] = useState(true)
     const [stats, setStats] = useState<Stats>({ total: 0, byCategory: {} })
+
+    // URL-based filters (from FilterPill clicks)
+    const activeFilters = useMemo(() => {
+        const filters: Record<string, string> = {}
+        const filterKeys = ['director', 'cast', 'studio', 'genre', 'tag', 'developer', 'platform', 'designer', 'mechanic', 'artist', 'content_rating', 'year', 'category']
+        filterKeys.forEach(key => {
+            const value = searchParams.get(key)
+            if (value) filters[key] = value
+        })
+        return filters
+    }, [searchParams])
+
+    const hasActiveFilters = Object.keys(activeFilters).length > 0
+
+    const removeFilter = (key: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+        params.delete(key)
+        router.push(`/admin/data-browser?${params.toString()}`)
+    }
+
+    const clearAllFilters = () => {
+        router.push('/admin/data-browser')
+    }
 
     // Filters
     const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -220,17 +247,59 @@ export default function DataBrowserPage() {
 
         // Text Search
         if (searchQuery) {
-            // Fuzzy search: Replace spaces and punctuation with % to match any separator
-            // "One Punch Man" -> "%One%Punch%Man%" (Matches "One-Punch Man")
             const fuzzyQuery = searchQuery
                 .split(/[\s\-_:,.]+/)
                 .filter(Boolean)
                 .join('%')
-
             query = query.ilike('title', `%${fuzzyQuery}%`)
         }
 
-        // Build OR conditions for all filters
+        // URL-based filters (from FilterPill clicks)
+        // Exact match filters
+        if (activeFilters.director) {
+            query = query.eq('director', activeFilters.director)
+        }
+        if (activeFilters.studio) {
+            query = query.eq('studio', activeFilters.studio)
+        }
+        if (activeFilters.content_rating) {
+            query = query.eq('content_rating', activeFilters.content_rating)
+        }
+        if (activeFilters.year) {
+            query = query.eq('release_year', parseInt(activeFilters.year))
+        }
+        if (activeFilters.category) {
+            query = query.eq('category_type', activeFilters.category.toUpperCase().replace(/-/g, '_'))
+        }
+
+        // Array contains filters (cast, genres, platforms, etc.)
+        if (activeFilters.cast) {
+            query = query.contains('cast', [activeFilters.cast])
+        }
+        if (activeFilters.genre) {
+            query = query.contains('genres', [activeFilters.genre])
+        }
+        if (activeFilters.developer) {
+            query = query.or(`studio.eq.${activeFilters.developer},developers.cs.{${activeFilters.developer}}`)
+        }
+        if (activeFilters.platform) {
+            query = query.contains('platforms', [activeFilters.platform])
+        }
+        if (activeFilters.designer) {
+            query = query.contains('designers', [activeFilters.designer])
+        }
+        if (activeFilters.mechanic) {
+            query = query.contains('mechanics', [activeFilters.mechanic])
+        }
+        if (activeFilters.artist) {
+            query = query.contains('artists', [activeFilters.artist])
+        }
+        // Tag filter - search in cached_tags JSONB
+        if (activeFilters.tag) {
+            query = query.contains('cached_tags', [{ name: activeFilters.tag }])
+        }
+
+        // Build OR conditions for quality filters
         const orConditions: string[] = []
 
         // Category Filter (AND logic - restricts scope)
@@ -248,7 +317,6 @@ export default function DataBrowserPage() {
         }
 
         if (uncategorized) {
-            // Match both SQL NULL and string 'null'/'NULL' values
             orConditions.push('category_type.is.null', 'category_type.eq.null', 'category_type.eq.NULL')
         }
 
@@ -265,12 +333,11 @@ export default function DataBrowserPage() {
             return
         }
 
-        // No client-side filtering needed for source anymore
         setItems(data || [])
         setTotalPages(Math.ceil((count || 0) / pageSize))
         setTotalCount(count || 0)
         setLoading(false)
-    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize])
+    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize, activeFilters])
 
     useEffect(() => {
         fetchStats()
@@ -617,6 +684,32 @@ export default function DataBrowserPage() {
                         })}
                 </div>
             </div>
+
+            {/* Active Filters Bar */}
+            {hasActiveFilters && (
+                <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-3 mb-6 flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-red-300 font-medium mr-2">Active Filters:</span>
+                    {Object.entries(activeFilters).map(([key, value]) => (
+                        <Badge
+                            key={key}
+                            className="bg-red-900/50 text-red-200 border-red-800 cursor-pointer hover:bg-red-800/50 transition-colors"
+                            onClick={() => removeFilter(key)}
+                        >
+                            <span className="text-red-400 mr-1 capitalize">{key.replace(/_/g, ' ')}:</span>
+                            {value}
+                            <X className="w-3 h-3 ml-1.5" />
+                        </Badge>
+                    ))}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearAllFilters}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-900/30 ml-auto"
+                    >
+                        Clear All
+                    </Button>
+                </div>
+            )}
 
             <div className="flex gap-6 items-start">
                 {/* Sidebar Filters */}

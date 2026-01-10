@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { createServiceRoleClient } from '../lib/supabase/service-role';
-import { callLLM } from '../lib/llm';
-import { decrypt } from '../lib/encryption';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { callLLM } from '@/lib/llm';
+import { decrypt } from '@/lib/encryption';
 
 /**
  * Backfill script for regenerating descriptions with improved semantic search optimization.

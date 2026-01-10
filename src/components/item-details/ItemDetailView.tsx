@@ -2,10 +2,11 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { FilterPill, FilterPillList } from '@/components/ui/FilterPill'
 import {
     Star, Clock, Shield, Play, Users, Brain,
     Gamepad2, Tv, Film, Music, Dice5, Sparkles,
-    User, Calendar, Clapperboard, Pencil, Trash2
+    Calendar, Pencil, Trash2
 } from 'lucide-react'
 
 // ============================================================================
@@ -103,44 +104,21 @@ function normalizeCategory(category: string | null): string {
     return 'UNKNOWN'
 }
 
+function getCategorySlug(category: string | null): string {
+    const normalized = normalizeCategory(category)
+    return normalized.toLowerCase().replace(/_/g, '-')
+}
+
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
 
-function MetaItem({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
-    return (
-        <div className="flex items-center gap-2">
-            <Icon className="w-4 h-4 text-zinc-500" />
-            <span className="text-sm text-zinc-400">{label}:</span>
-            <span className="text-sm text-white font-medium">{value}</span>
-        </div>
-    )
-}
-
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
     if (!children) return null
     return (
-        <div className="space-y-1">
-            <span className="text-sm text-zinc-400">{label}</span>
+        <div className="space-y-1.5">
+            <span className="text-sm text-zinc-400 uppercase tracking-wider">{label}</span>
             <div className="text-white font-medium">{children}</div>
-        </div>
-    )
-}
-
-function BadgeList({ items, limit = 5 }: { items: string[] | null; limit?: number }) {
-    if (!items || items.length === 0) return null
-    return (
-        <div className="flex flex-wrap gap-1.5">
-            {items.slice(0, limit).map((item, i) => (
-                <Badge key={i} variant="secondary" className="text-xs bg-zinc-800 text-zinc-300 border-zinc-700">
-                    {item}
-                </Badge>
-            ))}
-            {items.length > limit && (
-                <Badge variant="outline" className="text-xs text-zinc-500 border-zinc-700">
-                    +{items.length - limit} more
-                </Badge>
-            )}
         </div>
     )
 }
@@ -151,25 +129,24 @@ function BadgeList({ items, limit = 5 }: { items: string[] | null; limit?: numbe
 
 export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailViewProps) {
     const category = normalizeCategory(item.category_type)
+    const categorySlug = getCategorySlug(item.category_type)
     const CategoryIcon = getCategoryIcon(item.category_type)
-
-    // Extract metadata fields that might be stored in JSONB
     const meta = item.metadata || {}
 
     return (
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full max-w-4xl mx-auto bg-zinc-950 rounded-xl">
             {/* ================================================================
                 ZONE A: HERO
             ================================================================ */}
-            <div className="relative rounded-xl overflow-hidden mb-6">
+            <div className="relative rounded-t-xl overflow-hidden">
                 {/* Background (Blurred Poster) */}
                 {item.image_url && (
                     <div
-                        className="absolute inset-0 bg-cover bg-center blur-2xl opacity-30 scale-110"
+                        className="absolute inset-0 bg-cover bg-center blur-2xl opacity-25 scale-110"
                         style={{ backgroundImage: `url(${item.image_url})` }}
                     />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-zinc-950/40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-zinc-950/60" />
 
                 {/* Content */}
                 <div className="relative flex gap-6 p-6">
@@ -178,44 +155,44 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                         <img
                             src={item.image_url}
                             alt={item.title}
-                            className="w-40 h-60 object-cover rounded-lg shadow-2xl flex-shrink-0"
+                            className="w-36 h-52 object-cover rounded-lg shadow-2xl flex-shrink-0 border border-zinc-800"
                         />
                     ) : (
-                        <div className="w-40 h-60 bg-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <CategoryIcon className="w-12 h-12 text-zinc-600" />
+                        <div className="w-36 h-52 bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0 border border-zinc-800">
+                            <CategoryIcon className="w-12 h-12 text-zinc-700" />
                         </div>
                     )}
 
                     {/* Info */}
-                    <div className="flex-1 flex flex-col justify-end">
+                    <div className="flex-1 flex flex-col justify-end min-w-0">
                         {/* Category Badge */}
-                        <Badge className="w-fit mb-2 bg-zinc-800/80 text-zinc-300 border-zinc-700">
+                        <Badge className="w-fit mb-2 bg-zinc-900 text-zinc-400 border-zinc-800">
                             <CategoryIcon className="w-3 h-3 mr-1" />
                             {item.category_type?.replace(/_/g, ' ') || 'Unknown'}
                         </Badge>
 
                         {/* Title */}
-                        <h1 className="text-3xl font-bold text-white mb-1">{item.title}</h1>
+                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 truncate">{item.title}</h1>
 
                         {/* Tagline */}
                         {item.tagline && (
-                            <p className="text-zinc-400 italic text-sm mb-3">"{item.tagline}"</p>
+                            <p className="text-zinc-500 italic text-sm mb-2 line-clamp-2">"{item.tagline}"</p>
                         )}
 
                         {/* Year */}
                         {item.release_year && (
-                            <div className="flex items-center gap-2 text-zinc-400 text-sm mb-4">
+                            <div className="flex items-center gap-2 text-zinc-500 text-sm mb-4">
                                 <Calendar className="w-4 h-4" />
                                 <span>{item.release_year}</span>
                             </div>
                         )}
 
                         {/* Actions */}
-                        <div className="flex gap-2 mt-auto">
-                            {/* Watch Trailer Button */}
+                        <div className="flex flex-wrap gap-2 mt-auto">
                             {item.trailer_url && (
                                 <Button
                                     className="bg-red-600 hover:bg-red-700 text-white"
+                                    size="sm"
                                     onClick={() => window.open(item.trailer_url!, '_blank')}
                                 >
                                     <Play className="w-4 h-4 mr-2 fill-current" />
@@ -224,7 +201,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                             )}
 
                             {onEdit && (
-                                <Button variant="outline" size="sm" onClick={onEdit}>
+                                <Button variant="outline" size="sm" onClick={onEdit} className="border-zinc-700 hover:bg-zinc-800">
                                     <Pencil className="w-4 h-4 mr-2" />
                                     Edit
                                 </Button>
@@ -244,7 +221,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
             {/* ================================================================
                 ZONE B: META-BAR
             ================================================================ */}
-            <div className="flex flex-wrap items-center gap-4 p-4 mb-6 bg-zinc-900/50 rounded-lg border border-zinc-800">
+            <div className="flex flex-wrap items-center gap-4 px-6 py-4 bg-zinc-900/80 border-y border-zinc-800">
                 {/* Rating */}
                 {item.vote_average && item.vote_average > 0 && (
                     <div className="flex items-center gap-1.5">
@@ -254,7 +231,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     </div>
                 )}
 
-                {/* Metacritic (Video Games) */}
+                {/* Metacritic */}
                 {item.metacritic && item.metacritic > 0 && (
                     <div className="flex items-center gap-1.5">
                         <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${item.metacritic >= 75 ? 'bg-green-600 text-white' :
@@ -263,7 +240,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                             }`}>
                             {item.metacritic}
                         </div>
-                        <span className="text-zinc-400 text-sm">Metacritic</span>
+                        <span className="text-zinc-500 text-sm">Metacritic</span>
                     </div>
                 )}
 
@@ -276,7 +253,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     </div>
                 )}
 
-                {/* Runtime (Movies/TV) */}
+                {/* Runtime */}
                 {item.runtime && item.runtime > 0 && (
                     <div className="flex items-center gap-1.5">
                         <Clock className="w-4 h-4 text-blue-400" />
@@ -284,7 +261,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     </div>
                 )}
 
-                {/* Episodes (Anime) */}
+                {/* Episodes */}
                 {item.episodes && item.episodes > 0 && (
                     <div className="flex items-center gap-1.5">
                         <Tv className="w-4 h-4 text-pink-400" />
@@ -293,7 +270,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     </div>
                 )}
 
-                {/* Player Count (Board Games) */}
+                {/* Player Count */}
                 {(item.min_players || item.max_players) && (
                     <div className="flex items-center gap-1.5">
                         <Users className="w-4 h-4 text-green-400" />
@@ -306,7 +283,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     </div>
                 )}
 
-                {/* Playtime (Board Games) */}
+                {/* Board Game Playtime */}
                 {(item.min_playtime || item.max_playtime) && (
                     <div className="flex items-center gap-1.5">
                         <Clock className="w-4 h-4 text-orange-400" />
@@ -322,180 +299,176 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                 {item.content_rating && (
                     <div className="flex items-center gap-1.5">
                         <Shield className="w-4 h-4 text-zinc-400" />
-                        <span className="text-white font-medium">{item.content_rating}</span>
+                        <FilterPill label={item.content_rating} type="content_rating" category={categorySlug} />
                     </div>
                 )}
 
-                {/* Separator */}
+                {/* Genres (Clickable) */}
                 {item.genres && item.genres.length > 0 && (
                     <>
                         <div className="h-4 w-px bg-zinc-700" />
-                        <div className="flex flex-wrap gap-1.5">
-                            {item.genres.slice(0, 4).map((genre, i) => (
-                                <Badge key={i} variant="outline" className="text-xs text-zinc-300 border-zinc-700">
-                                    {genre}
-                                </Badge>
-                            ))}
-                        </div>
+                        <FilterPillList items={item.genres} type="genre" category={categorySlug} limit={4} />
                     </>
                 )}
             </div>
 
             {/* ================================================================
-                ZONE C: DEEP DIVE (Category-Specific)
+                ZONE C: DEEP DIVE
             ================================================================ */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-zinc-900/30 rounded-lg border border-zinc-800">
+            <div className="p-6 space-y-6">
                 {/* Description */}
                 {item.description && (
-                    <div className="md:col-span-2 space-y-1">
-                        <span className="text-sm text-zinc-400">Description</span>
-                        <p className="text-zinc-300 leading-relaxed">{item.description}</p>
+                    <div className="space-y-2">
+                        <span className="text-sm text-zinc-400 uppercase tracking-wider">Description</span>
+                        <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">{item.description}</p>
                     </div>
                 )}
 
-                {/* ============================================================
-                    MOVIE / TV / ANIME
-                ============================================================ */}
-                {(category === 'MOVIE' || category === 'TV' || category === 'ANIME') && (
-                    <>
-                        {item.director && (
-                            <DetailRow label="Director">{item.director}</DetailRow>
-                        )}
-                        {item.studio && (
-                            <DetailRow label="Studio">{item.studio}</DetailRow>
-                        )}
-                        {item.writer && (
-                            <DetailRow label="Writer">{item.writer}</DetailRow>
-                        )}
-                        {item.original_creator && (
-                            <DetailRow label="Original Creator">{item.original_creator}</DetailRow>
-                        )}
-                        {item.cast && item.cast.length > 0 && (
-                            <DetailRow label="Cast">
-                                <BadgeList items={item.cast} limit={6} />
-                            </DetailRow>
-                        )}
-                        {/* Anime-specific */}
-                        {item.season && (
-                            <DetailRow label="Season">{item.season}</DetailRow>
-                        )}
-                        {item.source_material && (
-                            <DetailRow label="Source">{item.source_material}</DetailRow>
-                        )}
-                        {item.romaji_title && item.romaji_title !== item.title && (
-                            <DetailRow label="Romaji Title">{item.romaji_title}</DetailRow>
-                        )}
-                    </>
-                )}
+                {/* Metadata Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* MOVIE / TV / ANIME */}
+                    {(category === 'MOVIE' || category === 'TV' || category === 'ANIME') && (
+                        <>
+                            {item.director && (
+                                <DetailRow label="Director">
+                                    <FilterPill label={item.director} type="director" category={categorySlug} />
+                                </DetailRow>
+                            )}
+                            {item.studio && (
+                                <DetailRow label="Studio">
+                                    <FilterPill label={item.studio} type="studio" category={categorySlug} />
+                                </DetailRow>
+                            )}
+                            {item.writer && (
+                                <DetailRow label="Writer">{item.writer}</DetailRow>
+                            )}
+                            {item.original_creator && (
+                                <DetailRow label="Original Creator">{item.original_creator}</DetailRow>
+                            )}
+                            {item.cast && item.cast.length > 0 && (
+                                <DetailRow label="Cast">
+                                    <FilterPillList items={item.cast} type="cast" category={categorySlug} limit={6} />
+                                </DetailRow>
+                            )}
+                            {item.season && <DetailRow label="Season">{item.season}</DetailRow>}
+                            {item.source_material && <DetailRow label="Source">{item.source_material}</DetailRow>}
+                            {item.romaji_title && item.romaji_title !== item.title && (
+                                <DetailRow label="Romaji Title">{item.romaji_title}</DetailRow>
+                            )}
+                        </>
+                    )}
 
-                {/* ============================================================
-                    VIDEO GAME
-                ============================================================ */}
-                {category === 'VIDEO_GAME' && (
-                    <>
-                        {item.studio && (
-                            <DetailRow label="Developer">{item.studio}</DetailRow>
-                        )}
-                        {item.developers && item.developers.length > 0 && (
-                            <DetailRow label="Developers">
-                                <BadgeList items={item.developers} limit={4} />
-                            </DetailRow>
-                        )}
-                        {item.publishers && item.publishers.length > 0 && (
-                            <DetailRow label="Publishers">
-                                <BadgeList items={item.publishers} limit={4} />
-                            </DetailRow>
-                        )}
-                        {item.platforms && item.platforms.length > 0 && (
-                            <DetailRow label="Platforms">
-                                <BadgeList items={item.platforms} limit={6} />
-                            </DetailRow>
-                        )}
-                        {item.playtime && item.playtime > 0 && (
-                            <DetailRow label="Average Playtime">{item.playtime} hours</DetailRow>
-                        )}
-                    </>
-                )}
+                    {/* VIDEO GAME */}
+                    {category === 'VIDEO_GAME' && (
+                        <>
+                            {item.studio && (
+                                <DetailRow label="Developer">
+                                    <FilterPill label={item.studio} type="developer" category={categorySlug} />
+                                </DetailRow>
+                            )}
+                            {item.developers && item.developers.length > 0 && (
+                                <DetailRow label="Developers">
+                                    <FilterPillList items={item.developers} type="developer" category={categorySlug} limit={4} />
+                                </DetailRow>
+                            )}
+                            {item.publishers && item.publishers.length > 0 && (
+                                <DetailRow label="Publishers">
+                                    <FilterPillList items={item.publishers} type="studio" category={categorySlug} limit={4} />
+                                </DetailRow>
+                            )}
+                            {item.platforms && item.platforms.length > 0 && (
+                                <DetailRow label="Platforms">
+                                    <FilterPillList items={item.platforms} type="platform" category={categorySlug} limit={6} />
+                                </DetailRow>
+                            )}
+                            {item.playtime && item.playtime > 0 && (
+                                <DetailRow label="Average Playtime">{item.playtime} hours</DetailRow>
+                            )}
+                        </>
+                    )}
 
-                {/* ============================================================
-                    BOARD GAME
-                ============================================================ */}
-                {category === 'BOARD_GAME' && (
-                    <>
-                        {item.designers && item.designers.length > 0 && (
-                            <DetailRow label="Designers">
-                                <BadgeList items={item.designers} limit={4} />
-                            </DetailRow>
-                        )}
-                        {item.artists && item.artists.length > 0 && (
-                            <DetailRow label="Artists">
-                                <BadgeList items={item.artists} limit={4} />
-                            </DetailRow>
-                        )}
-                        {item.publishers && item.publishers.length > 0 && (
-                            <DetailRow label="Publishers">
-                                <BadgeList items={item.publishers} limit={4} />
-                            </DetailRow>
-                        )}
-                        {item.mechanics && item.mechanics.length > 0 && (
-                            <DetailRow label="Mechanics">
-                                <BadgeList items={item.mechanics} limit={5} />
-                            </DetailRow>
-                        )}
-                        {item.categories && item.categories.length > 0 && (
-                            <DetailRow label="Categories">
-                                <BadgeList items={item.categories} limit={5} />
-                            </DetailRow>
-                        )}
-                        {item.min_age && item.min_age > 0 && (
-                            <DetailRow label="Minimum Age">{item.min_age}+</DetailRow>
-                        )}
-                        {item.is_expansion && (
-                            <DetailRow label="Type">
-                                <Badge className="bg-amber-600/20 text-amber-400 border-amber-600/30">Expansion</Badge>
-                            </DetailRow>
-                        )}
-                    </>
-                )}
+                    {/* BOARD GAME */}
+                    {category === 'BOARD_GAME' && (
+                        <>
+                            {item.designers && item.designers.length > 0 && (
+                                <DetailRow label="Designers">
+                                    <FilterPillList items={item.designers} type="designer" category={categorySlug} limit={4} />
+                                </DetailRow>
+                            )}
+                            {item.artists && item.artists.length > 0 && (
+                                <DetailRow label="Artists">
+                                    <FilterPillList items={item.artists} type="artist" category={categorySlug} limit={4} />
+                                </DetailRow>
+                            )}
+                            {item.publishers && item.publishers.length > 0 && (
+                                <DetailRow label="Publishers">
+                                    <FilterPillList items={item.publishers} type="studio" category={categorySlug} limit={4} />
+                                </DetailRow>
+                            )}
+                            {item.mechanics && item.mechanics.length > 0 && (
+                                <DetailRow label="Mechanics">
+                                    <FilterPillList items={item.mechanics} type="mechanic" category={categorySlug} limit={5} />
+                                </DetailRow>
+                            )}
+                            {item.categories && item.categories.length > 0 && (
+                                <DetailRow label="Categories">
+                                    <FilterPillList items={item.categories} type="genre" category={categorySlug} limit={5} />
+                                </DetailRow>
+                            )}
+                            {item.min_age && item.min_age > 0 && (
+                                <DetailRow label="Minimum Age">{item.min_age}+</DetailRow>
+                            )}
+                            {item.is_expansion && (
+                                <DetailRow label="Type">
+                                    <Badge className="bg-amber-600/20 text-amber-400 border-amber-600/30">Expansion</Badge>
+                                </DetailRow>
+                            )}
+                        </>
+                    )}
 
-                {/* ============================================================
-                    MUSIC
-                ============================================================ */}
-                {category === 'MUSIC' && (
-                    <>
-                        {meta.artist && (
-                            <DetailRow label="Artist">{meta.artist}</DetailRow>
-                        )}
-                        {meta.total_tracks && (
-                            <DetailRow label="Tracks">{meta.total_tracks} tracks</DetailRow>
-                        )}
-                        {meta.release_date && (
-                            <DetailRow label="Release Date">{meta.release_date}</DetailRow>
-                        )}
-                        {meta.spotify_url && (
-                            <DetailRow label="Listen">
-                                <a
-                                    href={meta.spotify_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-green-400 hover:text-green-300 underline"
-                                >
-                                    Open in Spotify
-                                </a>
-                            </DetailRow>
-                        )}
-                    </>
-                )}
+                    {/* MUSIC */}
+                    {category === 'MUSIC' && (
+                        <>
+                            {meta.artist && (
+                                <DetailRow label="Artist">
+                                    <FilterPill label={meta.artist} type="cast" category={categorySlug} />
+                                </DetailRow>
+                            )}
+                            {meta.total_tracks && (
+                                <DetailRow label="Tracks">{meta.total_tracks} tracks</DetailRow>
+                            )}
+                            {meta.release_date && (
+                                <DetailRow label="Release Date">{meta.release_date}</DetailRow>
+                            )}
+                            {meta.spotify_url && (
+                                <DetailRow label="Listen">
+                                    <a
+                                        href={meta.spotify_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-green-400 hover:text-green-300 underline"
+                                    >
+                                        Open in Spotify
+                                    </a>
+                                </DetailRow>
+                            )}
+                        </>
+                    )}
+                </div>
 
-                {/* Tags */}
+                {/* Tags (Clickable) */}
                 {item.cached_tags && item.cached_tags.length > 0 && (
-                    <div className="md:col-span-2 space-y-1 pt-4 border-t border-zinc-800">
-                        <span className="text-sm text-zinc-400">Tags</span>
+                    <div className="pt-4 border-t border-zinc-800 space-y-2">
+                        <span className="text-sm text-zinc-400 uppercase tracking-wider">Tags</span>
                         <div className="flex flex-wrap gap-1.5">
                             {item.cached_tags.map((tag, i) => (
-                                <Badge key={tag.id || i} className="text-xs bg-cyan-900/30 text-cyan-300 border-cyan-700/50">
-                                    {tag.name}
-                                </Badge>
+                                <FilterPill
+                                    key={tag.id || i}
+                                    label={tag.name}
+                                    type="tag"
+                                    category={categorySlug}
+                                    className="bg-cyan-900/30 text-cyan-300 border-cyan-700/50 hover:bg-cyan-800/50"
+                                />
                             ))}
                         </div>
                     </div>
