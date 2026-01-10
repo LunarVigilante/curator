@@ -20,6 +20,7 @@ import ImageCropper from '@/components/ImageCropper'
 import { toast } from 'sonner'
 import Image from 'next/image'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { CATEGORY_LABELS, normalizeCategory, formatCategoryLabel, CATEGORY_TYPES } from '@/lib/constants'
 
 // ============================================================================
@@ -42,8 +43,6 @@ interface Stats {
     total: number
     byCategory: Record<string, number>
 }
-
-type TileSize = 'small' | 'medium' | 'large'
 
 // ============================================================================
 // HELPERS & CONFIG
@@ -112,7 +111,7 @@ export default function DataBrowserPage() {
     const [searchQuery, setSearchQuery] = useState('')
 
     // UI State
-    const [tileSize, setTileSize] = useState<TileSize>('medium')
+    const [tileSize, setTileSize] = useState(50) // 0-100 scale for slider
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
     const [totalCount, setTotalCount] = useState(0)
@@ -548,11 +547,13 @@ export default function DataBrowserPage() {
     // ========================================================================
 
     const getGridCols = () => {
-        switch (tileSize) {
-            case 'small': return 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-            case 'large': return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-            default: return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
-        }
+        // Map 0-100 slider value to grid columns
+        // 0 = largest (fewest columns), 100 = smallest (most columns)
+        if (tileSize >= 80) return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10'
+        if (tileSize >= 60) return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
+        if (tileSize >= 40) return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+        if (tileSize >= 20) return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+        return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
     }
 
     // ========================================================================
@@ -569,16 +570,16 @@ export default function DataBrowserPage() {
                     <p className="text-zinc-400">Manage and curate your content database</p>
                 </div>
 
-                <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setTileSize(s => s === 'small' ? 'medium' : s === 'medium' ? 'large' : 'small')}
-                        className="h-9"
-                    >
-                        <LayoutGrid className="w-4 h-4 mr-2" />
-                        {tileSize === 'small' ? 'Small' : tileSize === 'medium' ? 'Medium' : 'Large'}
-                    </Button>
+                <div className="flex items-center gap-3">
+                    <LayoutGrid className="w-4 h-4 text-zinc-400" />
+                    <Slider
+                        value={[tileSize]}
+                        onValueChange={(v) => setTileSize(v[0])}
+                        min={0}
+                        max={100}
+                        step={5}
+                        className="w-32"
+                    />
                 </div>
             </div>
 
