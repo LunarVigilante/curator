@@ -13,7 +13,7 @@ import {
     Film, Tv, Gamepad2, BookOpen, Music, Mic, Dice5,
     Trash2, Pencil, Sparkles, RefreshCw, ChevronLeft, ChevronRight,
     AlertTriangle, Image as ImageIcon, FileText, Search, ShieldAlert, LayoutGrid, X, Save,
-    Loader2, Wand2, Crop, Check
+    Loader2, Wand2, Crop, Check, Key, Settings
 } from 'lucide-react'
 import TagSelector from '@/components/tags/TagSelector'
 import ImageCropper from '@/components/ImageCropper'
@@ -49,15 +49,15 @@ type TileSize = 'small' | 'medium' | 'large'
 // HELPERS & CONFIG
 // ============================================================================
 
-const SOURCE_ICONS: Record<string, { icon: React.ElementType; color: string; label: string }> = {
-    tmdb: { icon: Film, color: 'text-blue-400', label: 'TMDB' },
-    tmdb_tv: { icon: Tv, color: 'text-purple-400', label: 'TV Shows' },
-    anilist: { icon: Sparkles, color: 'text-pink-400', label: 'AniList' },
-    bgg: { icon: Dice5, color: 'text-orange-400', label: 'BGG' },
-    rawg: { icon: Gamepad2, color: 'text-green-400', label: 'RAWG' },
-    google_books: { icon: BookOpen, color: 'text-yellow-400', label: 'Books' },
-    spotify_artist: { icon: Music, color: 'text-emerald-400', label: 'Spotify' },
-    itunes_podcast: { icon: Mic, color: 'text-red-400', label: 'iTunes' },
+const CATEGORY_ICONS: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+    [CATEGORY_TYPES.MOVIE]: { icon: Film, color: 'text-blue-400', label: 'Movies' },
+    [CATEGORY_TYPES.TV_SHOW]: { icon: Tv, color: 'text-purple-400', label: 'TV Shows' },
+    [CATEGORY_TYPES.ANIME]: { icon: Sparkles, color: 'text-pink-400', label: 'Anime' },
+    [CATEGORY_TYPES.BOARD_GAME]: { icon: Dice5, color: 'text-orange-400', label: 'Board Games' },
+    [CATEGORY_TYPES.VIDEO_GAME]: { icon: Gamepad2, color: 'text-green-400', label: 'Video Games' },
+    [CATEGORY_TYPES.BOOKS]: { icon: BookOpen, color: 'text-yellow-400', label: 'Books' },
+    [CATEGORY_TYPES.MUSIC_ARTIST]: { icon: Music, color: 'text-emerald-400', label: 'Music' },
+    [CATEGORY_TYPES.PODCAST]: { icon: Mic, color: 'text-red-400', label: 'Podcasts' },
 }
 
 
@@ -65,6 +65,34 @@ function getSourceFromItem(item: GlobalItem): string {
     if (!item.external_ids) return 'unknown'
     const keys = Object.keys(item.external_ids)
     return keys[0] || 'unknown'
+}
+
+// Helper to safely parse cached_tags which may be in different formats due to migration
+function parseCachedTags(cached_tags: any): { id: string; name: string }[] {
+    if (!cached_tags) return []
+
+    // If it's a string, try to parse it
+    let parsed = cached_tags
+    if (typeof cached_tags === 'string') {
+        try {
+            parsed = JSON.parse(cached_tags)
+        } catch {
+            return []
+        }
+    }
+
+    if (!Array.isArray(parsed)) return []
+
+    // Handle array of strings (old format) vs array of {id, name} objects (new format)
+    return parsed.map((tag: any, index: number) => {
+        if (typeof tag === 'string') {
+            return { id: `temp-${index}`, name: tag }
+        }
+        if (tag && typeof tag === 'object' && tag.name) {
+            return { id: tag.id || `temp-${index}`, name: tag.name }
+        }
+        return null
+    }).filter((t): t is { id: string; name: string } => t !== null)
 }
 
 // ============================================================================
@@ -77,7 +105,7 @@ export default function DataBrowserPage() {
     const [stats, setStats] = useState<Stats>({ total: 0, byCategory: {} })
 
     // Filters
-    const [selectedSources, setSelectedSources] = useState<string[]>([])
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([])
     const [missingImage, setMissingImage] = useState(false)
     const [shortDesc, setShortDesc] = useState(false)
     const [uncategorized, setUncategorized] = useState(false)
@@ -111,10 +139,48 @@ export default function DataBrowserPage() {
 
     const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'single' | 'selected' | 'source'; source?: string; id?: string } | null>(null)
     const [maintenanceOpen, setMaintenanceOpen] = useState(false)
+    const [steamGridKey, setSteamGridKey] = useState('')
     const [confirmText, setConfirmText] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
 
     const supabase = createClient()
+
+    // Fetch config on mount/open
+    useEffect(() => {
+        if (maintenanceOpen) {
+            const fetchConfig = async () => {
+                const { data } = await supabase
+                    .from('system_config' as any)
+                    .select('value')
+                    .eq('key', 'STEAMGRIDDB_API_KEY')
+                    .single()
+                if (data) setSteamGridKey(data.value)
+            }
+            fetchConfig()
+        }
+    }, [maintenanceOpen, supabase])
+
+    const handleSaveConfig = async () => {
+        setActionLoading(true)
+        try {
+            const { error } = await supabase
+                .from('system_config' as any)
+                .upsert({
+                    key: 'STEAMGRIDDB_API_KEY',
+                    value: steamGridKey,
+                    description: 'API Key for SteamGridDB Cover Art',
+                    is_secret: true
+                })
+
+            if (error) throw error
+            toast.success('Configuration saved')
+        } catch (error) {
+            console.error('Failed to save config:', error)
+            toast.error('Failed to save configuration')
+        } finally {
+            setActionLoading(false)
+        }
+    }
 
     // ========================================================================
     // DATA FETCHING
@@ -152,11 +218,23 @@ export default function DataBrowserPage() {
 
         // Text Search
         if (searchQuery) {
-            query = query.ilike('title', `%${searchQuery}%`)
+            // Fuzzy search: Replace spaces and punctuation with % to match any separator
+            // "One Punch Man" -> "%One%Punch%Man%" (Matches "One-Punch Man")
+            const fuzzyQuery = searchQuery
+                .split(/[\s\-_:,.]+/)
+                .filter(Boolean)
+                .join('%')
+
+            query = query.ilike('title', `%${fuzzyQuery}%`)
         }
 
         // Build OR conditions for all filters
         const orConditions: string[] = []
+
+        // Category Filter (AND logic - restricts scope)
+        if (selectedCategories.length > 0) {
+            query = query.in('category_type', selectedCategories)
+        }
 
         // Quality Filters (OR logic - match ANY)
         if (missingImage) {
@@ -164,7 +242,7 @@ export default function DataBrowserPage() {
         }
 
         if (shortDesc) {
-            orConditions.push('description.is.null', 'description.lt.50')
+            orConditions.push('description.is.null', 'description_length.lt.50')
         }
 
         if (uncategorized) {
@@ -172,14 +250,7 @@ export default function DataBrowserPage() {
             orConditions.push('category_type.is.null', 'category_type.eq.null', 'category_type.eq.NULL')
         }
 
-        // Source Filters (OR logic - match ANY selected source)
-        if (selectedSources.length > 0) {
-            selectedSources.forEach(source => {
-                orConditions.push(`external_ids->${source}.neq.null`)
-            })
-        }
-
-        // Apply combined OR filter if any conditions exist
+        // Apply combined OR filter for quality issues
         if (orConditions.length > 0) {
             query = query.or(orConditions.join(','))
         }
@@ -197,7 +268,7 @@ export default function DataBrowserPage() {
         setTotalPages(Math.ceil((count || 0) / pageSize))
         setTotalCount(count || 0)
         setLoading(false)
-    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedSources, pageSize])
+    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize])
 
     useEffect(() => {
         fetchStats()
@@ -562,17 +633,17 @@ export default function DataBrowserPage() {
                             </div>
                         </div>
 
-                        {/* Source Filter */}
+                        {/* Category Filter */}
                         <div className="mb-4">
-                            <h4 className="text-sm font-medium text-zinc-400 mb-2">Source</h4>
+                            <h4 className="text-sm font-medium text-zinc-400 mb-2">Category</h4>
                             <div className="space-y-1.5">
-                                {Object.entries(SOURCE_ICONS).map(([key, { icon: Icon, color, label }]) => (
+                                {Object.entries(CATEGORY_ICONS).map(([key, { icon: Icon, color, label }]) => (
                                     <label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-800/50 p-1.5 rounded transition-colors">
                                         <Checkbox
-                                            checked={selectedSources.includes(key)}
+                                            checked={selectedCategories.includes(key)}
                                             onCheckedChange={(checked) => {
-                                                if (checked) setSelectedSources([...selectedSources, key])
-                                                else setSelectedSources(selectedSources.filter(s => s !== key))
+                                                if (checked) setSelectedCategories([...selectedCategories, key])
+                                                else setSelectedCategories(selectedCategories.filter(s => s !== key))
                                             }}
                                             className="data-[state=checked]:bg-zinc-700 data-[state=checked]:text-white border-zinc-600"
                                         />
@@ -679,9 +750,8 @@ export default function DataBrowserPage() {
                     ) : (
                         <div className={`grid gap-4 ${getGridCols()}`}>
                             {items.map(item => {
-                                const source = getSourceFromItem(item)
-                                const sourceInfo = SOURCE_ICONS[source]
-                                const SourceIcon = sourceInfo?.icon || Film
+                                const catInfo = CATEGORY_ICONS[item.category_type]
+                                const CategoryIcon = catInfo?.icon || Film
 
                                 return (
                                     <Card
@@ -721,8 +791,8 @@ export default function DataBrowserPage() {
                                                     <AlertTriangle className="w-3.5 h-3.5" />
                                                 </Badge>
                                             ) : (
-                                                <Badge className={`absolute top-2 right-2 ${sourceInfo?.color || 'text-white'} bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6`}>
-                                                    <SourceIcon className="w-3.5 h-3.5" />
+                                                <Badge className={`absolute top-2 right-2 ${catInfo?.color || 'text-white'} bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6`}>
+                                                    <CategoryIcon className="w-3.5 h-3.5" />
                                                 </Badge>
                                             )}
 
@@ -739,7 +809,7 @@ export default function DataBrowserPage() {
                                                         setEditTitle(item.title)
                                                         setEditDescription(item.description || '')
                                                         setEditImage(item.image_url || '')
-                                                        setEditTags(Array.isArray(item.cached_tags) ? item.cached_tags.map(t => t.id) : [])
+                                                        setEditTags(parseCachedTags(item.cached_tags).map(t => t.id))
                                                         setEditMetadata(item.metadata ? JSON.stringify(item.metadata) : '')
                                                     }}
                                                     title="Quick Edit"
@@ -795,6 +865,22 @@ export default function DataBrowserPage() {
                                             <p className="text-[11px] text-zinc-400 line-clamp-3 leading-relaxed">
                                                 {item.description || <span className="italic opacity-50">No description available.</span>}
                                             </p>
+                                            {/* Tags Display */}
+                                            {(() => {
+                                                const tags = parseCachedTags(item.cached_tags)
+                                                return tags.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mt-2">
+                                                        {tags.slice(0, 3).map(tag => (
+                                                            <Badge key={tag.id} variant="secondary" className="text-[9px] px-1.5 py-0 h-4 bg-zinc-800 text-zinc-400 border-0">
+                                                                {tag.name}
+                                                            </Badge>
+                                                        ))}
+                                                        {tags.length > 3 && (
+                                                            <span className="text-[9px] text-zinc-500 self-center">+{tags.length - 3}</span>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })()}
                                         </CardContent>
                                     </Card>
                                 )
@@ -1050,46 +1136,83 @@ export default function DataBrowserPage() {
                 />
             )}
 
+
             {/* Maintenance Modal */}
             <Dialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
                 <DialogContent className="bg-zinc-950 border-zinc-800 sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-red-500 font-bold">
-                            <ShieldAlert className="w-5 h-5" />
-                            Database Maintenance
+                        <DialogTitle className="flex items-center gap-2 text-zinc-100 font-bold">
+                            <Settings className="w-5 h-5 text-blue-500" />
+                            System Configuration
                         </DialogTitle>
                         <DialogDescription className="text-zinc-400">
-                            Bulk operations for cleaning up the database.
+                            Manage API keys and database maintenance.
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-4 py-4">
-                        <div className="p-4 bg-red-950/10 border border-red-900/30 rounded-lg">
-                            <h4 className="text-sm font-medium text-red-400 mb-3 flex items-center gap-2">
-                                <Trash2 className="w-4 h-4" />
-                                Bulk Delete by Source
+                    <div className="space-y-6 py-4">
+                        {/* API Keys Section */}
+                        <div className="space-y-3">
+                            <h4 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                                <Key className="w-4 h-4 text-yellow-500" />
+                                API Keys
                             </h4>
-                            <div className="grid grid-cols-2 gap-2">
-                                {Object.entries(SOURCE_ICONS).map(([key, { label }]) => (
+                            <div className="space-y-2">
+                                <label className="text-xs text-zinc-500">SteamGridDB API Key (Vertical Covers)</label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        type="password"
+                                        placeholder="Enter key..."
+                                        value={steamGridKey}
+                                        onChange={(e) => setSteamGridKey(e.target.value)}
+                                        className="bg-zinc-900 border-zinc-800 text-zinc-200 text-sm"
+                                    />
                                     <Button
-                                        key={key}
-                                        variant="outline"
                                         size="sm"
-                                        className="justify-start border-zinc-800 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50 transition-colors"
-                                        onClick={() => {
-                                            setDeleteConfirm({ type: 'source', source: key })
-                                            setMaintenanceOpen(false)
-                                        }}
+                                        className="bg-blue-600 hover:bg-blue-500"
+                                        onClick={handleSaveConfig}
+                                        disabled={actionLoading}
                                     >
-                                        {label}
+                                        Save
                                     </Button>
-                                ))}
+                                </div>
+                                <p className="text-[10px] text-zinc-600">
+                                    Required for high-quality game cover harvesting.
+                                </p>
                             </div>
                         </div>
 
-                        <div className="p-4 bg-zinc-900/30 border border-zinc-800 rounded-lg opacity-50 cursor-not-allowed">
-                            <h4 className="text-sm font-medium text-zinc-400 mb-2">Other Tools</h4>
-                            <p className="text-xs text-zinc-600">Deduplication and integrity checks coming soon.</p>
+                        <div className="h-px bg-zinc-800 w-full" />
+
+                        {/* Maintenance Section */}
+                        <div className="space-y-3">
+                            <h4 className="text-sm font-medium text-red-400 flex items-center gap-2">
+                                <ShieldAlert className="w-4 h-4" />
+                                Danger Zone
+                            </h4>
+
+                            <div className="p-4 bg-red-950/10 border border-red-900/30 rounded-lg space-y-3">
+                                <h5 className="text-xs font-medium text-red-300 flex items-center gap-2">
+                                    <Trash2 className="w-3 h-3" />
+                                    Bulk Delete by Source
+                                </h5>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['tmdb', 'tmdb_tv', 'anilist', 'bgg', 'rawg', 'google_books', 'spotify_artist', 'itunes_podcast'].map((key) => (
+                                        <Button
+                                            key={key}
+                                            variant="outline"
+                                            size="sm"
+                                            className="justify-start border-zinc-800 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50 transition-colors h-8 text-xs"
+                                            onClick={() => {
+                                                setDeleteConfirm({ type: 'source', source: key })
+                                                setMaintenanceOpen(false)
+                                            }}
+                                        >
+                                            {key.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </DialogContent>
@@ -1108,7 +1231,7 @@ export default function DataBrowserPage() {
                                 : deleteConfirm?.type === 'single'
                                     ? 'Are you sure you want to delete this item? This action cannot be undone.'
                                     : <>
-                                        You are about to delete <span className="font-bold text-white">ALL</span> items from <span className="font-bold text-white">{SOURCE_ICONS[deleteConfirm?.source || '']?.label}</span>.
+                                        You are about to delete <span className="font-bold text-white">ALL</span> items from <span className="font-bold text-white">{(deleteConfirm?.source || '').replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>.
                                         <br /><br />
                                         This action cannot be undone. All associated data will be lost forever.
                                     </>

@@ -354,6 +354,7 @@ export class SpotifyStrategy implements MediaStrategy {
                 if (mood && mood !== 'Mixed') {
                     descParts.push(`• ${mood}`);
                 }
+                if (releaseYear) descParts.push(releaseYear.toString());
 
                 // Build AI analysis payload for vector embeddings
                 const analysisPayload = `Album: ${item.name} by ${artists}. Genres: ${artistData.genres.join(", ")}. Label: ${albumData.label}. Released: ${item.release_date}. ${item.total_tracks} tracks.`;

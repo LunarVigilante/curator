@@ -3,6 +3,7 @@
 import { callLLM } from '@/lib/llm'
 import { SystemConfigService } from '@/lib/services/SystemConfigService'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { z } from 'zod'
 
 const generateDescriptionSchema = z.object({
@@ -197,7 +198,7 @@ ${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
 export async function generateTagsAction(input: z.input<typeof generateTagsSchema>) {
     try {
         const { title, type, description } = generateTagsSchema.parse(input)
-        const supabase = await createClient()
+        const supabase = createServiceRoleClient() // Use service role for global_items access
 
         // 1. Check Cache
         const normalizedType = type.toUpperCase().replace(/\s+/g, '_');
@@ -207,14 +208,14 @@ export async function generateTagsAction(input: z.input<typeof generateTagsSchem
             .eq('category_type', normalizedType)
             .single()
 
-        if (existingItem?.cached_tags) {
-            try {
-                const cached = JSON.parse(existingItem.cached_tags);
-                if (Array.isArray(cached) && cached.length > 0) {
-                    console.log(`[AI Cache] Hit for tags: "${title}"`);
-                    return { tags: cached };
-                }
-            } catch { /* Invalid JSON, regenerate */ }
+        // cached_tags is a jsonb column, so Supabase returns it as a native array, not a string
+        if (existingItem?.cached_tags && Array.isArray(existingItem.cached_tags)) {
+            // Check if these are proper {id, name} objects or just strings
+            const cached = existingItem.cached_tags
+            if (cached.length > 0 && typeof cached[0] === 'object' && cached[0].id && cached[0].name) {
+                console.log(`[AI Cache] Hit for tags: "${title}"`);
+                return { tags: cached.map((t: any) => t.name) };
+            }
         }
 
         // Fetch LLM config from database
@@ -279,26 +280,36 @@ ${description ? `Description: ${sanitizeInput(description, 300)}` : ''}`;
         });
 
         // Parse comma-separated tags
-        const tags = response
+        const tagNames = response
             .split(',')
             .map(tag => tag.trim())
             .filter(tag => tag.length > 0 && tag.length < 50)
             .slice(0, 8);
 
-        // 2. Update Cache
+        // 2. Create tags in the tags table and get back {id, name} objects
+        const { createTagsBatch } = await import('@/lib/actions/tags')
+        const validTags = await createTagsBatch(tagNames)
+
+        // 3. Update Cache with proper {id, name}[] format (not stringified!)
         if (existingItem) {
-            await (supabase.from('global_items') as any)
-                .update({ cached_tags: JSON.stringify(tags) })
+            const { error } = await (supabase.from('global_items') as any)
+                .update({ cached_tags: validTags })
                 .eq('id', existingItem.id)
+            if (error) {
+                console.error('[AI Tags] Failed to update cached_tags:', error)
+            }
         } else {
-            await (supabase.from('global_items') as any).insert({
+            const { error } = await (supabase.from('global_items') as any).insert({
                 title,
-                cached_tags: JSON.stringify(tags),
+                cached_tags: validTags,
                 category_type: normalizedType
             })
+            if (error) {
+                console.error('[AI Tags] Failed to insert cached_tags:', error)
+            }
         }
 
-        return { tags }
+        return { tags: tagNames }
 
     } catch (e: any) {
         console.error("Generate Tags Error:", e)
@@ -314,15 +325,16 @@ export async function generateDescription(title: string, type: string): Promise<
 
 export async function generateTags(title: string, description: string, type: string): Promise<{ id: string; name: string }[]> {
     const result = await generateTagsAction({ title, type, description })
+
     if (result.tags) {
-        // Create tags and return them
+        // Create tags and return them (normalization happens in createTag)
         const { createTag } = await import('@/lib/actions/tags')
         const tagPromises = result.tags.map(async (tagName: string) => {
             const tag = await createTag(tagName)
             return tag
         })
         const tags = await Promise.all(tagPromises)
-        return tags.filter((t: any): t is { id: string; name: string } => t !== null)
+        return tags.filter((t: any): t is { id: string; name: string } => t !== null && t !== undefined)
     }
     return []
 }

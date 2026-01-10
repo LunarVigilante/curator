@@ -106,6 +106,7 @@ export async function updateSystemConfig(data: {
     featureRecommendations?: string
     featureChallenges?: string
     voyageApiKey?: string
+    steamGridApiKey?: string
 }) {
     const session = await assertAdmin()
     console.log('[Admin] updateSystemConfig called by user:', session.user.id)
@@ -151,6 +152,9 @@ export async function updateSystemConfig(data: {
 
     // Voyage AI (Embeddings)
     if (data.voyageApiKey) await upsertSetting('voyage_api_key', data.voyageApiKey, 'EMBEDDINGS', true)
+
+    // SteamGridDB
+    if (data.steamGridApiKey) await upsertSetting('STEAMGRIDDB_API_KEY', data.steamGridApiKey, 'MEDIA', true)
 
     // Feature Flags
     if (data.featureAiCritic !== undefined) await upsertSetting('feature_ai_critic', data.featureAiCritic, 'FEATURE', false)

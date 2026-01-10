@@ -284,6 +284,8 @@ export class TmdbStrategy implements MediaStrategy {
                         analysisPayload = `Type: TV Show. Title: ${title}. Creator: ${details.creators.join(", ")}. Network: ${details.networks[0] || 'Unknown'}. Country: ${details.originCountry[0] || 'US'}. Status: ${details.status}. Keywords: ${details.keywords.join(", ")}. Genre: ${genres.join(", ")}. Overview: ${item.overview || ''}`;
                     }
 
+                    if (year) descParts.push(year);
+
                     // Combine keywords and genres for tags
                     const allTags = [...genres, ...(details.keywords || [])].slice(0, 10);
 

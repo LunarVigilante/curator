@@ -207,6 +207,12 @@ async function backfillDescriptions() {
         console.log(`\n📦 Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})...`);
 
         for (const item of batch) {
+            // Skip items that already have long descriptions (already regenerated)
+            if (item.description && item.description.length >= 1000) {
+                skippedCount++;
+                continue;
+            }
+
             // Generate new description with Grok fallback support
             const newDescription = await generateDescription(
                 item.title,

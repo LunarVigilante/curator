@@ -5,6 +5,7 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { ImageService } from '../services/image/imageService';
 import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
@@ -16,7 +17,7 @@ interface AniListMedia {
     id: number;
     title: { english: string | null; romaji: string };
     description: string | null;
-    coverImage: { large: string | null };
+    coverImage: { extraLarge: string | null; large: string | null };
     startDate: { year: number | null };
     averageScore: number | null;
     popularity: number;
@@ -28,30 +29,46 @@ interface AniListMedia {
     seasonYear: number | null;
 }
 
-const QUERY = `
+const ANIME_QUERY = `
 query ($page: Int, $perPage: Int) {
-    Page(page: $page, perPage: $perPage) {
+    Page (page: $page, perPage: $perPage) {
         pageInfo {
             hasNextPage
-            currentPage
+            lastPage
         }
-        media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
+        media (type: ANIME, format_in: [TV, MOVIE], sort: POPULARITY_DESC, isAdult: false) {
             id
-            title { english romaji }
-            description(asHtml: false)
-            coverImage { large }
-            startDate { year }
+            title {
+                romaji
+                english
+                native
+            }
+            description
+            coverImage {
+                extraLarge
+                large
+            }
+            startDate {
+                year
+            }
+            season
+            seasonYear
             averageScore
             popularity
             genres
             episodes
             status
-            season
-            seasonYear
-            studios(isMain: true) { nodes { name } }
+            studios(isMain: true) {
+                nodes {
+                    name
+                }
+            }
         }
     }
-}`;
+}
+`;
+
+const imageService = new ImageService();
 
 export async function harvestAnime(supabase: ReturnType<typeof createServiceRoleClient>): Promise<HarvestResult> {
     console.log('\n🎌 HARVESTING ANIME (AniList - Deep Import)...');
@@ -66,7 +83,7 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    query: QUERY,
+                    query: ANIME_QUERY,
                     variables: { page, perPage: PER_PAGE }
                 })
             });
@@ -133,10 +150,19 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
             // Generate embedding
             const embedding = await generateEmbedding(`${title}: ${description}`);
 
+            // Process Image (CDN -> Self-Hosted)
+            let image_url = anime.coverImage?.extraLarge || anime.coverImage?.large || null;
+            if (image_url) {
+                const uploadedUrl = await imageService.processAndUpload(image_url, 'anime');
+                if (uploadedUrl) {
+                    image_url = uploadedUrl;
+                }
+            }
+
             const item: HarvestItem = {
                 title,
                 description,
-                image_url: anime.coverImage?.large || null,
+                image_url,
                 category_type: 'ANIME',
                 external_ids: { anilist: anime.id },
                 metadata: {

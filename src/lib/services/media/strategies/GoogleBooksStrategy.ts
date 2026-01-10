@@ -254,6 +254,7 @@ export class GoogleBooksStrategy implements MediaStrategy {
                 if (categories.length > 0) descParts.push(categories[0]);
                 if (details.pageCount) descParts.push(`${details.pageCount} pages`);
                 if (details.averageRating) descParts.push(`★ ${details.averageRating.toFixed(1)}`);
+                if (year) descParts.push(year);
 
                 // Build AI analysis payload
                 const analysisPayload = `Type: Book. Title: ${info.title}. Author: ${authorsDisplay || "Unknown"}. Genres: ${categories.join(", ") || "General"}. Page Count: ${details.pageCount}. Rating: ${details.averageRating || 'N/A'}. Publisher: ${details.publisher}. Language: ${details.language}. Description: ${cleanedDescription.substring(0, 500)}`;

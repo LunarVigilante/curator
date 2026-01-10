@@ -53,15 +53,22 @@ export async function getItems(
     const totalCount = count || 0
 
     // Transform items
-    const transformedItems = (data || []).map((item: any) => ({
-        ...item,
-        name: item.global_item?.title || item.name || 'Untitled',
-        description: item.global_item?.description || item.description,
-        image: item.global_item?.image_url || item.image,
-        categoryType: item.global_item?.category_type,
-        tags: item.tags?.map((t: any) => t.tag) || [],
-        ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : []
-    }))
+    const transformedItems = (data || []).map((item: any) => {
+        // Use user-specific tags first, fallback to global cached_tags
+        const userTags = item.tags?.map((t: any) => t.tag).filter(Boolean) || [];
+        const globalTags = item.global_item?.cached_tags || [];
+        const tags = userTags.length > 0 ? userTags : globalTags;
+
+        return {
+            ...item,
+            name: item.global_item?.title || item.name || 'Untitled',
+            description: item.global_item?.description || item.description,
+            image: item.global_item?.image_url || item.image,
+            categoryType: item.global_item?.category_type,
+            tags,
+            ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : []
+        };
+    })
 
     return {
         items: transformedItems,
@@ -88,13 +95,18 @@ export async function getItem(id: string) {
     if (error && error.code !== 'PGRST116') throw error
     if (!item) return null
 
+    // Use user-specific tags first, fallback to global cached_tags
+    const userTags = item.tags?.map((t: any) => t.tag).filter(Boolean) || [];
+    const globalTags = item.global_item?.cached_tags || [];
+    const tags = userTags.length > 0 ? userTags : globalTags;
+
     return {
         ...item,
         name: item.global_item?.title || item.name || 'Untitled',
         description: item.global_item?.description || item.description,
         image: item.global_item?.image_url || item.image,
         categoryType: item.global_item?.category_type,
-        tags: item.tags?.map((t: any) => t.tag) || [],
+        tags,
         ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : [],
         category: item.category
     }

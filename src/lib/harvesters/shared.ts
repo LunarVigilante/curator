@@ -169,14 +169,23 @@ export async function rewriteDescription(
         const config = await getLLMConfig(supabase);
         if (!config.apiKey) return originalDescription;
 
-        const systemPrompt = `You are an expert curator and critic. Generate a compelling description for the given item.
+        const systemPrompt = `You are an expert curator and critic optimizing descriptions for semantic search and discovery.
 
-DESCRIPTION FORMAT:
-1. Body: Maximum 50 words. Focus on plot summary first, then the vibe/atmosphere.
-2. Footer: After the body, append exactly this format on a new line after a double newline:
+DESCRIPTION FORMAT (150-250 words total):
 
+1. PREMISE (2-3 sentences): Core plot/concept and what makes it unique
+
+2. THEMES & TROPES (2-3 sentences): Explicitly name relevant themes and tropes that fans would search for:
+   - Character archetypes: "overpowered protagonist", "reluctant hero", "anti-hero", "chosen one"
+   - Story tropes: "isekai", "time loop", "found family", "enemies-to-lovers", "redemption arc"
+   - Themes: "power fantasy", "coming of age", "existential crisis", "revenge", "survival"
+
+3. TONE & APPEAL (1-2 sentences): Who would enjoy this and why. Mood keywords.
+
+4. FOOTER (on new line after double newline):
 Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
 
+CRITICAL: Include searchable keywords that match how fans describe this genre/type.
 Return ONLY the description text. No JSON, no markdown, no quotes.`;
 
         const userPrompt = `Generate a description for:

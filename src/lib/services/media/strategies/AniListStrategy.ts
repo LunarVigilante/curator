@@ -216,7 +216,9 @@ export class AniListStrategy implements MediaStrategy {
                         };
                         descParts.push(originMap[item.countryOfOrigin] || item.countryOfOrigin);
                     }
+                    if (year) descParts.push(year);
                 }
+
 
                 if (genres.length > 0) {
                     descParts.push(genres.slice(0, 2).join(', '));

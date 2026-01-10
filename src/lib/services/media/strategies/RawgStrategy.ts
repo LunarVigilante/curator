@@ -219,6 +219,9 @@ export class RawgStrategy implements MediaStrategy {
                 if (details.developers.length > 0) {
                     descParts.push(`by ${details.developers[0]}`);
                 }
+                if (item.released) {
+                    descParts.push(item.released.split('-')[0]);
+                }
 
                 // Combine genres and cleaned tags (tags are more granular)
                 const allTags = [...new Set([

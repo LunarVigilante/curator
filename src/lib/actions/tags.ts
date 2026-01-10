@@ -1,38 +1,70 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { revalidatePath } from 'next/cache'
+import { normalizeTagName } from '@/lib/utils/normalizeTagName'
 
 export async function getTags() {
-    const supabase = await createClient()
+    const supabase = createServiceRoleClient()
 
     const { data, error } = await (supabase.from('tags') as any)
         .select('*')
-        .order('name', { ascending: false })
+        .order('name', { ascending: true })
+        .limit(500) // Limit for performance, use getTagsByIds for specific lookups
+
+    if (error) throw error
+    return data || []
+}
+
+export async function getTagsByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
+    if (ids.length === 0) return []
+
+    const supabase = createServiceRoleClient()
+
+    const { data, error } = await (supabase.from('tags') as any)
+        .select('id, name')
+        .in('id', ids)
 
     if (error) throw error
     return data || []
 }
 
 export async function createTag(name: string) {
-    const supabase = await createClient()
+    const supabase = createServiceRoleClient()
+    const normalizedName = normalizeTagName(name)
 
-    // Check if tag already exists
+    if (!normalizedName) return null
+
+    // Check if tag already exists with any case variant using ilike
+    // This finds 'action', 'Action', 'ACTION' etc.
     const { data: existing } = await (supabase.from('tags') as any)
         .select('*')
-        .eq('name', name)
-        .single()
+        .ilike('name', normalizedName)
+        .limit(1)
+        .maybeSingle()
 
     if (existing) {
         return existing
     }
 
+    // Try to insert, but handle unique constraint gracefully
     const { data: newTag, error } = await (supabase.from('tags') as any)
-        .insert({ name })
+        .insert({ name: normalizedName })
         .select()
         .single()
 
-    if (error) throw error
+    if (error) {
+        // If duplicate key error (23505), the tag was created by another concurrent request
+        // Fetch and return the existing tag
+        if (error.code === '23505') {
+            const { data: retryExisting } = await (supabase.from('tags') as any)
+                .select('*')
+                .eq('name', normalizedName)
+                .single()
+            return retryExisting
+        }
+        throw error
+    }
 
     revalidatePath('/tags')
     return newTag
@@ -45,8 +77,10 @@ export async function createTag(name: string) {
 export async function createTagsBatch(names: string[]): Promise<{ id: string, name: string }[]> {
     if (names.length === 0) return []
 
-    const supabase = await createClient()
-    const uniqueNames = [...new Set(names.map(n => n.trim()).filter(n => n.length > 0))]
+    const supabase = createServiceRoleClient()
+    // Normalize and dedupe tag names
+    const normalizedNames = names.map(n => normalizeTagName(n)).filter(n => n.length > 0)
+    const uniqueNames = [...new Set(normalizedNames)]
 
     // 1. First, get all existing tags in one query
     const { data: existing } = await (supabase.from('tags') as any)
@@ -65,7 +99,9 @@ export async function createTagsBatch(names: string[]): Promise<{ id: string, na
             .insert(toCreate.map(name => ({ name })))
             .select('id, name')
 
-        if (!error && data) {
+        if (error) {
+            console.error('[Tags] Failed to insert tags:', error)
+        } else if (data) {
             newTags = data
         }
     }
@@ -80,7 +116,7 @@ export async function createTagsBatch(names: string[]): Promise<{ id: string, na
 }
 
 export async function deleteTag(id: string) {
-    const supabase = await createClient()
+    const supabase = createServiceRoleClient()
 
     const { error } = await (supabase.from('tags') as any)
         .delete()

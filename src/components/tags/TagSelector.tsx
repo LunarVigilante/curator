@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { getTags } from '@/lib/actions/tags'
+import { getTags, getTagsByIds } from '@/lib/actions/tags'
 import { Badge } from '@/components/ui/badge'
 
 type Tag = {
@@ -27,8 +27,24 @@ export default function TagSelector({
     const [tags, setTags] = useState<Tag[]>([])
 
     useEffect(() => {
-        // Refetch tags when selectedTags changes (e.g., after AI generates new tags)
-        getTags().then(setTags)
+        // Fetch base tags AND the specifically selected tags (to handle pagination limits)
+        Promise.all([
+            getTags(),
+            selectedTags.length > 0 ? getTagsByIds(selectedTags) : Promise.resolve([])
+        ]).then(([baseTags, selectedTagObjects]) => {
+            // Merge: base tags + selected tags (dedupe by id)
+            const tagMap = new Map<string, Tag>()
+            for (const tag of (baseTags || [])) {
+                tagMap.set(tag.id, tag)
+            }
+            for (const tag of (selectedTagObjects || [])) {
+                tagMap.set(tag.id, tag)
+            }
+            const merged = Array.from(tagMap.values())
+            setTags(merged)
+        }).catch(err => {
+            console.error('[TagSelector] Error fetching tags:', err)
+        })
     }, [selectedTags])
 
     const toggleTag = (tagId: string) => {

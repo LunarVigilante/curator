@@ -9,6 +9,7 @@ import { SpotifyAudiobooksStrategy } from "./strategies/SpotifyAudiobooksStrateg
 import { BggStrategy } from "./strategies/BggStrategy";
 import { ComicFetcherService } from "./strategies/ComicFetcherService";
 import { SystemSettings } from "@/lib/services/SystemConfigService";
+import { cleanSearchQuery } from "@/lib/utils";
 
 /**
  * Strategy Registry Pattern for Media Service.
@@ -139,7 +140,22 @@ export class MediaService {
 
         console.log(`[MediaService] Using strategy: ${strategy.name} for category: "${categoryName}"${type ? ` (type: ${type})` : ''}`);
 
-        const results = await strategy.search(query, settings, type);
+        // Try 1: Exact search
+        let results = await strategy.search(query, settings, type);
+
+        // Try 2: Cleaned search (if no results and query is different)
+        if (!results.success || results.data.length === 0) {
+            const cleanedQuery = cleanSearchQuery(query);
+            if (cleanedQuery !== query.trim()) {
+                console.log(`[MediaService] Strict search failed. Retrying with cleaned query: "${cleanedQuery}"`);
+                const retryResults = await strategy.search(cleanedQuery, settings, type);
+
+                // Only use retry results if they found something
+                if (retryResults.success && retryResults.data.length > 0) {
+                    results = retryResults;
+                }
+            }
+        }
 
         // Fallback: If Google Books returns no results, try Spotify Audiobooks
         // User Request: "Audiobooks are missing many titles. can we use Spotify as a fallback for Google Books?"

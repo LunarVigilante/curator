@@ -4,7 +4,10 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { ImageService } from '../services/image/imageService';
 import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+
+const imageService = new ImageService();
 
 const API_DELAY_MS = 3000;  // BGG needs longer delays (3 seconds between requests)
 const BATCH_SIZE = 20;      // Max IDs per request
@@ -44,7 +47,7 @@ const TOP_BGG_IDS = [
     383179, 384247, 385108, 386214, 387076, 388453, 389104, 390109, 391163, 392014,
 ];
 
-interface BGGGame {
+export interface BGGGame {
     id: number;
     name: string;
     description: string;
@@ -77,7 +80,7 @@ function decodeHTMLEntities(text: string): string {
  * Uses boardgamegeek.com (no www) with Bearer token authorization
  * See: https://boardgamegeek.com/wiki/page/BGG_XML_API2
  */
-async function fetchFromBgg(path: string): Promise<string> {
+export async function fetchFromBgg(path: string): Promise<string> {
     // IMPORTANT: Use boardgamegeek.com without 'www' to avoid redirect stripping auth
     const url = `https://boardgamegeek.com/xmlapi2/${path}`;
 
@@ -114,7 +117,7 @@ async function fetchFromBgg(path: string): Promise<string> {
     return await response.text();
 }
 
-async function fetchBGGBatch(ids: number[]): Promise<BGGGame[]> {
+export async function fetchBGGBatch(ids: number[]): Promise<BGGGame[]> {
     const games: BGGGame[] = [];
     const idsParam = ids.join(',');
 
@@ -228,10 +231,19 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
             // Generate embedding
             const embedding = await generateEmbedding(`${game.name}: ${description}`);
 
+            // Process Image (CDN -> Self-Hosted)
+            let image_url = game.image || null;
+            if (image_url) {
+                const uploadedUrl = await imageService.processAndUpload(image_url, 'game');
+                if (uploadedUrl) {
+                    image_url = uploadedUrl;
+                }
+            }
+
             const item: HarvestItem = {
                 title: game.name,
                 description,
-                image_url: game.image || null,
+                image_url,
                 category_type: 'BOARD_GAME',
                 external_ids: { bgg: game.id },
                 metadata: {
@@ -267,4 +279,115 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
 
     console.log(`✅ Board Games: ${success} added, ${skipped} skipped, ${failed} failed`);
     return { success, skipped, failed, category: 'Board Games' };
+}
+
+// ============================================================================
+// REUSABLE FUNCTIONS FOR EXTERNAL CALLERS
+// ============================================================================
+
+/**
+ * Process a list of BGG IDs - fetch details, AI rewrite, and save.
+ * This is the reusable core function for external scripts like bgg-lists.ts
+ */
+export async function processBGGIds(
+    supabase: ReturnType<typeof createServiceRoleClient>,
+    ids: number[],
+    source: string = 'bgg_list'
+): Promise<HarvestResult> {
+    console.log(`\n🎲 Processing ${ids.length} BGG IDs (source: ${source})...`);
+
+    const games: BGGGame[] = [];
+    const gameIds = new Set<number>();
+
+    // Fetch in batches of 20
+    const totalBatches = Math.ceil(ids.length / BATCH_SIZE);
+
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+        const batch = ids.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+
+        try {
+            const batchGames = await fetchBGGBatch(batch);
+
+            for (const game of batchGames) {
+                if (!gameIds.has(game.id)) {
+                    gameIds.add(game.id);
+                    games.push(game);
+                }
+            }
+
+            console.log(`   🎲 BGG: Batch ${batchNum}/${totalBatches} fetched (${games.length} total)`);
+        } catch (error) {
+            console.error(`   ❌ Batch ${batchNum} failed:`, error);
+        }
+
+        await sleep(API_DELAY_MS);
+    }
+
+    let success = 0, skipped = 0, failed = 0;
+
+    for (let i = 0; i < games.length; i++) {
+        const game = games[i];
+
+        try {
+            const description = await aiLimiter(() =>
+                rewriteDescription(supabase, game.name, game.description, 'Board Game')
+            );
+
+            const tagHints = [...(game.mechanics || []), ...(game.categories || [])].join(', ');
+            const tagNames = await aiLimiter(() =>
+                generateTags(supabase, game.name, `${description} Features: ${tagHints}`, 'Board Game')
+            );
+            const validTags = await ensureTags(supabase, tagNames);
+
+            const embedding = await generateEmbedding(`${game.name}: ${description}`);
+
+            // Process Image (CDN -> Self-Hosted)
+            let image_url = game.image || null;
+            if (image_url) {
+                const uploadedUrl = await imageService.processAndUpload(image_url, 'game');
+                if (uploadedUrl) {
+                    image_url = uploadedUrl;
+                }
+            }
+
+            const item: HarvestItem = {
+                title: game.name,
+                description,
+                image_url,
+                category_type: 'BOARD_GAME',
+                external_ids: { bgg: game.id },
+                metadata: {
+                    year_published: game.yearPublished,
+                    rating: game.rating,
+                    min_players: game.minPlayers,
+                    max_players: game.maxPlayers,
+                    playing_time: game.playingTime,
+                    mechanics: game.mechanics,
+                    categories: game.categories,
+                    designers: game.designers,
+                    source,
+                    original_description: game.description
+                },
+                cached_tags: validTags,
+                ...(embedding ? { embedding } : {})
+            };
+
+            const result = await upsertItem(supabase, item, 'bgg', game.id);
+            if (result) success++;
+            else failed++;
+        } catch (error) {
+            console.error(`   ❌ Failed to process "${game.name}":`, error);
+            failed++;
+        }
+
+        if ((i + 1) % 20 === 0) {
+            console.log(`   🎲 Progress: ${i + 1}/${games.length} (${success} added, ${failed} failed)`);
+        }
+
+        await sleep(50);
+    }
+
+    console.log(`✅ ${source}: ${success} added, ${skipped} skipped, ${failed} failed`);
+    return { success, skipped, failed, category: source };
 }

@@ -69,10 +69,13 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
     // Feature Flags
-    const [enableAiCritic, setEnableAiCritic] = useState(settings?.['feature_ai_critic'] !== 'false');
-    const [enableSmartSort, setEnableSmartSort] = useState(settings?.['feature_smart_sort'] !== 'false');
-    const [enableRecommendations, setEnableRecommendations] = useState(settings?.['feature_recommendations'] !== 'false');
-    const [enableChallenges, setEnableChallenges] = useState(settings?.['feature_challenges'] !== 'false');
+    const [enableAiCritic, setEnableAiCritic] = useState(settings['feature_ai_critic'] === 'true');
+    const [enableSmartSort, setEnableSmartSort] = useState(settings['feature_smart_sort'] === 'true');
+    const [enableRecommendations, setEnableRecommendations] = useState(settings['feature_recommendations'] === 'true');
+    const [enableChallenges, setEnableChallenges] = useState(settings['feature_challenges'] === 'true');
+
+    // SteamGridDB
+    const [steamGridApiKey, setSteamGridApiKey] = useState(settings['STEAMGRIDDB_API_KEY'] || '');
 
     // Connection Status for Services
     const [serviceStatuses, setServiceStatuses] = useState<Record<string, { status: 'idle' | 'loading' | 'success' | 'error', message?: string }>>({
@@ -83,7 +86,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         resend: { status: 'idle' },
         comicvine: { status: 'idle' },
         bgg: { status: 'idle' },
-        metron: { status: 'idle' }
+        metron: { status: 'idle' },
+        steamgrid: { status: 'idle' }
     });
 
 
@@ -252,6 +256,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 itunesApiUrl,
                 // Voyage AI
                 voyageApiKey,
+                steamGridApiKey,
                 // Feature Flags
                 featureAiCritic: enableAiCritic ? 'true' : 'false',
                 featureSmartSort: enableSmartSort ? 'true' : 'false',
@@ -565,6 +570,20 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                                 placeholder="API Endpoint (default: https://api.rawg.io/api)"
                                 className="text-xs h-8 bg-white/5"
                             />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <div className="flex items-center justify-between">
+                                <Label>SteamGridDB API Key (Game Covers)</Label>
+                            </div>
+                            <Input
+                                type="password"
+                                value={steamGridApiKey}
+                                onChange={e => setSteamGridApiKey(e.target.value)}
+                                placeholder="SteamGridDB API Key"
+                                className="bg-zinc-900/50"
+                            />
+                            <p className="text-[10px] text-muted-foreground">Required for high-quality vertical game covers. Get key from <a href="https://www.steamgriddb.com/profile/preferences" target="_blank" className="underline hover:text-white">SteamGridDB Preferences</a></p>
                         </div>
 
                         <div className="grid gap-2">
