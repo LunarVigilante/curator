@@ -623,25 +623,6 @@ CREATE POLICY "Admins can manage all profiles" ON public.profiles FOR ALL
 USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'ADMIN'));
 
 -- ============================================================================
--- VECTOR SEARCH SETUP (pgvector + embeddings)
--- ============================================================================
-
--- Enable the vector extension
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
-
--- ⚠️ IMPORTANT: Vector dimension (1024) must match your embedding model!
--- voyage-3 (Voyage AI) = 1024, mistralai/mistral-embed = 1024
-
--- Add embedding column to global_items
-ALTER TABLE public.global_items 
-ADD COLUMN IF NOT EXISTS embedding extensions.vector(1024);
-
--- Create HNSW index for fast similarity search
-CREATE INDEX IF NOT EXISTS idx_global_items_embedding 
-ON public.global_items 
-USING hnsw (embedding extensions.vector_cosine_ops);
-
--- ============================================================================
 -- SEARCH ITEMS: Find similar items by embedding (cosine similarity)
 -- ============================================================================
 
