@@ -40,7 +40,7 @@ async function migrateImages() {
             .select('id, title, image_url, category_type')
             .not('image_url', 'is', null)
             .not('image_url', 'ilike', '%supabase.co%')
-            .limit(BATCH_SIZE);
+            .limit(BATCH_SIZE) as any;
 
         if (error) {
             console.error('❌ Error fetching batch:', error);
@@ -58,18 +58,20 @@ async function migrateImages() {
                 if (!item.image_url) continue;
 
                 // Determine prefix based on category
-                let prefix: 'anime' | 'game' | 'movie' | 'book' | 'misc' = 'misc';
+                let prefix: 'anime' | 'game' | 'movie' | 'tv' | 'book' | 'music' | 'misc' = 'misc';
                 const cat = item.category_type?.toLowerCase() || '';
                 if (cat.includes('anime')) prefix = 'anime';
                 else if (cat.includes('game') || cat.includes('videogame') || cat.includes('board')) prefix = 'game';
-                else if (cat.includes('movie') || cat === 'tv') prefix = 'movie';
+                else if (cat.includes('movie')) prefix = 'movie';
+                else if (cat === 'tv') prefix = 'tv';
                 else if (cat.includes('book')) prefix = 'book';
+                else if (cat.includes('music')) prefix = 'music';
 
                 const newUrl = await imageService.processAndUpload(item.image_url, prefix);
 
                 if (newUrl) {
-                    const { error: updateError } = await supabase
-                        .from('global_items')
+                    const { error: updateError } = await (supabase
+                        .from('global_items') as any)
                         .update({ image_url: newUrl })
                         .eq('id', item.id);
 

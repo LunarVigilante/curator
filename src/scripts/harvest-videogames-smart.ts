@@ -229,7 +229,7 @@ async function processTask(task: any) {
             }
 
             if (targetImage) {
-                imageUrl = await imageService.processAndUpload(targetImage, 'games');
+                imageUrl = await imageService.processAndUpload(targetImage, 'game');
             }
 
             // 2. AI Description
@@ -274,7 +274,7 @@ async function processTask(task: any) {
                 ...(embedding ? { vector_text: JSON.stringify(embedding) } : {})
             };
 
-            const { error } = await supabase.from('global_items').insert(newItem);
+            const { error } = await (supabase.from('global_items') as any).insert(newItem);
             if (error) throw error;
 
             triageMap.set(rawgId, { id: 'pending-uuid', isComplete: true });
@@ -292,8 +292,8 @@ async function processTask(task: any) {
                 last_metadata_update: new Date().toISOString()
             };
 
-            const { error } = await supabase
-                .from('global_items')
+            const { error } = await (supabase
+                .from('global_items') as any)
                 .update(updatePayload)
                 .eq('id', task.id);
 

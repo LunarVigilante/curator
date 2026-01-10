@@ -128,6 +128,7 @@ export type Database = {
                 Row: {
                     id: string
                     external_id: string | null
+                    external_ids: Json | null
                     source: string | null
                     title: string
                     description: string | null
@@ -143,6 +144,7 @@ export type Database = {
                 Insert: {
                     id?: string
                     external_id?: string | null
+                    external_ids?: Json | null
                     source?: string | null
                     title: string
                     description?: string | null
@@ -158,6 +160,7 @@ export type Database = {
                 Update: {
                     id?: string
                     external_id?: string | null
+                    external_ids?: Json | null
                     source?: string | null
                     title?: string
                     description?: string | null

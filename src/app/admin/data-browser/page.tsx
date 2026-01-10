@@ -149,8 +149,8 @@ export default function DataBrowserPage() {
     useEffect(() => {
         if (maintenanceOpen) {
             const fetchConfig = async () => {
-                const { data } = await supabase
-                    .from('system_config' as any)
+                const { data } = await (supabase
+                    .from('system_settings') as any)
                     .select('value')
                     .eq('key', 'STEAMGRIDDB_API_KEY')
                     .single()
@@ -164,13 +164,13 @@ export default function DataBrowserPage() {
         setActionLoading(true)
         try {
             const { error } = await supabase
-                .from('system_config' as any)
+                .from('system_settings')
                 .upsert({
                     key: 'STEAMGRIDDB_API_KEY',
                     value: steamGridKey,
-                    description: 'API Key for SteamGridDB Cover Art',
+                    category: 'integrations',
                     is_secret: true
-                })
+                } as any)
 
             if (error) throw error
             toast.success('Configuration saved')
@@ -191,7 +191,7 @@ export default function DataBrowserPage() {
             .from('global_items')
             .select('*', { count: 'exact', head: true })
 
-        const { data: catStats } = await supabase.rpc('get_category_stats')
+        const { data: catStats } = await (supabase.rpc('get_category_stats') as any)
 
         // Group by normalized category to merge variations
         const byCategory: Record<string, number> = {}
@@ -319,8 +319,8 @@ export default function DataBrowserPage() {
         setActionLoading(true)
 
         if (deleteConfirm.type === 'selected') {
-            const { error } = await supabase
-                .from('global_items')
+            const { error } = await (supabase
+                .from('global_items') as any)
                 .delete()
                 .in('id', Array.from(selectedIds))
 
@@ -330,8 +330,8 @@ export default function DataBrowserPage() {
                 fetchStats()
             }
         } else if (deleteConfirm.type === 'single' && deleteConfirm.id) {
-            const { error } = await supabase
-                .from('global_items')
+            const { error } = await (supabase
+                .from('global_items') as any)
                 .delete()
                 .eq('id', deleteConfirm.id)
 
@@ -345,19 +345,19 @@ export default function DataBrowserPage() {
                 toast.error('Failed to delete item')
             }
         } else if (deleteConfirm.type === 'source' && deleteConfirm.source) {
-            const { data: itemsToDelete } = await supabase
-                .from('global_items')
+            const { data: itemsToDelete } = await (supabase
+                .from('global_items') as any)
                 .select('id, external_ids')
 
-            const idsToDelete = itemsToDelete
+            const idsToDelete = (itemsToDelete as any[])
                 ?.filter(item => item.external_ids && deleteConfirm.source! in item.external_ids)
                 .map(item => item.id) || []
 
             if (idsToDelete.length > 0) {
                 // Batch delete in chunks of 1000 to avoid request limits
                 for (let i = 0; i < idsToDelete.length; i += 1000) {
-                    await supabase
-                        .from('global_items')
+                    await (supabase
+                        .from('global_items') as any)
                         .delete()
                         .in('id', idsToDelete.slice(i, i + 1000))
                 }
@@ -372,7 +372,6 @@ export default function DataBrowserPage() {
         setConfirmText('')
         setActionLoading(false)
     }
-
     const doSearch = async (searchTerm: string) => {
         if (!searchTerm || searchTerm.length < 2) return
 
@@ -479,14 +478,14 @@ export default function DataBrowserPage() {
         setActionLoading(true)
 
         // Resolve tags to objects for cache
-        let resolvedTags = []
+        let resolvedTags: { id: string; name: string }[] = []
         if (editTags.length > 0) {
             const { data } = await supabase.from('tags').select('id, name').in('id', editTags)
             resolvedTags = data || []
         }
 
-        await supabase
-            .from('global_items')
+        await (supabase
+            .from('global_items') as any)
             .update({
                 title: editTitle,
                 description: editDescription,
@@ -530,7 +529,7 @@ export default function DataBrowserPage() {
                 const { createTagsBatch } = await import('@/lib/actions/tags')
                 const validTags = await createTagsBatch(data.tags)
                 // Save to item
-                await supabase.from('global_items').update({
+                await (supabase.from('global_items') as any).update({
                     cached_tags: validTags.map(t => ({ id: t.id, name: t.name }))
                 }).eq('id', item.id)
                 fetchItems()
@@ -1266,3 +1265,4 @@ export default function DataBrowserPage() {
         </div>
     )
 }
+

@@ -24,7 +24,7 @@ export class ImageService {
      * Returns the new Supabase Storage public URL.
      * If processing fails, returns null (or throws if strict).
      */
-    async processAndUpload(url: string, prefix: 'anime' | 'game' | 'movie' | 'book' | 'misc' = 'misc'): Promise<string | null> {
+    async processAndUpload(url: string, prefix: 'anime' | 'game' | 'movie' | 'tv' | 'book' | 'music' | 'misc' = 'misc'): Promise<string | null> {
         if (!url || url.startsWith('http://localhost') || url.includes('supabase.co')) {
             // Already local or invalid
             return url;

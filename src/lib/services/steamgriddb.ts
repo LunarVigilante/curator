@@ -16,19 +16,6 @@ export class SteamGridDBService {
     private async getApiKey(): Promise<string | null> {
         if (this.apiKey) return this.apiKey;
 
-        // 1. Try Config Table (Legacy)
-        const { data: legacyData } = await this.supabase
-            .from('system_config')
-            .select('value')
-            .eq('key', 'STEAMGRIDDB_API_KEY')
-            .single();
-
-        if (legacyData?.value) {
-            this.apiKey = legacyData.value;
-            return this.apiKey;
-        }
-
-        // 2. Try System Settings (Encrypted)
         const { data: settingsData } = await (this.supabase
             .from('system_settings') as any)
             .select('value')
@@ -40,13 +27,13 @@ export class SteamGridDBService {
             return this.apiKey;
         }
 
-        return null;
+        return null; // No key found
     }
 
-    private async fetch(endpoint: string) {
+    private async fetch(endpoint: string): Promise<any> {
         const key = await this.getApiKey();
         if (!key) {
-            console.warn('⚠️ No SteamGridDB API Key found.');
+            // console.warn('⚠️ No SteamGridDB API Key found.');
             return null;
         }
 

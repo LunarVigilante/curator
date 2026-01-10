@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import pLimit from 'p-limit'
 import { SteamGridDBService } from '../lib/services/steamgriddb'
 import { ImageService } from '../lib/services/image/imageService'
-import { Database } from '../lib/types/database.types'
+import { Database } from '../lib/types/database';
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -129,8 +129,8 @@ async function processItem(item: GameItem) {
             if (finalUrl) {
                 // Update DB with Retry
                 await dbRetry(async () => {
-                    const { error: updateError } = await supabase
-                        .from('global_items')
+                    const { error: updateError } = await (supabase
+                        .from('global_items') as any)
                         .update({
                             image_url: finalUrl,
                             metadata: {
@@ -156,8 +156,8 @@ async function processItem(item: GameItem) {
         console.log(`   ⚠️  No better art found for: "${item.title}"`)
 
         // Update metadata so we don't check again immediately
-        await supabase
-            .from('global_items')
+        await (supabase
+            .from('global_items') as any)
             .update({
                 metadata: {
                     ...meta,

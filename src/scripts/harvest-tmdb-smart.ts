@@ -306,12 +306,9 @@ async function processTask(task: any, year: number) {
             // we should probably do a direct Supabase Insert/Upsert here to be safe and explicit with the new columns.
             // Or cast it.
 
-            const { error } = await supabase.from('global_items').insert({
-                ...newItem,
-                embedding: embedding // Supabase client handles vector conversion if configured, or we pass array?
-                // Actually pgvector needs standard array usually.
-                // Let's trust the standard insert.
-            });
+            const { error } = await (supabase.from('global_items') as any).insert({
+                ...newItem
+            } as any);
 
             if (error) throw error;
 
@@ -339,8 +336,8 @@ async function processTask(task: any, year: number) {
                 last_metadata_update: new Date().toISOString()
             };
 
-            const { error } = await supabase
-                .from('global_items')
+            const { error } = await (supabase
+                .from('global_items') as any)
                 .update(updatePayload)
                 .eq('id', task.id);
 

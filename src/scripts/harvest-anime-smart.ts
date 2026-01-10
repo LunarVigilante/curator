@@ -355,7 +355,7 @@ async function processTask(task: any, year: number) {
                 ...(embedding ? { vector_text: JSON.stringify(embedding) } : {})
             };
 
-            const { error } = await supabase.from('global_items').insert(newItem);
+            const { error } = await supabase.from('global_items').insert(newItem as any);
             if (error) throw error;
 
             triageMap.set(anilistId, { id: 'pending-uuid', isComplete: true });
@@ -382,8 +382,8 @@ async function processTask(task: any, year: number) {
                 last_metadata_update: new Date().toISOString()
             };
 
-            const { error } = await supabase
-                .from('global_items')
+            const { error } = await (supabase
+                .from('global_items') as any)
                 .update(updatePayload)
                 .eq('id', task.id);
 
