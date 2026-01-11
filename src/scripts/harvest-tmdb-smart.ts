@@ -352,7 +352,14 @@ async function processTask(task: any, year: number) {
                 ...newItem
             } as any);
 
-            if (error) throw error;
+            if (error) {
+                // Handle duplicate key gracefully - item was already added
+                if (error.code === '23505') {
+                    console.log(`     ⏭️ Already exists: ${meta.title}`);
+                } else {
+                    throw error;
+                }
+            }
 
             // Update Triage Map in case we encounter it again (unlikely)
             triageMap.set(tmdbId, { id: 'pending-uuid', isComplete: true });

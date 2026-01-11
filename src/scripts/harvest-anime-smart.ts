@@ -225,7 +225,7 @@ async function startHarvest() {
     while (hasMore) {
         const { data, error } = await supabase
             .from('global_items')
-            .select('id, title, external_ids, studio, category_type')
+            .select('id, title, romaji_title, external_ids, studio, category_type')
             .eq('category_type', 'ANIME')
             .range(offset, offset + PAGE_SIZE - 1);
 
@@ -257,10 +257,15 @@ async function startHarvest() {
             triageMap.set(Number(row.external_ids.anilist), triageItem);
         }
 
-        // Also index by title+category for title-based lookup
+        // Index by title+category for title-based lookup (both English and Romaji)
         if (row.title) {
             const titleKey = `${row.title.toLowerCase()}|ANIME`;
             titleMap.set(titleKey, triageItem);
+        }
+        // Also index by romaji_title if different from title
+        if (row.romaji_title && row.romaji_title !== row.title) {
+            const romajiKey = `${row.romaji_title.toLowerCase()}|ANIME`;
+            titleMap.set(romajiKey, triageItem);
         }
 
         if (isComplete) completeCount++;
@@ -403,7 +408,14 @@ async function processTask(task: any, year: number) {
             };
 
             const { error } = await supabase.from('global_items').insert(newItem as any);
-            if (error) throw error;
+            if (error) {
+                // Handle duplicate key gracefully - item was already added
+                if (error.code === '23505') {
+                    console.log(`     ⏭️ Already exists: ${anime.title?.english || anime.title?.romaji}`);
+                } else {
+                    throw error;
+                }
+            }
 
             triageMap.set(anilistId, { id: 'pending-uuid', isComplete: true });
 
