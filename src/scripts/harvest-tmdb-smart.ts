@@ -132,7 +132,8 @@ function extractMetadata(details: any) {
         poster_path: details.poster_path,
         release_date: details.release_date || details.first_air_date,
         popularity: details.popularity,
-        original_language: details.original_language
+        original_language: details.original_language,
+        origin_countries: details.origin_country || (details.production_countries?.map((c: any) => c.iso_3166_1) || [])
     };
 }
 
@@ -276,10 +277,13 @@ async function processTask(task: any, year: number) {
                     original_overview: meta.overview,
                     release_date: meta.release_date,
                     popularity: meta.popularity,
-                    original_language: meta.original_language
+                    original_language: meta.original_language,
+                    origin_country: meta.origin_countries
                 },
                 cached_tags: validTags,
                 // New Columns
+                original_language: meta.original_language,
+                origin_countries: meta.origin_countries,
                 cast: meta.cast,
                 director: meta.director,
                 writer: meta.writer,
@@ -321,6 +325,8 @@ async function processTask(task: any, year: number) {
         } else if (task.type === 'HEAL') {
 
             const updatePayload = {
+                original_language: meta.original_language,
+                origin_countries: meta.origin_countries,
                 cast: meta.cast,
                 director: meta.director,
                 writer: meta.writer,

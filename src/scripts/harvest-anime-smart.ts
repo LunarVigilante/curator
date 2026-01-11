@@ -61,6 +61,7 @@ query ($page: Int, $year: Int) {
             averageScore
             popularity
             status
+            countryOfOrigin
             startDate { year }
             
             # Metadata for extraction
@@ -171,6 +172,11 @@ function extractMetadata(anime: any) {
     // Ideally title is English if available, else Romaji.
     const displayTitle = anime.title?.english || anime.title?.romaji || anime.title?.native;
 
+    // 8. Country & Language Mapping
+    const countryToLang: Record<string, string> = { 'JP': 'ja', 'CN': 'zh', 'KR': 'ko', 'TW': 'zh' };
+    const originCountry = anime.countryOfOrigin ? [anime.countryOfOrigin] : [];
+    const originalLanguage = anime.countryOfOrigin ? (countryToLang[anime.countryOfOrigin] || 'en') : 'ja';
+
     return {
         studio,
         director,
@@ -184,6 +190,9 @@ function extractMetadata(anime: any) {
         source_material: anime.source, // Using 'source_material' column to avoid 'source' conflict
         genres: anime.genres || [],
         romaji_title: anime.title?.romaji,
+        // New Fields
+        origin_countries: originCountry,
+        original_language: originalLanguage,
         // Base
         title: displayTitle,
         description_raw: anime.description?.replace(/<[^>]*>/g, '') || '', // Strip HTML
@@ -339,6 +348,8 @@ async function processTask(task: any, year: number) {
                 cached_tags: validTags,
                 // Rich Metadata
                 release_year: meta.release_year,
+                original_language: meta.original_language,
+                origin_countries: meta.origin_countries,
                 cast: meta.cast,
                 director: meta.director,
                 writer: meta.writer,
@@ -366,6 +377,8 @@ async function processTask(task: any, year: number) {
         } else if (task.type === 'HEAL') {
 
             const updatePayload = {
+                original_language: meta.original_language,
+                origin_countries: meta.origin_countries,
                 cast: meta.cast,
                 director: meta.director,
                 writer: meta.writer,
