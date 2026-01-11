@@ -2,6 +2,9 @@ import { getTags } from '@/lib/actions/tags'
 import TagManager from '@/components/tags/TagManager'
 import PageContainer from '@/components/PageContainer'
 
+// Force dynamic rendering - service role client not available at build time
+export const dynamic = 'force-dynamic'
+
 export default async function TagsPage() {
     const tags = await getTags()
 
