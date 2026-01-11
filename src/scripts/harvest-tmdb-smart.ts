@@ -152,11 +152,13 @@ async function startHarvest() {
     console.log(`\n📥 Building Triage Map from DB...`);
 
     // Fetch ALL items in relevant category to catch title-based duplicates
+    // Note: Default limit is 1000, we need to override with a large range
     const categoryType = TYPE === 'movie' ? 'MOVIE' : 'TV_SHOW';
     const { data: existingItems, error } = await supabase
         .from('global_items')
         .select('id, title, external_ids, cast, category_type')
-        .eq('category_type', categoryType);
+        .eq('category_type', categoryType)
+        .range(0, 49999);  // Fetch up to 50k items
 
     if (error) {
         console.error('❌ Failed to load existing items:', error);

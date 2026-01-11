@@ -217,10 +217,12 @@ async function startHarvest() {
     console.log(`\n📥 Building Triage Map from DB...`);
 
     // Fetch ALL anime items to catch title-based duplicates
+    // Note: Default limit is 1000, we need to override with a large range
     const { data: existingItems, error } = await supabase
         .from('global_items')
         .select('id, title, external_ids, studio, category_type')
-        .eq('category_type', 'ANIME');
+        .eq('category_type', 'ANIME')
+        .range(0, 49999);  // Fetch up to 50k items
 
     if (error) {
         console.error('❌ Failed to load existing items:', error);

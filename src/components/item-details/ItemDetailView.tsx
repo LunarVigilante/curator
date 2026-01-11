@@ -116,6 +116,12 @@ function getFlagEmoji(countryCode: string | null): string | null {
     return String.fromCodePoint(...codePoints)
 }
 
+// Converts "WINTER 2026" -> "Winter 2026" and "OTHER" -> "Other"
+function titleCase(str: string | null): string | null {
+    if (!str) return null
+    return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+}
+
 // Declared outside of render to satisfy react-hooks/static-components
 function CategoryIcon({ category, className }: { category: string | null; className?: string }) {
     const cat = category?.toUpperCase() || ''
@@ -414,8 +420,8 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                                     <FilterPillList items={item.cast} type="cast" category={categorySlug} limit={6} />
                                 </DetailRow>
                             )}
-                            {item.season && <DetailRow label="Season">{item.season}</DetailRow>}
-                            {item.source_material && <DetailRow label="Source">{item.source_material}</DetailRow>}
+                            {item.season && <DetailRow label="Season">{titleCase(item.season)}</DetailRow>}
+                            {item.source_material && <DetailRow label="Source">{titleCase(item.source_material)}</DetailRow>}
                             {item.romaji_title && item.romaji_title !== item.title && (
                                 <DetailRow label="Romaji Title">{item.romaji_title}</DetailRow>
                             )}
