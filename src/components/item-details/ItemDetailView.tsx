@@ -7,7 +7,7 @@ import { FilterPill, FilterPillList } from '@/components/ui/FilterPill'
 import {
     Star, Clock, Shield, Play, Users, Brain,
     Gamepad2, Tv, Film, Music, Dice5, Sparkles,
-    Calendar, Pencil, Trash2
+    Calendar, Pencil, Trash2, Globe
 } from 'lucide-react'
 
 // ============================================================================
@@ -63,6 +63,9 @@ interface GlobalItem {
     artists: string[] | null
     is_expansion: boolean | null
     bgg_id: number | null
+
+    // Shared
+    original_language: string | null
 }
 
 interface ItemDetailViewProps {
@@ -81,6 +84,26 @@ function formatRuntime(minutes: number): string {
     if (hours === 0) return `${mins}m`
     if (mins === 0) return `${hours}h`
     return `${hours}h ${mins}m`
+}
+
+function getLanguageName(code: string | null): string | null {
+    if (!code) return null
+    const languageMap: Record<string, string> = {
+        'en': 'English',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'fr': 'French',
+        'es': 'Spanish',
+        'de': 'German',
+        'it': 'Italian',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'zh': 'Chinese',
+        'hi': 'Hindi',
+        'ar': 'Arabic',
+        'th': 'Thai',
+    }
+    return languageMap[code.toLowerCase()] || code.toUpperCase()
 }
 
 // Declared outside of render to satisfy react-hooks/static-components
@@ -304,6 +327,14 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     <div className="flex items-center gap-1.5">
                         <Shield className="w-4 h-4 text-zinc-400" />
                         <FilterPill label={item.content_rating} type="content_rating" category={categorySlug} />
+                    </div>
+                )}
+
+                {/* Original Language */}
+                {item.original_language && (
+                    <div className="flex items-center gap-1.5">
+                        <Globe className="w-4 h-4 text-cyan-400" />
+                        <span className="text-white text-sm">{getLanguageName(item.original_language)}</span>
                     </div>
                 )}
 
