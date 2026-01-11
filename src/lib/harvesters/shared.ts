@@ -18,6 +18,7 @@ export interface HarvestItem {
     external_ids: Record<string, any>;
     metadata: Record<string, any>;
     release_year?: number | null;
+    original_language?: string | null;
     embedding?: number[];
     tags?: string[];
     cached_tags?: { id: string, name: string }[];
@@ -369,6 +370,7 @@ export async function upsertItem(
                 image_url: item.image_url,
                 metadata: item.metadata,
                 release_year: item.release_year,
+                original_language: item.original_language,
                 ...(item.cached_tags ? { cached_tags: item.cached_tags } : {}),
                 ...(item.embedding ? { embedding: item.embedding } : {})
             })

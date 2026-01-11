@@ -111,6 +111,7 @@ export async function harvestMovies(supabase: ReturnType<typeof createServiceRol
                 image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
                 category_type: 'MOVIE',
                 external_ids: { tmdb: movie.id },
+                original_language: movie.original_language || null,
                 metadata: {
                     release_date: movie.release_date,
                     vote_average: movie.vote_average,

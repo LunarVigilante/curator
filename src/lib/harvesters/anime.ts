@@ -27,6 +27,7 @@ interface AniListMedia {
     status: string | null;
     season: string | null;
     seasonYear: number | null;
+    countryOfOrigin: string | null;
 }
 
 const ANIME_QUERY = `
@@ -58,6 +59,7 @@ query ($page: Int, $perPage: Int) {
             genres
             episodes
             status
+            countryOfOrigin
             studios(isMain: true) {
                 nodes {
                     name
@@ -160,12 +162,17 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
                 }
             }
 
+            // Map countryOfOrigin to language code
+            const countryToLang: Record<string, string> = { 'JP': 'ja', 'CN': 'zh', 'KR': 'ko', 'TW': 'zh' };
+            const originalLanguage = anime.countryOfOrigin ? (countryToLang[anime.countryOfOrigin] || 'en') : 'ja';
+
             const item: HarvestItem = {
                 title,
                 description,
                 image_url,
                 category_type: 'ANIME',
                 external_ids: { anilist: anime.id },
+                original_language: originalLanguage,
                 metadata: {
                     year: anime.startDate?.year,
                     score: anime.averageScore,
@@ -176,6 +183,7 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
                     status: anime.status,
                     season: anime.season,
                     season_year: anime.seasonYear,
+                    country_of_origin: anime.countryOfOrigin,
                     source: 'anilist_harvest',
                     original_description: originalDesc
                 },

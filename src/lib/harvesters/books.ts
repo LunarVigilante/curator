@@ -133,6 +133,17 @@ export async function harvestBooks(supabase: ReturnType<typeof createServiceRole
             // Generate embedding
             const embedding = await generateEmbedding(`${vol.title}: ${description}`);
 
+            // Normalize language code (Google Books may use 'en' or 'eng')
+            const normalizeLanguage = (lang?: string): string | null => {
+                if (!lang) return null;
+                // Handle 3-letter codes
+                const langMap: Record<string, string> = {
+                    'eng': 'en', 'fra': 'fr', 'deu': 'de', 'spa': 'es', 'ita': 'it',
+                    'por': 'pt', 'rus': 'ru', 'jpn': 'ja', 'kor': 'ko', 'zho': 'zh'
+                };
+                return langMap[lang.toLowerCase()] || lang.slice(0, 2).toLowerCase();
+            };
+
             const item: HarvestItem = {
                 title: vol.title,
                 description,
@@ -140,6 +151,7 @@ export async function harvestBooks(supabase: ReturnType<typeof createServiceRole
                     vol.imageLinks?.smallThumbnail?.replace('http:', 'https:') || null,
                 category_type: 'BOOK',
                 external_ids: { google_books: book.id },
+                original_language: normalizeLanguage(vol.language),
                 metadata: {
                     authors: vol.authors || [],
                     published_date: vol.publishedDate,

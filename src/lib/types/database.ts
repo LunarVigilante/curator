@@ -138,6 +138,7 @@ export type Database = {
                     cached_tags: Json | null
                     category_type: string | null
                     vector_text: string | null
+                    original_language: string | null
                     last_metadata_update: string | null
 
                     // Board Games
@@ -170,6 +171,7 @@ export type Database = {
                     cached_tags?: Json | null
                     category_type?: string | null
                     vector_text?: string | null
+                    original_language?: string | null
                     last_metadata_update?: string | null
 
                     // Board Games
@@ -202,6 +204,7 @@ export type Database = {
                     cached_tags?: Json | null
                     category_type?: string | null
                     vector_text?: string | null
+                    original_language?: string | null
                     last_metadata_update?: string | null
 
                     // Board Games

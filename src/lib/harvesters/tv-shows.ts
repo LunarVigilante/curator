@@ -110,6 +110,7 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
                 image_url: show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : null,
                 category_type: 'TV_SHOW',
                 external_ids: { tmdb_tv: show.id },
+                original_language: show.original_language || null,
                 metadata: {
                     release_date: show.first_air_date,  // Mapped from first_air_date
                     first_air_date: show.first_air_date,
