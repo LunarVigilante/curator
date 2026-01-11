@@ -151,19 +151,35 @@ async function startHarvest() {
     // 1. Build Triage Map
     console.log(`\n📥 Building Triage Map from DB...`);
 
-    // Fetch ALL items in relevant category to catch title-based duplicates
-    // Note: Default limit is 1000, we need to override with a large range
+    // Fetch ALL items in relevant category using pagination (Supabase has 1000 row limit)
     const categoryType = TYPE === 'movie' ? 'MOVIE' : 'TV_SHOW';
-    const { data: existingItems, error } = await supabase
-        .from('global_items')
-        .select('id, title, external_ids, cast, category_type')
-        .eq('category_type', categoryType)
-        .range(0, 49999);  // Fetch up to 50k items
+    const existingItems: any[] = [];
+    const PAGE_SIZE = 1000;
+    let offset = 0;
+    let hasMore = true;
 
-    if (error) {
-        console.error('❌ Failed to load existing items:', error);
-        process.exit(1);
+    while (hasMore) {
+        const { data, error } = await supabase
+            .from('global_items')
+            .select('id, title, external_ids, cast, category_type')
+            .eq('category_type', categoryType)
+            .range(offset, offset + PAGE_SIZE - 1);
+
+        if (error) {
+            console.error('❌ Failed to load existing items:', error);
+            process.exit(1);
+        }
+
+        if (data && data.length > 0) {
+            existingItems.push(...data);
+            offset += PAGE_SIZE;
+            hasMore = data.length === PAGE_SIZE;
+            process.stdout.write(`\r   📦 Loaded ${existingItems.length} items...`);
+        } else {
+            hasMore = false;
+        }
     }
+    console.log(''); // New line after progress
 
     let completeCount = 0;
     let incompleteCount = 0;
