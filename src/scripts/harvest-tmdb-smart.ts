@@ -165,11 +165,13 @@ async function startHarvest() {
     let incompleteCount = 0;
 
     existingItems.forEach((row: any) => {
-        if (row.external_ids?.tmdb) {
-            const tmdbId = Number(row.external_ids.tmdb);
+        // Check both 'tmdb' (movies) and 'tmdb_tv' (TV shows) keys
+        const tmdbId = row.external_ids?.tmdb || row.external_ids?.tmdb_tv;
+        if (tmdbId) {
+            const id = Number(tmdbId);
             const isComplete = (row.cast !== null && row.cast.length > 0);
 
-            triageMap.set(tmdbId, { id: row.id, isComplete });
+            triageMap.set(id, { id: row.id, isComplete });
 
             if (isComplete) completeCount++;
             else incompleteCount++;
@@ -271,7 +273,7 @@ async function processTask(task: any, year: number) {
                 description: description,
                 image_url: imageUrl,
                 category_type: categoryType,
-                external_ids: { tmdb: tmdbId },
+                external_ids: TYPE === 'movie' ? { tmdb: tmdbId } : { tmdb_tv: tmdbId },
                 metadata: {
                     source: `tmdb_smart_${TYPE}`,
                     original_overview: meta.overview,
