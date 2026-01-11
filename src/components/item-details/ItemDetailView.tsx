@@ -225,7 +225,7 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                         )}
 
                         {/* Actions */}
-                        <div className="flex flex-wrap gap-2 mt-auto">
+                        <div className="flex flex-wrap gap-2 mt-auto items-center">
                             {item.trailer_url && (
                                 <Button
                                     className="bg-red-600 hover:bg-red-700 text-white"
@@ -244,10 +244,17 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                                 </Button>
                             )}
 
+                            {/* Spacer to push Delete to far right */}
+                            {onDelete && <div className="flex-grow" />}
+
                             {onDelete && (
-                                <Button variant="destructive" size="sm" onClick={onDelete}>
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onDelete}
+                                    className="text-red-500 hover:text-red-400 hover:bg-red-950/50"
+                                >
+                                    <Trash2 className="w-4 h-4" />
                                 </Button>
                             )}
                         </div>

@@ -35,6 +35,8 @@ interface TriageItem {
 
 // Map<tmdb_id, TriageItem>
 const triageMap = new Map<number, TriageItem>();
+// Map<lower(title)+category_type, TriageItem> for title-based lookup
+const titleMap = new Map<string, TriageItem>();
 
 // ============================================================================
 // HELPERS
@@ -149,12 +151,12 @@ async function startHarvest() {
     // 1. Build Triage Map
     console.log(`\n📥 Building Triage Map from DB...`);
 
-    // We fetch ID and 'cast' to check completeness. 
-    // If 'cast' is not null/empty, we assume it's "Healed/Complete".
+    // Fetch ALL items in relevant category to catch title-based duplicates
+    const categoryType = TYPE === 'movie' ? 'MOVIE' : 'TV_SHOW';
     const { data: existingItems, error } = await supabase
         .from('global_items')
-        .select('id, external_ids, cast')
-        .not('external_ids', 'is', null);
+        .select('id, title, external_ids, cast, category_type')
+        .eq('category_type', categoryType);
 
     if (error) {
         console.error('❌ Failed to load existing items:', error);
@@ -165,20 +167,26 @@ async function startHarvest() {
     let incompleteCount = 0;
 
     existingItems.forEach((row: any) => {
-        // Check both 'tmdb' (movies) and 'tmdb_tv' (TV shows) keys
+        const isComplete = (row.cast !== null && row.cast.length > 0);
+        const triageItem = { id: row.id, isComplete };
+
+        // Index by external_id if present
         const tmdbId = row.external_ids?.tmdb || row.external_ids?.tmdb_tv;
         if (tmdbId) {
-            const id = Number(tmdbId);
-            const isComplete = (row.cast !== null && row.cast.length > 0);
-
-            triageMap.set(id, { id: row.id, isComplete });
-
-            if (isComplete) completeCount++;
-            else incompleteCount++;
+            triageMap.set(Number(tmdbId), triageItem);
         }
+
+        // Also index by title+category for title-based lookup
+        if (row.title) {
+            const titleKey = `${row.title.toLowerCase()}|${row.category_type}`;
+            titleMap.set(titleKey, triageItem);
+        }
+
+        if (isComplete) completeCount++;
+        else incompleteCount++;
     });
 
-    console.log(`   ✅ Loaded ${triageMap.size} items.`);
+    console.log(`   ✅ Loaded ${existingItems.length} items (${triageMap.size} by ID, ${titleMap.size} by title).`);
     console.log(`   📊 Stats: ${completeCount} Complete (Skip), ${incompleteCount} Incomplete (Heal).`);
 
     // 2. Iterate Years
@@ -192,9 +200,19 @@ async function startHarvest() {
 
                 if (results.length === 0) break;
 
-                // Triage Batch
+                // Triage Batch - check both external_id AND title
                 const batch = results.map((item: any) => {
-                    const status = triageMap.get(item.id);
+                    const title = item.title || item.name;
+                    const titleKey = `${title.toLowerCase()}|${categoryType}`;
+
+                    // First check by external_id
+                    let status = triageMap.get(item.id);
+
+                    // If not found by ID, check by title
+                    if (!status) {
+                        status = titleMap.get(titleKey);
+                    }
+
                     if (!status) return { type: 'NEW', item };
                     if (!status.isComplete) return { type: 'HEAL', item, id: status.id };
                     return { type: 'SKIP', item };
@@ -327,6 +345,8 @@ async function processTask(task: any, year: number) {
         } else if (task.type === 'HEAL') {
 
             const updatePayload = {
+                // Backfill external_id if missing
+                external_ids: TYPE === 'movie' ? { tmdb: tmdbId } : { tmdb_tv: tmdbId },
                 original_language: meta.original_language,
                 origin_countries: meta.origin_countries,
                 cast: meta.cast,

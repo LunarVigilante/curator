@@ -28,6 +28,8 @@ interface TriageItem {
 
 // Map<anilist_id, TriageItem>
 const triageMap = new Map<number, TriageItem>();
+// Map<lower(title)+category_type, TriageItem> for title-based lookup
+const titleMap = new Map<string, TriageItem>();
 
 // GraphQL Query (Rich Fetch)
 const RICH_ANIME_QUERY = `
@@ -214,11 +216,11 @@ async function startHarvest() {
     // 1. Build Triage Map
     console.log(`\n📥 Building Triage Map from DB...`);
 
-    // Check completeness. Logic: if 'studio' is set (one of the new columns), it's likely "Healed".
+    // Fetch ALL anime items to catch title-based duplicates
     const { data: existingItems, error } = await supabase
         .from('global_items')
-        .select('id, external_ids, studio')
-        .not('external_ids', 'is', null);
+        .select('id, title, external_ids, studio, category_type')
+        .eq('category_type', 'ANIME');
 
     if (error) {
         console.error('❌ Failed to load existing items:', error);
@@ -229,19 +231,25 @@ async function startHarvest() {
     let incompleteCount = 0;
 
     existingItems.forEach((row: any) => {
+        const isComplete = !!row.studio;
+        const triageItem = { id: row.id, isComplete };
+
+        // Index by external_id if present
         if (row.external_ids?.anilist) {
-            const anilistId = Number(row.external_ids.anilist);
-            // Completeness check using the new 'studio' column as requested proxy
-            const isComplete = !!row.studio;
-
-            triageMap.set(anilistId, { id: row.id, isComplete });
-
-            if (isComplete) completeCount++;
-            else incompleteCount++;
+            triageMap.set(Number(row.external_ids.anilist), triageItem);
         }
+
+        // Also index by title+category for title-based lookup
+        if (row.title) {
+            const titleKey = `${row.title.toLowerCase()}|ANIME`;
+            titleMap.set(titleKey, triageItem);
+        }
+
+        if (isComplete) completeCount++;
+        else incompleteCount++;
     });
 
-    console.log(`   ✅ Loaded ${triageMap.size} items.`);
+    console.log(`   ✅ Loaded ${existingItems.length} items (${triageMap.size} by ID, ${titleMap.size} by title).`);
     console.log(`   📊 Stats: ${completeCount} Complete (Skip), ${incompleteCount} Incomplete (Heal).`);
 
     // 2. Iterate Years
@@ -258,9 +266,19 @@ async function startHarvest() {
                     break;
                 }
 
-                // Triage Batch
+                // Triage Batch - check both external_id AND title
                 const batch = results.map((anime: any) => {
-                    const status = triageMap.get(anime.id);
+                    const title = anime.title?.english || anime.title?.romaji || anime.title?.native;
+                    const titleKey = `${title?.toLowerCase() || ''}|ANIME`;
+
+                    // First check by external_id
+                    let status = triageMap.get(anime.id);
+
+                    // If not found by ID, check by title
+                    if (!status && title) {
+                        status = titleMap.get(titleKey);
+                    }
+
                     if (!status) return { type: 'NEW', anime };
                     if (!status.isComplete) return { type: 'HEAL', anime, id: status.id };
                     return { type: 'SKIP', anime };
@@ -377,6 +395,8 @@ async function processTask(task: any, year: number) {
         } else if (task.type === 'HEAL') {
 
             const updatePayload = {
+                // Backfill external_id if missing
+                external_ids: { anilist: anilistId },
                 original_language: meta.original_language,
                 origin_countries: meta.origin_countries,
                 cast: meta.cast,
