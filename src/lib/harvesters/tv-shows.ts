@@ -22,6 +22,7 @@ interface TMDBTvShow {
     genre_ids: number[];
     popularity: number;
     original_language: string;
+    origin_country?: string[];
 }
 
 async function fetchTMDBTvPage(endpoint: 'top_rated' | 'popular', page: number): Promise<TMDBTvShow[]> {
@@ -111,6 +112,7 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
                 category_type: 'TV_SHOW',
                 external_ids: { tmdb_tv: show.id },
                 original_language: show.original_language || null,
+                origin_countries: show.origin_country || [],
                 metadata: {
                     release_date: show.first_air_date,  // Mapped from first_air_date
                     first_air_date: show.first_air_date,
@@ -119,6 +121,7 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
                     popularity: show.popularity,
                     genre_ids: show.genre_ids,
                     original_language: show.original_language,
+                    origin_country: show.origin_country,
                     media_type: 'tv',  // Distinguish from movies
                     source: 'tmdb_harvest',
                     original_overview: show.overview

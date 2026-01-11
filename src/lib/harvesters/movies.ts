@@ -23,6 +23,7 @@ interface TMDBMovie {
     genre_ids: number[];
     popularity: number;
     original_language: string;
+    origin_country?: string[];
 }
 
 async function fetchTMDBMoviePage(endpoint: 'top_rated' | 'popular', page: number): Promise<TMDBMovie[]> {
@@ -112,6 +113,7 @@ export async function harvestMovies(supabase: ReturnType<typeof createServiceRol
                 category_type: 'MOVIE',
                 external_ids: { tmdb: movie.id },
                 original_language: movie.original_language || null,
+                origin_countries: movie.origin_country || [],
                 metadata: {
                     release_date: movie.release_date,
                     vote_average: movie.vote_average,
@@ -119,6 +121,7 @@ export async function harvestMovies(supabase: ReturnType<typeof createServiceRol
                     popularity: movie.popularity,
                     genre_ids: movie.genre_ids,
                     original_language: movie.original_language,
+                    origin_country: movie.origin_country,
                     media_type: 'movie',  // Distinguish from TV shows
                     source: 'tmdb_harvest',
                     original_overview: movie.overview

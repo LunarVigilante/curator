@@ -173,6 +173,7 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
                 category_type: 'ANIME',
                 external_ids: { anilist: anime.id },
                 original_language: originalLanguage,
+                origin_countries: anime.countryOfOrigin ? [anime.countryOfOrigin] : [],
                 metadata: {
                     year: anime.startDate?.year,
                     score: anime.averageScore,

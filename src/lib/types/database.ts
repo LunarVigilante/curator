@@ -139,6 +139,7 @@ export type Database = {
                     category_type: string | null
                     vector_text: string | null
                     original_language: string | null
+                    origin_countries: string[] | null
                     last_metadata_update: string | null
 
                     // Board Games
@@ -172,6 +173,7 @@ export type Database = {
                     category_type?: string | null
                     vector_text?: string | null
                     original_language?: string | null
+                    origin_countries?: string[] | null
                     last_metadata_update?: string | null
 
                     // Board Games
@@ -205,6 +207,7 @@ export type Database = {
                     category_type?: string | null
                     vector_text?: string | null
                     original_language?: string | null
+                    origin_countries?: string[] | null
                     last_metadata_update?: string | null
 
                     // Board Games
