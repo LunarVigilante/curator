@@ -66,6 +66,7 @@ interface GlobalItem {
 
     // Shared
     original_language: string | null
+    origin_countries: string[] | null
 }
 
 interface ItemDetailViewProps {
@@ -104,6 +105,15 @@ function getLanguageName(code: string | null): string | null {
         'th': 'Thai',
     }
     return languageMap[code.toLowerCase()] || code.toUpperCase()
+}
+
+function getFlagEmoji(countryCode: string | null): string | null {
+    if (!countryCode) return null
+    const codePoints = countryCode
+        .toUpperCase()
+        .split('')
+        .map(char => 127397 + char.charCodeAt(0))
+    return String.fromCodePoint(...codePoints)
 }
 
 // Declared outside of render to satisfy react-hooks/static-components
@@ -330,11 +340,23 @@ export default function ItemDetailView({ item, onEdit, onDelete }: ItemDetailVie
                     </div>
                 )}
 
-                {/* Original Language */}
-                {item.original_language && (
-                    <div className="flex items-center gap-1.5">
-                        <Globe className="w-4 h-4 text-cyan-400" />
-                        <span className="text-white text-sm">{getLanguageName(item.original_language)}</span>
+                {/* Original Language & Flag */}
+                {(item.original_language || (item.origin_countries && item.origin_countries.length > 0)) && (
+                    <div className="flex items-center gap-2">
+                        {item.origin_countries && item.origin_countries.length > 0 && (
+                            <span
+                                className="text-lg leading-none cursor-help"
+                                title={item.origin_countries[0]}
+                            >
+                                {getFlagEmoji(item.origin_countries[0])}
+                            </span>
+                        )}
+                        {item.original_language && (
+                            <div className="flex items-center gap-1.5">
+                                <Globe className="w-4 h-4 text-cyan-400" />
+                                <span className="text-white text-sm">{getLanguageName(item.original_language)}</span>
+                            </div>
+                        )}
                     </div>
                 )}
 
