@@ -137,7 +137,19 @@ export default function DataBrowserPage() {
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
     const [totalCount, setTotalCount] = useState(0)
-    const pageSize = 50
+    // Dynamic page size based on tile size / grid columns
+    // Estimates visible rows * columns to fill viewport
+    const getItemsPerPage = useCallback(() => {
+        // Approximate columns at different tile sizes
+        if (tileSize <= 15) return 120  // 12 cols * 10 rows
+        if (tileSize <= 30) return 80   // 10 cols * 8 rows
+        if (tileSize <= 50) return 56   // 8 cols * 7 rows
+        if (tileSize <= 70) return 36   // 6 cols * 6 rows
+        if (tileSize <= 85) return 25   // 5 cols * 5 rows
+        return 16                        // 4 cols * 4 rows
+    }, [tileSize])
+
+    const pageSize = getItemsPerPage()
 
     // Selection
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -848,7 +860,7 @@ export default function DataBrowserPage() {
                                         key={item.id}
                                         className={`group bg-zinc-900/40 border-zinc-800/50 overflow-hidden cursor-pointer transition-all hover:border-zinc-600 hover:shadow-lg hover:shadow-cyan-900/10 ${selectedIds.has(item.id) ? 'ring-2 ring-cyan-500 border-transparent' : ''}`}
                                     >
-                                        <div className="relative aspect-[2/3] bg-zinc-900">
+                                        <div className="relative aspect-[2/3] bg-zinc-900 overflow-hidden">
                                             {item.image_url ? (
                                                 <Image
                                                     src={item.image_url}
