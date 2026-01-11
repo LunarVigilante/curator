@@ -45,6 +45,37 @@ export interface LLMConfig {
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Patterns to remove - only match at START of line or after newline
+const HEADER_PATTERNS = [
+    /(?:^|\n)\s*(?:\d+\.\s*)?PREMISE\s*:?\s*/gim,
+    /(?:^|\n)\s*(?:\d+\.\s*)?THEMES?\s*(?:&|AND)?\s*TROPES?\s*:?\s*/gim,
+    /(?:^|\n)\s*(?:\d+\.\s*)?TONE\s*(?:&|AND)?\s*APPEAL\s*:?\s*/gim,
+    /(?:^|\n)\s*(?:\d+\.\s*)?CHARACTER\s*ARCHETYPES?\s*:?\s*/gim,
+    /(?:^|\n)\s*(?:\d+\.\s*)?STORY\s*TROPES?\s*:?\s*/gim,
+    /(?:^|\n)\s*(?:\d+\.\s*)?FOOTER\s*:?\s*/gim,
+];
+
+export function cleanDescription(description: string): string {
+    let cleaned = description;
+
+    // 1. Remove Headers
+    for (const pattern of HEADER_PATTERNS) {
+        cleaned = cleaned.replace(pattern, '');
+    }
+
+    // 2. Fix Paragraphs
+    // Replace 3+ newlines with 2 newlines (standard paragraph break)
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+    // Replace multiple spaces (NOT newlines) with single space
+    cleaned = cleaned.replace(/[^\S\r\n]{2,}/g, ' ');
+
+    // Trim lines
+    cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
+
+    return cleaned.trim();
+}
+
 /**
  * Simple concurrency limiter (p-limit style)
  */
@@ -245,8 +276,8 @@ Additional Context: ${originalDescription}`;
         // FINAL FALLBACK: Original Description
         // ============================================
         console.error(`   ❌ All models refused "${title}". Using original description.`);
-        return originalDescription;
-
+        // One final clean to ensure headers are removed if the AI added them despite instructions (or if we keep instructions)
+        return cleanDescription(description);
     } catch {
         console.warn(`⚠️ Description rewrite failed for "${title}"`);
         return originalDescription;

@@ -28,14 +28,36 @@ const HEADER_PATTERNS = [
 
 function cleanDescription(description: string): string {
     let cleaned = description;
+
+    // 1. Remove Headers
     for (const pattern of HEADER_PATTERNS) {
+        // Replace header with empty string, but keep surrounding structure for now
         cleaned = cleaned.replace(pattern, '');
     }
-    // Clean up any resulting double spaces or leading/trailing whitespace
-    cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
-    // Clean up double newlines that might result
+
+    // 2. Fix Paragraphs
+    // Current state might have extra spaces or newlines where headers were.
+
+    // Replace 3+ newlines with 2 newlines (standard paragraph break)
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
-    return cleaned;
+
+    // Replace multiple spaces (NOT newlines) with single space
+    // [^\S\r\n] matches whitespace that is NOT carriage return or newline
+    cleaned = cleaned.replace(/[^\S\r\n]{2,}/g, ' ');
+
+    // Trim lines
+    cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
+
+    // Ensure paragraph separation between major sections if they got merged?
+    // If the original was "PREMISE\nText\n\nTHEMES\nText", 
+    // removing headers gives "\nText\n\n\nText".
+    // split/trim/join handles stray spaces.
+    // \n{3,} -> \n\n handles the extra vertical gaps.
+
+    // The user's issue "grouped together" suggests they lost the newlines entirely.
+    // That was caused by cleaned.replace(/\s{2,}/g, ' ') previously.
+
+    return cleaned.trim();
 }
 
 async function cleanupDescriptions() {

@@ -25,6 +25,7 @@ import { Slider } from '@/components/ui/slider'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CATEGORY_LABELS, normalizeCategory, formatCategoryLabel, CATEGORY_TYPES } from '@/lib/constants'
 import ItemDetailView from '@/components/item-details/ItemDetailView'
+import { AdvancedFilterBar } from '@/components/admin/data-browser/AdvancedFilterBar'
 
 // ============================================================================
 // TYPES
@@ -58,8 +59,10 @@ const CATEGORY_ICONS: Record<string, { icon: React.ElementType; color: string; l
     [CATEGORY_TYPES.BOARD_GAME]: { icon: Dice5, color: 'text-orange-400', label: 'Board Games' },
     [CATEGORY_TYPES.VIDEO_GAME]: { icon: Gamepad2, color: 'text-green-400', label: 'Video Games' },
     [CATEGORY_TYPES.BOOKS]: { icon: BookOpen, color: 'text-yellow-400', label: 'Books' },
-    [CATEGORY_TYPES.MUSIC_ARTIST]: { icon: Music, color: 'text-emerald-400', label: 'Music' },
+    [CATEGORY_TYPES.MUSIC_ARTIST]: { icon: Music, color: 'text-emerald-400', label: 'Artists' },
+    [CATEGORY_TYPES.ALBUM]: { icon: Music, color: 'text-teal-400', label: 'Albums' },
     [CATEGORY_TYPES.PODCAST]: { icon: Mic, color: 'text-red-400', label: 'Podcasts' },
+    [CATEGORY_TYPES.COMICS]: { icon: BookOpen, color: 'text-amber-400', label: 'Comics' },
 }
 
 // Helper to safely parse cached_tags which may be in different formats due to migration
@@ -137,6 +140,10 @@ export default function DataBrowserPage() {
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
     const [totalCount, setTotalCount] = useState(0)
+
+    // Sort State (Default to created_at desc)
+    const [sortField, setSortField] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     // Dynamic page size based on tile size / grid columns
     // Estimates visible rows * columns to fill viewport
     const getItemsPerPage = useCallback(() => {
@@ -247,7 +254,7 @@ export default function DataBrowserPage() {
         let query = supabase
             .from('global_items')
             .select('*', { count: 'exact' })
-            .order('created_at', { ascending: false })
+            .order(sortField, { ascending: sortOrder === 'asc' })
             .range((page - 1) * pageSize, page * pageSize - 1)
 
         // Text Search
@@ -285,7 +292,8 @@ export default function DataBrowserPage() {
             query = query.contains('genres', [activeFilters.genre])
         }
         if (activeFilters.developer) {
-            query = query.or(`studio.eq.${activeFilters.developer},developers.cs.{${activeFilters.developer}}`)
+            const dev = activeFilters.developer.replace(/"/g, '\\"')
+            query = query.or(`studio.eq."${dev}",developers.cs.{"${dev}"}`)
         }
         if (activeFilters.platform) {
             query = query.contains('platforms', [activeFilters.platform])
@@ -333,7 +341,7 @@ export default function DataBrowserPage() {
         const { data, count, error } = await query
 
         if (error) {
-            console.error('Error fetching items:', error)
+            console.error('Error fetching items:', (error as any)?.message || error)
             setLoading(false)
             return
         }
@@ -342,7 +350,8 @@ export default function DataBrowserPage() {
         setTotalPages(Math.ceil((count || 0) / pageSize))
         setTotalCount(count || 0)
         setLoading(false)
-    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize, activeFilters])
+        setLoading(false)
+    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize, activeFilters, sortField, sortOrder])
 
     useEffect(() => {
         fetchStats()
@@ -795,600 +804,615 @@ export default function DataBrowserPage() {
                 {/* Main Content */}
                 <div className="flex-1">
                     {/* Actions Bar */}
-                    <div className="flex items-center justify-between mb-4 bg-zinc-900/30 p-2 rounded-lg border border-zinc-800">
-                        <div className="flex items-center gap-4 pl-2">
+                    <div className="flex flex-col gap-4 mb-4 bg-zinc-900/30 p-4 rounded-lg border border-zinc-800">
+                        {/* Advanced Filters */}
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                            <AdvancedFilterBar
+                                categoryType={selectedCategories[0]} // Pass first selected category as context, or undefined
+                                currentSort={sortField}
+                                currentOrder={sortOrder}
+                                onSortChange={(field, order) => {
+                                    setSortField(field)
+                                    setSortOrder(order)
+                                }}
+                            />
+
                             <div className="flex items-center gap-2">
-                                <Checkbox
-                                    checked={items.length > 0 && items.every(i => selectedIds.has(i.id))}
-                                    onCheckedChange={handleSelectVisible}
-                                    className="border-zinc-500 data-[state=checked]:bg-cyan-600 data-[state=checked]:border-cyan-600"
-                                />
-                                <span className="text-sm text-zinc-400">
-                                    {selectedIds.size} selected
-                                </span>
-                                <span className="text-xs text-zinc-600">•</span>
-                                <span className="text-xs text-zinc-500">
-                                    {items.length} on page / {totalCount.toLocaleString()} total
-                                </span>
-                            </div>
-
-                            {selectedIds.size > 0 && (
-                                <>
-                                    <div className="h-4 w-px bg-zinc-700" />
-                                    <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        onClick={() => setDeleteConfirm({ type: 'selected' })}
-                                        className="h-8 text-xs"
-                                    >
-                                        <Trash2 className="w-3 h-3 mr-2" />
-                                        Delete Selected
-                                    </Button>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => { fetchItems(); fetchStats(); }}
-                                className="h-8 text-zinc-400 hover:text-white"
-                            >
-                                <RefreshCw className="w-3.5 h-3.5 mr-2" />
-                                Refresh
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* Items Grid */}
-                    {loading ? (
-                        <div className="flex items-center justify-center h-64">
-                            <div className="flex flex-col items-center gap-2">
-                                <RefreshCw className="w-8 h-8 animate-spin text-cyan-500" />
-                                <p className="text-zinc-500 text-sm">Loading items...</p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className={`grid gap-4 ${getGridCols()}`}>
-                            {items.map(item => {
-                                const catInfo = CATEGORY_ICONS[item.category_type]
-                                const CategoryIcon = catInfo?.icon || Film
-
-                                return (
-                                    <Card
-                                        key={item.id}
-                                        className={`group bg-zinc-900/40 border-zinc-800/50 overflow-hidden cursor-pointer transition-all hover:border-zinc-600 hover:shadow-lg hover:shadow-cyan-900/10 ${selectedIds.has(item.id) ? 'ring-2 ring-cyan-500 border-transparent' : ''}`}
-                                    >
-                                        <div className="relative aspect-[2/3] bg-zinc-900 overflow-hidden">
-                                            {item.image_url ? (
-                                                <Image
-                                                    src={item.image_url}
-                                                    alt={item.title}
-                                                    fill
-                                                    className="object-cover transition-transform duration-500 group-hover:scale-105"
-                                                    unoptimized
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex flex-col items-center justify-center text-zinc-700 p-4 text-center">
-                                                    <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
-                                                    <span className="text-xs">No Image</span>
-                                                </div>
-                                            )}
-
-                                            {/* Overlays */}
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
-
-                                            {/* Selection Checkbox (always visible if selected, or on hover) */}
-                                            <div className={`absolute top-2 left-2 transition-opacity duration-200 ${selectedIds.has(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                                <Checkbox
-                                                    checked={selectedIds.has(item.id)}
-                                                    onCheckedChange={() => toggleSelect(item.id)}
-                                                    className="bg-black/50 border-white/50 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500"
-                                                />
-                                            </div>
-
-                                            {/* Source Badge - shows warning if uncategorized */}
-                                            {(!item.category_type || item.category_type === 'null' || item.category_type === 'NULL') ? (
-                                                <Badge className="absolute top-2 right-2 text-amber-400 bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6">
-                                                    <AlertTriangle className="w-3.5 h-3.5" />
-                                                </Badge>
-                                            ) : (
-                                                <Badge className={`absolute top-2 right-2 ${catInfo?.color || 'text-white'} bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6`}>
-                                                    <CategoryIcon className="w-3.5 h-3.5" />
-                                                </Badge>
-                                            )}
-
-                                            {/* Hover Actions */}
-                                            <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
-                                                <Button
-                                                    size="icon"
-                                                    variant="secondary"
-                                                    className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        setEditItem(item)
-                                                        setEditCategoryType(item.category_type)
-                                                        setEditTitle(item.title)
-                                                        setEditDescription(item.description || '')
-                                                        setEditImage(item.image_url || '')
-                                                        setEditTags(parseCachedTags(item.cached_tags).map(t => t.id))
-                                                        setEditMetadata(item.metadata ? JSON.stringify(item.metadata) : '')
-                                                    }}
-                                                    title="Quick Edit"
-                                                >
-                                                    <Pencil className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    size="icon"
-                                                    variant="secondary"
-                                                    className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleRegenerate(item)
-                                                    }}
-                                                    title="Regenerate Description"
-                                                >
-                                                    <Sparkles className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    size="icon"
-                                                    variant="secondary"
-                                                    className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleGenerateTagsForItem(item)
-                                                    }}
-                                                    title="Generate Tags"
-                                                >
-                                                    <Wand2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    size="icon"
-                                                    variant="secondary"
-                                                    className="h-8 w-8 rounded-full bg-white/10 hover:bg-red-500/50 text-white border-0 backdrop-blur-md"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        setDeleteConfirm({ type: 'single', id: item.id })
-                                                    }}
-                                                    title="Delete Item"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
-
-                                            {/* Title Overlay */}
-                                            <div className="absolute bottom-0 left-0 right-0 p-3">
-                                                <h4 className="font-medium text-sm text-white leading-tight line-clamp-2 drop-shadow-md">{item.title}</h4>
-                                            </div>
-                                        </div>
-
-                                        {/* Description Footer */}
-                                        <CardContent className="p-3 bg-zinc-900">
-                                            <p className="text-[11px] text-zinc-400 line-clamp-3 leading-relaxed">
-                                                {item.description || <span className="italic opacity-50">No description available.</span>}
-                                            </p>
-                                            {/* Tags Display */}
-                                            {(() => {
-                                                const tags = parseCachedTags(item.cached_tags)
-                                                return tags.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 mt-2">
-                                                        {tags.slice(0, 3).map(tag => (
-                                                            <Badge key={tag.id} variant="secondary" className="text-[9px] px-1.5 py-0 h-4 bg-zinc-800 text-zinc-400 border-0">
-                                                                {tag.name}
-                                                            </Badge>
-                                                        ))}
-                                                        {tags.length > 3 && (
-                                                            <span className="text-[9px] text-zinc-500 self-center">+{tags.length - 3}</span>
-                                                        )}
-                                                    </div>
-                                                )
-                                            })()}
-                                        </CardContent>
-                                    </Card>
-                                )
-                            })}
-                        </div>
-                    )}
-
-                    {/* Pagination */}
-                    <div className="flex items-center justify-center gap-4 mt-8 pb-8">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page === 1}
-                            onClick={() => setPage(p => p - 1)}
-                            className="bg-black border-zinc-700"
-                        >
-                            <ChevronLeft className="w-4 h-4 mr-2" />
-                            Previous
-                        </Button>
-                        <span className="text-sm text-zinc-400 font-mono">
-                            Page {page} of {totalPages}
-                        </span>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page === totalPages}
-                            onClick={() => setPage(p => p + 1)}
-                            className="bg-black border-zinc-700"
-                        >
-                            Next
-                            <ChevronRight className="w-4 h-4 ml-2" />
-                        </Button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Enhanced Edit Modal */}
-            <Dialog open={!!editItem} onOpenChange={() => { setEditItem(null); setEditMode('view'); }}>
-                <DialogContent className="bg-zinc-950 border-zinc-800 sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
-                    <DialogHeader className="pb-2">
-                        <DialogTitle className="font-serif text-xl">Item Details</DialogTitle>
-                    </DialogHeader>
-
-                    <Tabs value={editMode} onValueChange={(v) => setEditMode(v as 'view' | 'edit')} className="w-full">
-                        <TabsList className="grid w-full grid-cols-2 mb-4">
-                            <TabsTrigger value="view">View</TabsTrigger>
-                            <TabsTrigger value="edit">Edit</TabsTrigger>
-                        </TabsList>
-
-                        {/* VIEW TAB */}
-                        <TabsContent value="view" className="mt-0">
-                            {editItem && (
-                                <ItemDetailView
-                                    item={editItem as any}
-                                    onEdit={() => setEditMode('edit')}
-                                    onDelete={() => {
-                                        if (editItem) {
-                                            setDeleteConfirm({ type: 'single', id: editItem.id })
-                                        }
-                                    }}
-                                />
-                            )}
-                        </TabsContent>
-
-                        {/* EDIT TAB */}
-                        <TabsContent value="edit" className="mt-0">
-
-                            <div className="grid gap-6 py-4">
-                                {/* Title Row */}
-                                <div className="grid gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Name</label>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            value={editTitle}
-                                            onChange={(e) => setEditTitle(e.target.value)}
-                                            className="bg-zinc-900/50 border-zinc-800 font-medium"
-                                            placeholder="Item Title"
+                                <div className="flex items-center gap-4 pl-2">
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            checked={items.length > 0 && items.every(i => selectedIds.has(i.id))}
+                                            onCheckedChange={handleSelectVisible}
+                                            className="border-zinc-500 data-[state=checked]:bg-cyan-600 data-[state=checked]:border-cyan-600"
                                         />
-                                        <Button
-                                            variant="secondary"
-                                            onClick={() => doSearch(editTitle)}
-                                            disabled={!editTitle}
-                                            className="shrink-0 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-                                        >
-                                            <Search className="w-4 h-4 mr-2" />
-                                            Search
-                                        </Button>
+                                        <span className="text-sm text-zinc-400">
+                                            {selectedIds.size} selected
+                                        </span>
+                                        <span className="text-xs text-zinc-600">•</span>
+                                        <span className="text-xs text-zinc-500">
+                                            {items.length} on page / {totalCount.toLocaleString()} total
+                                        </span>
                                     </div>
 
-                                    {/* Search Results */}
-                                    {mediaResults.length > 0 && (
-                                        <div className="mt-2 grid grid-cols-1 gap-1 bg-zinc-900 border border-zinc-800 rounded-md p-2 max-h-[200px] overflow-y-auto">
-                                            <div className="flex justify-between items-center px-1 pb-2">
-                                                <span className="text-xs text-zinc-500">Select to auto-fill:</span>
-                                                <Button variant="ghost" size="sm" className="h-5 text-[10px]" onClick={() => setMediaResults([])}>Clear</Button>
-                                            </div>
-                                            {mediaResults.map((result, i) => (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => handleMetadataMatch(result)}
-                                                    className="flex items-start gap-3 p-2 hover:bg-zinc-800 rounded text-left transition-colors group"
-                                                >
-                                                    <div className="w-8 h-12 bg-zinc-800 rounded overflow-hidden shrink-0 relative">
-                                                        {result.imageUrl ? <Image src={result.imageUrl} alt="" fill className="object-cover" /> : null}
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm font-medium text-zinc-300 group-hover:text-cyan-400">{result.title}</div>
-                                                        <div className="text-xs text-zinc-500 line-clamp-1">{result.description}</div>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
+                                    {selectedIds.size > 0 && (
+                                        <>
+                                            <div className="h-4 w-px bg-zinc-700" />
+                                            <Button
+                                                variant="destructive"
+                                                size="sm"
+                                                onClick={() => setDeleteConfirm({ type: 'selected' })}
+                                                className="h-8 text-xs"
+                                            >
+                                                <Trash2 className="w-3 h-3 mr-2" />
+                                                Delete Selected
+                                            </Button>
+                                        </>
                                     )}
                                 </div>
 
-                                {/* Category */}
-                                <div className="grid gap-2">
-                                    <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Category</label>
-                                    <Select value={editCategoryType || 'null'} onValueChange={(val) => setEditCategoryType(val === 'null' ? null : val)}>
-                                        <SelectTrigger className="bg-zinc-900/50 border-zinc-800">
-                                            <SelectValue placeholder="Select a category" />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
-                                            <SelectItem value="null">Uncategorized</SelectItem>
-                                            {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-                                                <SelectItem key={key} value={key}>{label}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => { fetchItems(); fetchStats(); }}
+                                        className="h-8 text-zinc-400 hover:text-white"
+                                    >
+                                        <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                                        Refresh
+                                    </Button>
                                 </div>
+                            </div>
 
-                                {/* Description */}
-                                <div className="grid gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Description</label>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-6 text-xs text-cyan-500 hover:text-cyan-400 hover:bg-cyan-950/30"
-                                            onClick={handleAutoFill}
-                                            disabled={isGeneratingDescription || !editTitle}
-                                        >
-                                            {isGeneratingDescription ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Wand2 className="w-3 h-3 mr-1" />}
-                                            Auto-Fill
-                                        </Button>
+                            {/* Items Grid */}
+                            {loading ? (
+                                <div className="flex items-center justify-center h-64">
+                                    <div className="flex flex-col items-center gap-2">
+                                        <RefreshCw className="w-8 h-8 animate-spin text-cyan-500" />
+                                        <p className="text-zinc-500 text-sm">Loading items...</p>
                                     </div>
-                                    <Textarea
-                                        value={editDescription}
-                                        onChange={(e) => setEditDescription(e.target.value)}
-                                        rows={6}
-                                        className={`bg-zinc-900/50 border-zinc-800 text-sm leading-relaxed text-zinc-300 resize-none ${isGeneratingDescription ? 'animate-pulse' : ''}`}
-                                    />
                                 </div>
+                            ) : (
+                                <div className={`grid gap-4 ${getGridCols()}`}>
+                                    {items.map(item => {
+                                        const catInfo = CATEGORY_ICONS[item.category_type]
+                                        const CategoryIcon = catInfo?.icon || Film
 
-                                {/* Bottom Row: Image & Tags */}
-                                <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-6">
-                                    {/* Image Column */}
-                                    <div className="space-y-3">
-                                        <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider block">Image</label>
-                                        <div className="aspect-[2/3] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800 relative group">
-                                            {editImage ? (
-                                                <>
-                                                    <Image src={editImage} alt="Preview" fill className="object-cover" />
-                                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
-                                                        <Button size="sm" variant="secondary" className="w-full h-7 text-xs" onClick={() => setImageToCrop(editImage)}>
-                                                            <Crop className="w-3 h-3 mr-1" /> Crop
+                                        return (
+                                            <Card
+                                                key={item.id}
+                                                className={`group bg-zinc-900/40 border-zinc-800/50 overflow-hidden cursor-pointer transition-all hover:border-zinc-600 hover:shadow-lg hover:shadow-cyan-900/10 ${selectedIds.has(item.id) ? 'ring-2 ring-cyan-500 border-transparent' : ''}`}
+                                            >
+                                                <div className="relative aspect-[2/3] bg-zinc-900 overflow-hidden">
+                                                    {item.image_url ? (
+                                                        <Image
+                                                            src={item.image_url}
+                                                            alt={item.title}
+                                                            fill
+                                                            className="object-cover transition-transform duration-500 group-hover:scale-105"
+                                                            unoptimized
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex flex-col items-center justify-center text-zinc-700 p-4 text-center">
+                                                            <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                                                            <span className="text-xs">No Image</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Overlays */}
+                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+
+                                                    {/* Selection Checkbox (always visible if selected, or on hover) */}
+                                                    <div className={`absolute top-2 left-2 transition-opacity duration-200 ${selectedIds.has(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                                        <Checkbox
+                                                            checked={selectedIds.has(item.id)}
+                                                            onCheckedChange={() => toggleSelect(item.id)}
+                                                            className="bg-black/50 border-white/50 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500"
+                                                        />
+                                                    </div>
+
+                                                    {/* Source Badge - shows warning if uncategorized */}
+                                                    {(!item.category_type || item.category_type === 'null' || item.category_type === 'NULL') ? (
+                                                        <Badge className="absolute top-2 right-2 text-amber-400 bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6">
+                                                            <AlertTriangle className="w-3.5 h-3.5" />
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge className={`absolute top-2 right-2 ${catInfo?.color || 'text-white'} bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6`}>
+                                                            <CategoryIcon className="w-3.5 h-3.5" />
+                                                        </Badge>
+                                                    )}
+
+                                                    {/* Hover Actions */}
+                                                    <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
+                                                        <Button
+                                                            size="icon"
+                                                            variant="secondary"
+                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                setEditItem(item)
+                                                                setEditCategoryType(item.category_type)
+                                                                setEditTitle(item.title)
+                                                                setEditDescription(item.description || '')
+                                                                setEditImage(item.image_url || '')
+                                                                setEditTags(parseCachedTags(item.cached_tags).map(t => t.id))
+                                                                setEditMetadata(item.metadata ? JSON.stringify(item.metadata) : '')
+                                                            }}
+                                                            title="Quick Edit"
+                                                        >
+                                                            <Pencil className="w-4 h-4" />
                                                         </Button>
-                                                        <Button size="sm" variant="destructive" className="w-full h-7 text-xs" onClick={() => setEditImage('')}>
-                                                            <Trash2 className="w-3 h-3 mr-1" /> Remove
+                                                        <Button
+                                                            size="icon"
+                                                            variant="secondary"
+                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                handleRegenerate(item)
+                                                            }}
+                                                            title="Regenerate Description"
+                                                        >
+                                                            <Sparkles className="w-4 h-4" />
+                                                        </Button>
+                                                        <Button
+                                                            size="icon"
+                                                            variant="secondary"
+                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                handleGenerateTagsForItem(item)
+                                                            }}
+                                                            title="Generate Tags"
+                                                        >
+                                                            <Wand2 className="w-4 h-4" />
+                                                        </Button>
+                                                        <Button
+                                                            size="icon"
+                                                            variant="secondary"
+                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-red-500/50 text-white border-0 backdrop-blur-md"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                setDeleteConfirm({ type: 'single', id: item.id })
+                                                            }}
+                                                            title="Delete Item"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
                                                         </Button>
                                                     </div>
-                                                </>
-                                            ) : (
-                                                <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600 gap-2 p-4 text-center">
-                                                    <ImageIcon className="w-6 h-6" />
-                                                    <span className="text-[10px]">No Image</span>
+
+                                                    {/* Title Overlay */}
+                                                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                                                        <h4 className="font-medium text-sm text-white leading-tight line-clamp-2 drop-shadow-md">{item.title}</h4>
+                                                    </div>
+                                                </div>
+
+                                                {/* Description Footer */}
+                                                <CardContent className="p-3 bg-zinc-900">
+                                                    <p className="text-[11px] text-zinc-400 line-clamp-3 leading-relaxed">
+                                                        {item.description || <span className="italic opacity-50">No description available.</span>}
+                                                    </p>
+                                                    {/* Tags Display */}
+                                                    {(() => {
+                                                        const tags = parseCachedTags(item.cached_tags)
+                                                        return tags.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                                {tags.slice(0, 3).map(tag => (
+                                                                    <Badge key={tag.id} variant="secondary" className="text-[9px] px-1.5 py-0 h-4 bg-zinc-800 text-zinc-400 border-0">
+                                                                        {tag.name}
+                                                                    </Badge>
+                                                                ))}
+                                                                {tags.length > 3 && (
+                                                                    <span className="text-[9px] text-zinc-500 self-center">+{tags.length - 3}</span>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    })()}
+                                                </CardContent>
+                                            </Card>
+                                        )
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Pagination */}
+                            <div className="flex items-center justify-center gap-4 mt-8 pb-8">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={page === 1}
+                                    onClick={() => setPage(p => p - 1)}
+                                    className="bg-black border-zinc-700"
+                                >
+                                    <ChevronLeft className="w-4 h-4 mr-2" />
+                                    Previous
+                                </Button>
+                                <span className="text-sm text-zinc-400 font-mono">
+                                    Page {page} of {totalPages}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={page === totalPages}
+                                    onClick={() => setPage(p => p + 1)}
+                                    className="bg-black border-zinc-700"
+                                >
+                                    Next
+                                    <ChevronRight className="w-4 h-4 ml-2" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Enhanced Edit Modal */}
+                    <Dialog open={!!editItem} onOpenChange={() => { setEditItem(null); setEditMode('view'); }}>
+                        <DialogContent className="bg-zinc-950 border-zinc-800 sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+                            <DialogHeader className="pb-2">
+                                <DialogTitle className="font-serif text-xl">Item Details</DialogTitle>
+                            </DialogHeader>
+
+                            <Tabs value={editMode} onValueChange={(v) => setEditMode(v as 'view' | 'edit')} className="w-full">
+                                <TabsList className="grid w-full grid-cols-2 mb-4">
+                                    <TabsTrigger value="view">View</TabsTrigger>
+                                    <TabsTrigger value="edit">Edit</TabsTrigger>
+                                </TabsList>
+
+                                {/* VIEW TAB */}
+                                <TabsContent value="view" className="mt-0">
+                                    {editItem && (
+                                        <ItemDetailView
+                                            item={editItem as any}
+                                            onEdit={() => setEditMode('edit')}
+                                            onDelete={() => {
+                                                if (editItem) {
+                                                    setDeleteConfirm({ type: 'single', id: editItem.id })
+                                                }
+                                            }}
+                                        />
+                                    )}
+                                </TabsContent>
+
+                                {/* EDIT TAB */}
+                                <TabsContent value="edit" className="mt-0">
+
+                                    <div className="grid gap-6 py-4">
+                                        {/* Title Row */}
+                                        <div className="grid gap-2">
+                                            <div className="flex justify-between items-center">
+                                                <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Name</label>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    value={editTitle}
+                                                    onChange={(e) => setEditTitle(e.target.value)}
+                                                    className="bg-zinc-900/50 border-zinc-800 font-medium"
+                                                    placeholder="Item Title"
+                                                />
+                                                <Button
+                                                    variant="secondary"
+                                                    onClick={() => doSearch(editTitle)}
+                                                    disabled={!editTitle}
+                                                    className="shrink-0 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                                                >
+                                                    <Search className="w-4 h-4 mr-2" />
+                                                    Search
+                                                </Button>
+                                            </div>
+
+                                            {/* Search Results */}
+                                            {mediaResults.length > 0 && (
+                                                <div className="mt-2 grid grid-cols-1 gap-1 bg-zinc-900 border border-zinc-800 rounded-md p-2 max-h-[200px] overflow-y-auto">
+                                                    <div className="flex justify-between items-center px-1 pb-2">
+                                                        <span className="text-xs text-zinc-500">Select to auto-fill:</span>
+                                                        <Button variant="ghost" size="sm" className="h-5 text-[10px]" onClick={() => setMediaResults([])}>Clear</Button>
+                                                    </div>
+                                                    {mediaResults.map((result, i) => (
+                                                        <button
+                                                            key={i}
+                                                            onClick={() => handleMetadataMatch(result)}
+                                                            className="flex items-start gap-3 p-2 hover:bg-zinc-800 rounded text-left transition-colors group"
+                                                        >
+                                                            <div className="w-8 h-12 bg-zinc-800 rounded overflow-hidden shrink-0 relative">
+                                                                {result.imageUrl ? <Image src={result.imageUrl} alt="" fill className="object-cover" /> : null}
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-sm font-medium text-zinc-300 group-hover:text-cyan-400">{result.title}</div>
+                                                                <div className="text-xs text-zinc-500 line-clamp-1">{result.description}</div>
+                                                            </div>
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
 
-                                        {!editImage && (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <Button variant={imageUploadMode === 'url' ? 'secondary' : 'outline'} size="sm" onClick={() => setImageUploadMode('url')} className="text-xs h-7">URL</Button>
-                                                <Button variant={imageUploadMode === 'upload' ? 'secondary' : 'outline'} size="sm" onClick={() => setImageUploadMode('upload')} className="text-xs h-7">Up</Button>
-                                            </div>
-                                        )}
+                                        {/* Category */}
+                                        <div className="grid gap-2">
+                                            <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Category</label>
+                                            <Select value={editCategoryType || 'null'} onValueChange={(val) => setEditCategoryType(val === 'null' ? null : val)}>
+                                                <SelectTrigger className="bg-zinc-900/50 border-zinc-800">
+                                                    <SelectValue placeholder="Select a category" />
+                                                </SelectTrigger>
+                                                <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
+                                                    <SelectItem value="null">Uncategorized</SelectItem>
+                                                    {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                                                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
 
-                                        {editImage ? null : imageUploadMode === 'url' ? (
-                                            <Input value={editImage} onChange={e => setEditImage(e.target.value)} className="h-8 text-xs bg-zinc-900 border-zinc-800" placeholder="https://..." />
-                                        ) : (
-                                            <Input
-                                                type="file"
-                                                className="h-8 text-xs bg-zinc-900 border-zinc-800 file:text-zinc-400"
-                                                onChange={(e) => {
-                                                    const file = e.target.files?.[0]
-                                                    if (file) {
-                                                        const reader = new FileReader()
-                                                        reader.onload = () => setImageToCrop(reader.result as string)
-                                                        reader.readAsDataURL(file)
-                                                    }
-                                                }}
+                                        {/* Description */}
+                                        <div className="grid gap-2">
+                                            <div className="flex justify-between items-center">
+                                                <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Description</label>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 text-xs text-cyan-500 hover:text-cyan-400 hover:bg-cyan-950/30"
+                                                    onClick={handleAutoFill}
+                                                    disabled={isGeneratingDescription || !editTitle}
+                                                >
+                                                    {isGeneratingDescription ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Wand2 className="w-3 h-3 mr-1" />}
+                                                    Auto-Fill
+                                                </Button>
+                                            </div>
+                                            <Textarea
+                                                value={editDescription}
+                                                onChange={(e) => setEditDescription(e.target.value)}
+                                                rows={6}
+                                                className={`bg-zinc-900/50 border-zinc-800 text-sm leading-relaxed text-zinc-300 resize-none ${isGeneratingDescription ? 'animate-pulse' : ''}`}
                                             />
-                                        )}
+                                        </div>
+
+                                        {/* Bottom Row: Image & Tags */}
+                                        <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-6">
+                                            {/* Image Column */}
+                                            <div className="space-y-3">
+                                                <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider block">Image</label>
+                                                <div className="aspect-[2/3] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800 relative group">
+                                                    {editImage ? (
+                                                        <>
+                                                            <Image src={editImage} alt="Preview" fill className="object-cover" />
+                                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
+                                                                <Button size="sm" variant="secondary" className="w-full h-7 text-xs" onClick={() => setImageToCrop(editImage)}>
+                                                                    <Crop className="w-3 h-3 mr-1" /> Crop
+                                                                </Button>
+                                                                <Button size="sm" variant="destructive" className="w-full h-7 text-xs" onClick={() => setEditImage('')}>
+                                                                    <Trash2 className="w-3 h-3 mr-1" /> Remove
+                                                                </Button>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600 gap-2 p-4 text-center">
+                                                            <ImageIcon className="w-6 h-6" />
+                                                            <span className="text-[10px]">No Image</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {!editImage && (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <Button variant={imageUploadMode === 'url' ? 'secondary' : 'outline'} size="sm" onClick={() => setImageUploadMode('url')} className="text-xs h-7">URL</Button>
+                                                        <Button variant={imageUploadMode === 'upload' ? 'secondary' : 'outline'} size="sm" onClick={() => setImageUploadMode('upload')} className="text-xs h-7">Up</Button>
+                                                    </div>
+                                                )}
+
+                                                {editImage ? null : imageUploadMode === 'url' ? (
+                                                    <Input value={editImage} onChange={e => setEditImage(e.target.value)} className="h-8 text-xs bg-zinc-900 border-zinc-800" placeholder="https://..." />
+                                                ) : (
+                                                    <Input
+                                                        type="file"
+                                                        className="h-8 text-xs bg-zinc-900 border-zinc-800 file:text-zinc-400"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0]
+                                                            if (file) {
+                                                                const reader = new FileReader()
+                                                                reader.onload = () => setImageToCrop(reader.result as string)
+                                                                reader.readAsDataURL(file)
+                                                            }
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+
+                                            {/* Tags Column */}
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Tags</label>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 text-xs text-purple-400 hover:text-purple-300 hover:bg-purple-950/30"
+                                                        onClick={handleAutoTag}
+                                                        disabled={isGeneratingTags || !editTitle}
+                                                    >
+                                                        {isGeneratingTags ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Wand2 className="w-3 h-3 mr-1" />}
+                                                        Auto-Tag
+                                                    </Button>
+                                                </div>
+                                                <div className="min-h-[200px] bg-zinc-900/30 border border-zinc-800 rounded-lg p-2">
+                                                    <TagSelector
+                                                        selectedTags={editTags}
+                                                        onTagsChange={setEditTags}
+                                                        isLoading={isGeneratingTags}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    {/* Tags Column */}
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between items-center">
-                                            <label className="text-sm font-medium text-zinc-300 uppercase tracking-wider">Tags</label>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-6 text-xs text-purple-400 hover:text-purple-300 hover:bg-purple-950/30"
-                                                onClick={handleAutoTag}
-                                                disabled={isGeneratingTags || !editTitle}
-                                            >
-                                                {isGeneratingTags ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Wand2 className="w-3 h-3 mr-1" />}
-                                                Auto-Tag
+                                    <DialogFooter className="border-t border-zinc-800/50 pt-4 flex justify-between sm:justify-between items-center">
+                                        <Button
+                                            variant="destructive"
+                                            onClick={() => {
+                                                if (editItem) {
+                                                    setDeleteConfirm({ type: 'single', id: editItem.id })
+                                                }
+                                            }}
+                                            className="bg-red-950/50 text-white hover:bg-red-900/50 border border-red-900/50"
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete Item
+                                        </Button>
+                                        <div className="flex gap-2">
+                                            <Button variant="ghost" onClick={() => setEditItem(null)}>Cancel</Button>
+                                            <Button onClick={handleSaveEdit} disabled={actionLoading} className="bg-cyan-600 hover:bg-cyan-700 text-white">
+                                                {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                                                Save Changes
                                             </Button>
                                         </div>
-                                        <div className="min-h-[200px] bg-zinc-900/30 border border-zinc-800 rounded-lg p-2">
-                                            <TagSelector
-                                                selectedTags={editTags}
-                                                onTagsChange={setEditTags}
-                                                isLoading={isGeneratingTags}
+                                    </DialogFooter>
+                                </TabsContent>
+                            </Tabs>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Image Cropper Modal */}
+                    {imageToCrop && (
+                        <ImageCropper
+                            imageSrc={imageToCrop}
+                            aspectRatio={2 / 3}
+                            onCropComplete={async (croppedImage) => {
+                                const response = await fetch(croppedImage)
+                                const blob = await response.blob()
+                                const fileFormData = new FormData()
+                                fileFormData.append('file', blob, 'cropped.jpg')
+                                const { uploadImage } = await import('@/lib/actions/upload')
+                                const url = await uploadImage(fileFormData)
+                                if (url) setEditImage(url)
+                                setImageToCrop(null)
+                            }}
+                            onCancel={() => setImageToCrop(null)}
+                        />
+                    )}
+
+
+                    {/* Maintenance Modal */}
+                    <Dialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
+                        <DialogContent className="bg-zinc-950 border-zinc-800 sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2 text-zinc-100 font-bold">
+                                    <Settings className="w-5 h-5 text-blue-500" />
+                                    System Configuration
+                                </DialogTitle>
+                                <DialogDescription className="text-zinc-400">
+                                    Manage API keys and database maintenance.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="space-y-6 py-4">
+                                {/* API Keys Section */}
+                                <div className="space-y-3">
+                                    <h4 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                                        <Key className="w-4 h-4 text-yellow-500" />
+                                        API Keys
+                                    </h4>
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-zinc-500">SteamGridDB API Key (Vertical Covers)</label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                type="password"
+                                                placeholder="Enter key..."
+                                                value={steamGridKey}
+                                                onChange={(e) => setSteamGridKey(e.target.value)}
+                                                className="bg-zinc-900 border-zinc-800 text-zinc-200 text-sm"
                                             />
+                                            <Button
+                                                size="sm"
+                                                className="bg-blue-600 hover:bg-blue-500"
+                                                onClick={handleSaveConfig}
+                                                disabled={actionLoading}
+                                            >
+                                                Save
+                                            </Button>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-600">
+                                            Required for high-quality game cover harvesting.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="h-px bg-zinc-800 w-full" />
+
+                                {/* Maintenance Section */}
+                                <div className="space-y-3">
+                                    <h4 className="text-sm font-medium text-red-400 flex items-center gap-2">
+                                        <ShieldAlert className="w-4 h-4" />
+                                        Danger Zone
+                                    </h4>
+
+                                    <div className="p-4 bg-red-950/10 border border-red-900/30 rounded-lg space-y-3">
+                                        <h5 className="text-xs font-medium text-red-300 flex items-center gap-2">
+                                            <Trash2 className="w-3 h-3" />
+                                            Bulk Delete by Source
+                                        </h5>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {['tmdb', 'tmdb_tv', 'anilist', 'bgg', 'rawg', 'google_books', 'spotify_artist', 'itunes_podcast'].map((key) => (
+                                                <Button
+                                                    key={key}
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="justify-start border-zinc-800 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50 transition-colors h-8 text-xs"
+                                                    onClick={() => {
+                                                        setDeleteConfirm({ type: 'source', source: key })
+                                                        setMaintenanceOpen(false)
+                                                    }}
+                                                >
+                                                    {key.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                </Button>
+                                            ))}
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                        </DialogContent>
+                    </Dialog>
 
-                            <DialogFooter className="border-t border-zinc-800/50 pt-4 flex justify-between sm:justify-between items-center">
+                    {/* Safe Delete Confirmation */}
+                    <Dialog open={!!deleteConfirm} onOpenChange={() => { if (!actionLoading) setDeleteConfirm(null) }}>
+                        <DialogContent className="bg-zinc-950 border-zinc-800">
+                            <DialogHeader>
+                                <DialogTitle className="text-red-500">
+                                    {deleteConfirm?.type === 'source' ? 'CRITICAL WARNING' : 'Confirm Deletion'}
+                                </DialogTitle>
+                                <DialogDescription className="text-zinc-300">
+                                    {deleteConfirm?.type === 'selected'
+                                        ? `Are you sure you want to delete ${selectedIds.size} selected items?`
+                                        : deleteConfirm?.type === 'single'
+                                            ? 'Are you sure you want to delete this item? This action cannot be undone.'
+                                            : <>
+                                                You are about to delete <span className="font-bold text-white">ALL</span> items from <span className="font-bold text-white">{(deleteConfirm?.source || '').replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>.
+                                                <br /><br />
+                                                This action cannot be undone. All associated data will be lost forever.
+                                            </>
+                                    }
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            {deleteConfirm?.type === 'source' && (
+                                <div className="py-2">
+                                    <label className="text-xs text-zinc-500 mb-1 block">Type <strong>DELETE</strong> to confirm:</label>
+                                    <Input
+                                        value={confirmText}
+                                        onChange={(e) => setConfirmText(e.target.value)}
+                                        className="bg-red-950/20 border-red-900/50 text-red-200 placeholder:text-red-900/50 font-mono"
+                                        placeholder="DELETE"
+                                    />
+                                </div>
+                            )}
+
+                            <DialogFooter>
+                                <Button variant="ghost" onClick={() => setDeleteConfirm(null)} disabled={actionLoading}>Cancel</Button>
                                 <Button
                                     variant="destructive"
-                                    onClick={() => {
-                                        if (editItem) {
-                                            setDeleteConfirm({ type: 'single', id: editItem.id })
-                                        }
-                                    }}
-                                    className="bg-red-950/50 text-white hover:bg-red-900/50 border border-red-900/50"
+                                    onClick={handleBulkDelete}
+                                    disabled={actionLoading || (deleteConfirm?.type === 'source' && confirmText !== 'DELETE')}
                                 >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete Item
+                                    {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Confirm Delete'}
                                 </Button>
-                                <div className="flex gap-2">
-                                    <Button variant="ghost" onClick={() => setEditItem(null)}>Cancel</Button>
-                                    <Button onClick={handleSaveEdit} disabled={actionLoading} className="bg-cyan-600 hover:bg-cyan-700 text-white">
-                                        {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                                        Save Changes
-                                    </Button>
-                                </div>
                             </DialogFooter>
-                        </TabsContent>
-                    </Tabs>
-                </DialogContent>
-            </Dialog>
-
-            {/* Image Cropper Modal */}
-            {imageToCrop && (
-                <ImageCropper
-                    imageSrc={imageToCrop}
-                    aspectRatio={2 / 3}
-                    onCropComplete={async (croppedImage) => {
-                        const response = await fetch(croppedImage)
-                        const blob = await response.blob()
-                        const fileFormData = new FormData()
-                        fileFormData.append('file', blob, 'cropped.jpg')
-                        const { uploadImage } = await import('@/lib/actions/upload')
-                        const url = await uploadImage(fileFormData)
-                        if (url) setEditImage(url)
-                        setImageToCrop(null)
-                    }}
-                    onCancel={() => setImageToCrop(null)}
-                />
-            )}
-
-
-            {/* Maintenance Modal */}
-            <Dialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
-                <DialogContent className="bg-zinc-950 border-zinc-800 sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-zinc-100 font-bold">
-                            <Settings className="w-5 h-5 text-blue-500" />
-                            System Configuration
-                        </DialogTitle>
-                        <DialogDescription className="text-zinc-400">
-                            Manage API keys and database maintenance.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-6 py-4">
-                        {/* API Keys Section */}
-                        <div className="space-y-3">
-                            <h4 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-                                <Key className="w-4 h-4 text-yellow-500" />
-                                API Keys
-                            </h4>
-                            <div className="space-y-2">
-                                <label className="text-xs text-zinc-500">SteamGridDB API Key (Vertical Covers)</label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        type="password"
-                                        placeholder="Enter key..."
-                                        value={steamGridKey}
-                                        onChange={(e) => setSteamGridKey(e.target.value)}
-                                        className="bg-zinc-900 border-zinc-800 text-zinc-200 text-sm"
-                                    />
-                                    <Button
-                                        size="sm"
-                                        className="bg-blue-600 hover:bg-blue-500"
-                                        onClick={handleSaveConfig}
-                                        disabled={actionLoading}
-                                    >
-                                        Save
-                                    </Button>
-                                </div>
-                                <p className="text-[10px] text-zinc-600">
-                                    Required for high-quality game cover harvesting.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-zinc-800 w-full" />
-
-                        {/* Maintenance Section */}
-                        <div className="space-y-3">
-                            <h4 className="text-sm font-medium text-red-400 flex items-center gap-2">
-                                <ShieldAlert className="w-4 h-4" />
-                                Danger Zone
-                            </h4>
-
-                            <div className="p-4 bg-red-950/10 border border-red-900/30 rounded-lg space-y-3">
-                                <h5 className="text-xs font-medium text-red-300 flex items-center gap-2">
-                                    <Trash2 className="w-3 h-3" />
-                                    Bulk Delete by Source
-                                </h5>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['tmdb', 'tmdb_tv', 'anilist', 'bgg', 'rawg', 'google_books', 'spotify_artist', 'itunes_podcast'].map((key) => (
-                                        <Button
-                                            key={key}
-                                            variant="outline"
-                                            size="sm"
-                                            className="justify-start border-zinc-800 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50 transition-colors h-8 text-xs"
-                                            onClick={() => {
-                                                setDeleteConfirm({ type: 'source', source: key })
-                                                setMaintenanceOpen(false)
-                                            }}
-                                        >
-                                            {key.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                                        </Button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* Safe Delete Confirmation */}
-            <Dialog open={!!deleteConfirm} onOpenChange={() => { if (!actionLoading) setDeleteConfirm(null) }}>
-                <DialogContent className="bg-zinc-950 border-zinc-800">
-                    <DialogHeader>
-                        <DialogTitle className="text-red-500">
-                            {deleteConfirm?.type === 'source' ? 'CRITICAL WARNING' : 'Confirm Deletion'}
-                        </DialogTitle>
-                        <DialogDescription className="text-zinc-300">
-                            {deleteConfirm?.type === 'selected'
-                                ? `Are you sure you want to delete ${selectedIds.size} selected items?`
-                                : deleteConfirm?.type === 'single'
-                                    ? 'Are you sure you want to delete this item? This action cannot be undone.'
-                                    : <>
-                                        You are about to delete <span className="font-bold text-white">ALL</span> items from <span className="font-bold text-white">{(deleteConfirm?.source || '').replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>.
-                                        <br /><br />
-                                        This action cannot be undone. All associated data will be lost forever.
-                                    </>
-                            }
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    {deleteConfirm?.type === 'source' && (
-                        <div className="py-2">
-                            <label className="text-xs text-zinc-500 mb-1 block">Type <strong>DELETE</strong> to confirm:</label>
-                            <Input
-                                value={confirmText}
-                                onChange={(e) => setConfirmText(e.target.value)}
-                                className="bg-red-950/20 border-red-900/50 text-red-200 placeholder:text-red-900/50 font-mono"
-                                placeholder="DELETE"
-                            />
-                        </div>
-                    )}
-
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setDeleteConfirm(null)} disabled={actionLoading}>Cancel</Button>
-                        <Button
-                            variant="destructive"
-                            onClick={handleBulkDelete}
-                            disabled={actionLoading || (deleteConfirm?.type === 'source' && confirmText !== 'DELETE')}
-                        >
-                            {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Confirm Delete'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                        </DialogContent>
+                    </Dialog>
+                </div>
+            </div>
         </div>
     )
 }
