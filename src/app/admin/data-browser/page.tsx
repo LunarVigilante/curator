@@ -811,7 +811,7 @@ export default function DataBrowserPage() {
                                 categoryType={selectedCategories[0]} // Pass first selected category as context, or undefined
                                 currentSort={sortField}
                                 currentOrder={sortOrder}
-                                onSortChange={(field, order) => {
+                                onSortChange={(field: string, order: 'asc' | 'desc') => {
                                     setSortField(field)
                                     setSortOrder(order)
                                 }}

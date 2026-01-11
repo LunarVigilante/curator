@@ -7,6 +7,7 @@ export const CATEGORY_TYPES = {
     BOARD_GAME: 'BOARD_GAME',
     ANIME: 'ANIME',
     MUSIC_ARTIST: 'MUSIC_ARTIST',
+    ALBUM: 'ALBUM',
     PODCAST: 'PODCAST',
     COMICS: 'COMICS'
 } as const
@@ -20,6 +21,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
     [CATEGORY_TYPES.BOARD_GAME]: 'Board Games',
     [CATEGORY_TYPES.ANIME]: 'Anime',
     [CATEGORY_TYPES.MUSIC_ARTIST]: 'Artists',
+    [CATEGORY_TYPES.ALBUM]: 'Albums',
     'MUSIC': 'Artists',
     [CATEGORY_TYPES.PODCAST]: 'Podcasts',
     [CATEGORY_TYPES.COMICS]: 'Comics'
@@ -32,7 +34,8 @@ export const DEFAULT_CATEGORIES = [
     { name: 'Video Games', description: 'Games played', image: '', type: CATEGORY_TYPES.VIDEO_GAME },
     { name: 'Board Games', description: 'Tabletop games', image: '', type: CATEGORY_TYPES.BOARD_GAME },
     { name: 'Anime', description: 'Japanese animation', image: '', type: CATEGORY_TYPES.ANIME },
-    { name: 'Music', description: 'Favorite artists and albums', image: '', type: CATEGORY_TYPES.MUSIC_ARTIST },
+    { name: 'Artists', description: 'Favorite artists', image: '', type: CATEGORY_TYPES.MUSIC_ARTIST },
+    { name: 'Albums', description: 'Music albums', image: '', type: CATEGORY_TYPES.ALBUM },
     { name: 'Podcasts', description: 'Podcasts subscriptions', image: '', type: CATEGORY_TYPES.PODCAST },
     { name: 'Comics', description: 'Comics and manga', image: '', type: CATEGORY_TYPES.COMICS }
 ]
