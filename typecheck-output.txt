@@ -1,0 +1,8 @@
+
+> curator@0.1.0 typecheck
+> tsc --noEmit
+
+src/hooks/useFileUpload.ts(5,30): error TS7016: Could not find a declaration file for module 'uuid'. 'C:/Users/timothy.hamner/.gemini/antigravity/scratch/curator/node_modules/uuid/dist/esm-browser/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/uuid` if it exists or add a new declaration (.d.ts) file containing `declare module 'uuid';`
+src/lib/services/steamgriddb.ts(4,30): error TS2307: Cannot find module 'string-similarity' or its corresponding type declarations.
+src/scripts/harvest-bgg-massive.ts(4,26): error TS2307: Cannot find module 'cheerio' or its corresponding type declarations.

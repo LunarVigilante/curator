@@ -408,7 +408,7 @@ export async function testServiceConnection(data: {
         clientSecret = data.clientSecret || '';
         if (!clientSecret || clientSecret.includes('********')) {
             const secretKey = data.service === 'spotify' ? 'spotify_client_secret' : 'twitch_client_secret';
-            clientSecret = await SystemConfigService.getDecryptedConfig(secretKey) || '';
+            clientSecret = await SystemConfigService.getDecryptedConfig(secretKey as any) || '';
         }
         if (!clientSecret) {
             console.error(`[ServiceTest] ${data.service} Client Secret is missing`);

@@ -214,17 +214,17 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
 
     const itemVariants = {
         hidden: { opacity: 0, y: 20 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }
+        visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const } }
     }
 
     const sidebarVariants = {
         hidden: { opacity: 0, x: -30 },
-        visible: { opacity: 1, x: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } }
+        visible: { opacity: 1, x: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] as const } }
     }
 
     const bgVariants = {
         hidden: { opacity: 0, scale: 1.1 },
-        visible: { opacity: 1, scale: 1, transition: { duration: 1.2, ease: "easeOut" } }
+        visible: { opacity: 1, scale: 1, transition: { duration: 1.2, ease: "easeOut" as const } }
     }
 
     return (

@@ -321,7 +321,7 @@ async function processTask(task: any) {
             console.log(`   ║ 🖼️  UPLOADING IMAGE...`);
             console.log(`   ║    Source: ${(posterUrl || 'N/A').toString().slice(0, 60)}...`);
             const startImg = Date.now();
-            const hostedPoster = await imageService.processAndUpload(posterUrl, 'game');
+            const hostedPoster = posterUrl ? await imageService.processAndUpload(posterUrl, 'game') : null;
             if (hostedPoster) {
                 console.log(`   ║    ✅ Uploaded in ${Date.now() - startImg}ms`);
                 console.log(`   ║    Dest: ${hostedPoster.slice(0, 60)}...`);

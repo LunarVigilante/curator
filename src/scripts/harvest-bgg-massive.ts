@@ -96,14 +96,14 @@ function decodeHTMLEntities(text: string): string {
 // BGG PARSING LOGIC
 // ============================================================================
 
-function parsePolls($item: cheerio.Cheerio<any>, $: any) {
+function parsePolls($item: any, $: any) {
     // 1. Player Count Poll
     let bestPlayers: string[] = [];
     let recPlayers: string[] = [];
 
     const playersPoll = $item.find('poll[name="suggested_numplayers"]');
     if (playersPoll.length) {
-        playersPoll.find('results').each((_, results) => {
+        playersPoll.find('results').each((_: number, results: any) => {
             const numPlayers = $(results).attr('numplayers');
             if (!numPlayers) return;
 
@@ -131,7 +131,7 @@ function parsePolls($item: cheerio.Cheerio<any>, $: any) {
     const langPoll = $item.find('poll[name="language_dependence"]');
     if (langPoll.length) {
         let maxVotes = -1;
-        langPoll.find('result').each((_, res) => {
+        langPoll.find('result').each((_: number, res: any) => {
             const votes = parseInt($(res).attr('numvotes') || '0');
             const value = $(res).attr('value'); // e.g. "No necessary in-game text"
             if (votes > maxVotes && value) {
@@ -146,7 +146,7 @@ function parsePolls($item: cheerio.Cheerio<any>, $: any) {
     const agePoll = $item.find('poll[name="suggested_playerage"]');
     if (agePoll.length) {
         let maxVotes = -1;
-        agePoll.find('result').each((_, res) => {
+        agePoll.find('result').each((_: number, res: any) => {
             const votes = parseInt($(res).attr('numvotes') || '0');
             const value = $(res).attr('value');
             if (votes > maxVotes && value) {
@@ -172,7 +172,7 @@ async function fetchBatch(ids: number[]): Promise<ParsedGame[]> {
         const xml = await fetchFromBgg(`thing?id=${idsParam}&stats=1`);
         const $ = cheerio.load(xml, { xmlMode: true });
 
-        $('item').each((_, el) => {
+        $('item').each((_: number, el: any) => {
             const $item = $(el);
             const id = parseInt($item.attr('id') || '0');
             const type = $item.attr('type') || 'unknown';
@@ -203,7 +203,7 @@ async function fetchBatch(ids: number[]): Promise<ParsedGame[]> {
             const minAge = parseInt($item.find('minage').attr('value') || '0');
 
             // Arrays (Links)
-            const getLinks = (type: string) => $item.find(`link[type="${type}"]`).map((_, l) => $(l).attr('value')).get();
+            const getLinks = (type: string) => $item.find(`link[type="${type}"]`).map((_: number, l: any) => $(l).attr('value')).get();
 
             const mechanics = getLinks('boardgamemechanic');
             const categories = getLinks('boardgamecategory');
