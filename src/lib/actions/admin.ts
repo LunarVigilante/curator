@@ -4,10 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import { SystemConfigService } from '@/lib/services/SystemConfigService'
-import { render } from '@react-email/render'
-import { ResetPasswordEmail } from '@/emails/ResetPasswordEmail'
-import { VerifyEmail } from '@/emails/VerifyEmail'
-import { ReactElement } from 'react'
 import { DEFAULT_CATEGORIES } from '@/lib/constants'
 
 // --- Authorization Helper ---
@@ -83,8 +79,6 @@ export async function updateSystemConfig(data: {
     tmdbApiKey?: string
     rawgApiKey?: string
     lastfmApiKey?: string
-    resendApiKey?: string
-    fromEmail?: string
     appUrl?: string
     googleBooksApiKey?: string
     spotifyClientId?: string
@@ -140,10 +134,8 @@ export async function updateSystemConfig(data: {
     if (data.metronPassword) await upsertSetting('metron_password', data.metronPassword, 'MEDIA', true)
     if (data.omdbApiKey) await upsertSetting('omdb_api_key', data.omdbApiKey, 'MEDIA', true)
 
-    // Email Settings
-    if (data.resendApiKey !== undefined) await upsertSetting('resend_api_key', data.resendApiKey, 'EMAIL', true)
+    // App URL
     if (data.appUrl !== undefined) await upsertSetting('public_app_url', data.appUrl, 'GENERAL', false)
-    if (data.fromEmail) await upsertSetting('resend_from_email', data.fromEmail, 'EMAIL', false)
 
     // Twitch / IGDB
     if (data.twitchClientId) await upsertSetting('twitch_client_id', data.twitchClientId, 'MEDIA', true)
@@ -163,13 +155,6 @@ export async function updateSystemConfig(data: {
     if (data.featureChallenges !== undefined) await upsertSetting('feature_challenges', data.featureChallenges, 'FEATURE', false)
 
     revalidatePath('/admin')
-    return { success: true }
-}
-
-export async function sendTestEmailAction() {
-    const session = await assertAdmin()
-    const { EmailService } = await import('@/lib/services/EmailService')
-    await EmailService.sendTestEmail(session.user.email!)
     return { success: true }
 }
 
@@ -541,78 +526,6 @@ export async function testServiceConnection(data: {
         console.error(`${data.service} Test Error:`, error)
         return { success: false, error: error.message || 'Verification Failed' }
     }
-}
-
-// --- Email Templates ---
-
-export async function getEmailTemplates() {
-    await assertAdmin()
-    const supabase = await createClient()
-
-    const { data: templates } = await supabase
-        .from('email_templates')
-        .select('*')
-        .order('name', { ascending: true })
-
-    // Auto-seed if missing (simplified)
-    if (!(templates as any[])?.find((t: any) => t.name === 'password-reset')) {
-        try {
-            const html = await render(ResetPasswordEmail({
-                resetLink: '{{resetLink}}',
-                userEmail: '{{userEmail}}'
-            }) as ReactElement)
-
-            await (supabase.from('email_templates') as any).insert({
-                name: 'password-reset',
-                subject: 'Reset your password',
-                body_html: html,
-                variables: JSON.stringify(['resetLink', 'userEmail'])
-            } as any)
-        } catch (e) {
-            console.error("Failed to seed password-reset template:", e)
-        }
-    }
-
-    if (!(templates as any[])?.find((t: any) => t.name === 'verify-email')) {
-        try {
-            const html = await render(VerifyEmail({
-                verifyLink: '{{verifyLink}}',
-                userEmail: '{{userEmail}}'
-            }) as ReactElement)
-
-            await (supabase.from('email_templates') as any).insert({
-                name: 'verify-email',
-                subject: 'Verify your email address',
-                body_html: html,
-                variables: JSON.stringify(['verifyLink', 'userEmail'])
-            } as any)
-        } catch (e) {
-            console.error("Failed to seed verify-email template:", e)
-        }
-    }
-
-    const { data: finalTemplates } = await supabase
-        .from('email_templates')
-        .select('*')
-        .order('name', { ascending: true })
-
-    return (finalTemplates as any[]) || []
-}
-
-export async function updateEmailTemplate(id: string, data: { subject: string; bodyHtml: string }) {
-    await assertAdmin()
-    const supabase = await createClient()
-
-    await (supabase.from('email_templates') as any)
-        .update({
-            subject: data.subject,
-            body_html: data.bodyHtml,
-            last_updated: new Date().toISOString()
-        } as any)
-        .eq('id', id)
-
-    revalidatePath('/admin')
-    return { success: true }
 }
 
 // =============================================================================
