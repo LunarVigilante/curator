@@ -1,7 +1,7 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { decrypt } from '@/lib/encryption';
-import stringSimilarity from 'string-similarity';
+import { distance } from 'fastest-levenshtein';
 
 const SGDB_BASE_URL = 'https://www.steamgriddb.com/api/v2';
 
@@ -128,8 +128,9 @@ export class SteamGridDBService {
                 }
             }
 
-            // String Similarity Score
-            const score = stringSimilarity.compareTwoStrings(normalizedTarget, normalizedResult);
+            // Levenshtein distance converted to similarity score (0-1)
+            const maxLen = Math.max(normalizedTarget.length, normalizedResult.length);
+            const score = maxLen > 0 ? 1 - (distance(normalizedTarget, normalizedResult) / maxLen) : 0;
 
             if (score > highestScore) {
                 highestScore = score;
