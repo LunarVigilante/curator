@@ -6,7 +6,8 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '../services/image/imageService';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const API_DELAY_MS = 1000;  // AniList rate limit: 90 req/min, so ~1s is safe
@@ -137,21 +138,27 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
         const anime = animeList[i];
         const title = anime.title.english || anime.title.romaji;
         const originalDesc = anime.description?.replace(/<[^>]*>/g, '') || '';
+        const studio = anime.studios?.nodes?.[0]?.name;
 
         try {
-            // AI rewrite with limiter
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, title, originalDesc, 'Anime')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title,
+                    originalDescription: originalDesc,
+                    type: 'Anime',
+                    metadata: { genres: anime.genres, studio, episodes: anime.episodes }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags
             const tagNames = await aiLimiter(() =>
                 generateTags(supabase, title, description, 'Anime')
             );
             const validTags = await ensureTags(supabase, tagNames);
-
-            // Generate embedding
-            const embedding = await generateEmbedding(`${title}: ${description}`);
 
             // Process Image (CDN -> Self-Hosted)
             let image_url = anime.coverImage?.extraLarge || anime.coverImage?.large || null;
@@ -169,18 +176,21 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
             const item: HarvestItem = {
                 title,
                 description,
+                description_parts,
                 image_url,
                 category_type: 'ANIME',
                 external_ids: { anilist: anime.id },
                 original_language: originalLanguage,
                 origin_countries: anime.countryOfOrigin ? [anime.countryOfOrigin] : [],
+                genres: anime.genres,
+                studio,
                 metadata: {
                     year: anime.startDate?.year,
                     score: anime.averageScore,
                     popularity: anime.popularity,
                     genres: anime.genres,
                     episodes: anime.episodes,
-                    studio: anime.studios?.nodes?.[0]?.name,
+                    studio,
                     status: anime.status,
                     season: anime.season,
                     season_year: anime.seasonYear,
@@ -188,9 +198,15 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
                     source: 'anilist_harvest',
                     original_description: originalDesc
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'anilist', anime.id);
             if (result) success++;
@@ -210,3 +226,4 @@ export async function harvestAnime(supabase: ReturnType<typeof createServiceRole
     console.log(`✅ Anime: ${success} added, ${skipped} skipped, ${failed} failed`);
     return { success, skipped, failed, category: 'Anime' };
 }
+

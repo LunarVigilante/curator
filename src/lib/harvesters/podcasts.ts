@@ -5,7 +5,8 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const API_DELAY_MS = 500;  // iTunes is fairly generous but be respectful
 
@@ -162,10 +163,18 @@ export async function harvestPodcasts(supabase: ReturnType<typeof createServiceR
         try {
             const originalDesc = `${podcast.trackName} by ${podcast.artistName}. A ${podcast.primaryGenreName || podcast.genres?.[0] || 'general'} podcast with ${podcast.trackCount || 'many'} episodes.`;
 
-            // AI rewrite with limiter
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, podcast.trackName, originalDesc, 'Podcast')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: podcast.trackName,
+                    originalDescription: originalDesc,
+                    type: 'Podcast',
+                    metadata: { genres: podcast.genres, artist: podcast.artistName }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags
             const tagNames = await aiLimiter(() =>
@@ -173,15 +182,14 @@ export async function harvestPodcasts(supabase: ReturnType<typeof createServiceR
             );
             const validTags = await ensureTags(supabase, tagNames);
 
-            // Generate embedding
-            const embedding = await generateEmbedding(`${podcast.trackName}: ${description}`);
-
             const item: HarvestItem = {
                 title: podcast.trackName,
                 description,
+                description_parts,
                 image_url: podcast.artworkUrl600 || null,
                 category_type: 'PODCAST',
                 external_ids: { itunes_podcast: podcast.trackId },
+                genres: podcast.genres,
                 metadata: {
                     artist_name: podcast.artistName,
                     genres: podcast.genres || [],
@@ -192,9 +200,15 @@ export async function harvestPodcasts(supabase: ReturnType<typeof createServiceR
                     explicit: podcast.collectionExplicitness,
                     source: 'itunes_harvest'
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'itunes_podcast', podcast.trackId);
             if (result) success++;

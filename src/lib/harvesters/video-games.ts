@@ -6,7 +6,8 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const RAWG_API_KEY = process.env.RAWG_API_KEY;
 const API_DELAY_MS = 1000;  // RAWG is strict - 1 second between pages
@@ -114,45 +115,64 @@ export async function harvestVideoGames(supabase: ReturnType<typeof createServic
 
     for (let i = 0; i < games.length; i++) {
         const game = games[i];
+        const genres = game.genres?.map(g => g.name) || [];
+        const platforms = game.platforms?.map(p => p.platform.name) || [];
+        const developers = game.developers?.map(d => d.name) || [];
 
         try {
             // Fetch game description (with caching and delay)
-            const description = await fetchGameDescription(game.id);
+            const originalDescription = await fetchGameDescription(game.id);
             await sleep(DETAIL_DELAY_MS);
 
-            // AI rewrite with limiter
-            const finalDescription = await aiLimiter(() =>
-                rewriteDescription(supabase, game.name, description, 'Video Game')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: game.name,
+                    originalDescription,
+                    type: 'Video Game',
+                    metadata: { genres, platforms, developers }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags
             const tagNames = await aiLimiter(() =>
-                generateTags(supabase, game.name, finalDescription, 'Video Game')
+                generateTags(supabase, game.name, description, 'Video Game')
             );
             const validTags = await ensureTags(supabase, tagNames);
 
-            // Generate embedding
-            const embedding = await generateEmbedding(`${game.name}: ${finalDescription}`);
-
             const item: HarvestItem = {
                 title: game.name,
-                description: finalDescription,
+                description,
+                description_parts,
                 image_url: game.background_image,
                 category_type: 'VIDEO_GAME',
                 external_ids: { rawg: game.id },
+                genres,
+                platforms,
+                developers,
                 metadata: {
                     released: game.released,
                     rating: game.rating,
                     ratings_count: game.ratings_count,
                     metacritic: game.metacritic,
-                    genres: game.genres?.map(g => g.name) || [],
-                    platforms: game.platforms?.map(p => p.platform.name) || [],
+                    genres,
+                    platforms,
+                    developers,
                     source: 'rawg_harvest',
-                    original_description: description
+                    original_description: originalDescription
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'rawg', game.id);
             if (result) success++;
@@ -170,3 +190,4 @@ export async function harvestVideoGames(supabase: ReturnType<typeof createServic
     console.log(`✅ Video Games: ${success} added, ${skipped} skipped, ${failed} failed`);
     return { success, skipped, failed, category: 'Video Games' };
 }
+

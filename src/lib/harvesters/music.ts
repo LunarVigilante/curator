@@ -5,7 +5,8 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
@@ -214,16 +215,25 @@ export async function harvestMusic(supabase: ReturnType<typeof createServiceRole
 
     for (let i = 0; i < filteredArtists.length; i++) {
         const artist = filteredArtists[i];
+        const genres = artist.genres || [];
 
         try {
-            const originalDesc = artist.genres.length > 0
-                ? `${artist.name} is a ${artist.genres.slice(0, 3).join(', ')} artist with ${artist.followers?.total?.toLocaleString() || 'many'} followers.`
+            const originalDesc = genres.length > 0
+                ? `${artist.name} is a ${genres.slice(0, 3).join(', ')} artist with ${artist.followers?.total?.toLocaleString() || 'many'} followers.`
                 : `${artist.name} is a popular music artist.`;
 
-            // AI rewrite with limiter
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, artist.name, originalDesc, 'Music Artist')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: artist.name,
+                    originalDescription: originalDesc,
+                    type: 'Music Artist',
+                    metadata: { genres }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags
             const tagNames = await aiLimiter(() =>
@@ -231,24 +241,29 @@ export async function harvestMusic(supabase: ReturnType<typeof createServiceRole
             );
             const validTags = await ensureTags(supabase, tagNames);
 
-            // Generate embedding
-            const embedding = await generateEmbedding(`${artist.name}: ${description}`);
-
             const item: HarvestItem = {
                 title: artist.name,
                 description,
+                description_parts,
                 image_url: artist.images?.[0]?.url || null,
                 category_type: 'MUSIC_ARTIST',
                 external_ids: { spotify_artist: artist.id },
+                genres,
                 metadata: {
-                    genres: artist.genres,
+                    genres,
                     popularity: artist.popularity,
                     followers: artist.followers?.total,
                     source: 'spotify_harvest'
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'spotify_artist', artist.id);
             if (result) success++;
@@ -268,3 +283,4 @@ export async function harvestMusic(supabase: ReturnType<typeof createServiceRole
     console.log(`✅ Music: ${success} added, ${skipped} skipped, ${failed} failed`);
     return { success, skipped, failed, category: 'Music' };
 }
+

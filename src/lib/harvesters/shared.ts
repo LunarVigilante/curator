@@ -5,6 +5,7 @@
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { callLLM } from '@/lib/llm';
 import { decrypt } from '@/lib/encryption';
+import type { StructuredDescription } from '@/lib/ai/structured-description';
 
 // ============================================================================
 // TYPES
@@ -13,6 +14,7 @@ import { decrypt } from '@/lib/encryption';
 export interface HarvestItem {
     title: string;
     description: string;
+    description_parts?: StructuredDescription;
     image_url: string | null;
     category_type: string;
     external_ids: Record<string, any>;
@@ -23,6 +25,16 @@ export interface HarvestItem {
     embedding?: number[];
     tags?: string[];
     cached_tags?: { id: string, name: string }[];
+    // Additional fields used for rich embeddings
+    genres?: string[];
+    cast?: string[];
+    director?: string;
+    studio?: string;
+    developers?: string[];
+    publishers?: string[];
+    designers?: string[];
+    mechanics?: string[];
+    platforms?: string[];
 }
 
 export interface HarvestResult {
@@ -203,24 +215,24 @@ export async function rewriteDescription(
         const config = await getLLMConfig(supabase);
         if (!config.apiKey) return originalDescription;
 
-        const systemPrompt = `You are an expert curator and critic optimizing descriptions for semantic search and discovery.
+        const systemPrompt = `You are an expert curator writing compelling descriptions for a media database.
 
-DESCRIPTION FORMAT (150-250 words total):
+Write a flowing 2-3 paragraph description (150-250 words total) that:
 
-1. PREMISE (2-3 sentences): Core plot/concept and what makes it unique
+PARAGRAPH 1: Describe the core premise and what makes it unique. Hook the reader.
 
-2. THEMES & TROPES (2-3 sentences): Explicitly name relevant themes and tropes that fans would search for:
-   - Character archetypes: "overpowered protagonist", "reluctant hero", "anti-hero", "chosen one"
-   - Story tropes: "isekai", "time loop", "found family", "enemies-to-lovers", "redemption arc"
-   - Themes: "power fantasy", "coming of age", "existential crisis", "revenge", "survival"
+PARAGRAPH 2: Weave in key themes, character archetypes (e.g. "reluctant hero", "anti-hero"), and story tropes (e.g. "found family", "redemption arc") naturally into the prose. Mention the mood and tone. Include searchable keywords fans would use.
 
-3. TONE & APPEAL (1-2 sentences): Who would enjoy this and why. Mood keywords.
+PARAGRAPH 3 (optional, if space allows): Who would enjoy this and why. Comparable titles if helpful.
 
-4. FOOTER (on new line after double newline):
+End with a brief footer on a new line:
 Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
 
-CRITICAL: Include searchable keywords that match how fans describe this genre/type.
-Return ONLY the description text. No JSON, no markdown, no quotes.`;
+CRITICAL RULES:
+- Write in flowing prose, NOT bullet points or numbered lists
+- Do NOT use section headers like "PREMISE:", "THEMES:", "TONE:" etc.
+- Do NOT use markdown formatting
+- Return ONLY the description text`;
 
         const userPrompt = `Generate a description for:
 Title: ${title}
@@ -240,7 +252,7 @@ Additional Context: ${originalDescription}`;
             timeoutMs: 60000
         });
 
-        let description = response.trim();
+        let description = cleanDescription(response.trim());
 
         // Check for refusal
         if (!isRefusal(description) && description.length > 20) {
@@ -262,7 +274,7 @@ Additional Context: ${originalDescription}`;
                 timeoutMs: 60000
             });
 
-            description = response.trim();
+            description = cleanDescription(response.trim());
 
             // Check Grok response for refusal too
             if (!isRefusal(description) && description.length > 20) {
@@ -276,7 +288,6 @@ Additional Context: ${originalDescription}`;
         // FINAL FALLBACK: Original Description
         // ============================================
         console.error(`   ❌ All models refused "${title}". Using original description.`);
-        // One final clean to ensure headers are removed if the AI added them despite instructions (or if we keep instructions)
         return cleanDescription(description);
     } catch {
         console.warn(`⚠️ Description rewrite failed for "${title}"`);
@@ -399,11 +410,13 @@ export async function upsertItem(
         const { error } = await (supabase.from('global_items') as any)
             .update({
                 description: item.description,
+                description_parts: item.description_parts || null,
                 image_url: item.image_url,
                 metadata: item.metadata,
                 release_year: item.release_year,
                 original_language: item.original_language,
                 origin_countries: item.origin_countries,
+                last_metadata_update: new Date().toISOString(),
                 ...(item.cached_tags ? { cached_tags: item.cached_tags } : {}),
                 ...(item.embedding ? { embedding: item.embedding } : {})
             })

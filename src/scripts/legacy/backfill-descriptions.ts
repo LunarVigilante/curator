@@ -21,21 +21,16 @@ interface ItemToUpdate {
 const SYSTEM_PROMPT = `You are an expert curator and critic optimizing descriptions for semantic search and discovery.
 
 DESCRIPTION FORMAT (150-250 words total):
+Write a single, cohesive description that naturally integrates the following elements without using section headers:
 
-1. PREMISE (2-3 sentences): Core plot/concept and what makes it unique
+1. The Premise: Core plot/concept and what makes it unique.
+2. Themes & Tropes: Mention relevant themes (e.g., "coming of age", "revenge") and tropes (e.g., "found family", "time loop") naturally within the text.
+3. Tone & Appeal: Mood keywords and who would enjoy it.
 
-2. THEMES & TROPES (2-3 sentences): Explicitly name relevant themes and tropes that fans would search for:
-   - Character archetypes: "overpowered protagonist", "reluctant hero", "anti-hero", "chosen one"
-   - Story tropes: "isekai", "time loop", "found family", "enemies-to-lovers", "redemption arc"
-   - Themes: "power fantasy", "coming of age", "existential crisis", "revenge", "survival"
-
-3. TONE & APPEAL (1-2 sentences): Who would enjoy this and why. Mood keywords.
-
-4. FOOTER (on new line after double newline):
+FOOTER (on new line after double newline):
 Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
 
-CRITICAL: Include searchable keywords that match how fans describe this genre/type.
-Return ONLY the description text. No JSON, no markdown, no quotes.`;
+CRITICAL: Include searchable keywords. Return ONLY the description text. Do NOT use headers like "PREMISE:" or "THEMES:".`;
 
 // Refusal patterns - detect when LLM refuses to generate
 const REFUSAL_PATTERNS = [
@@ -207,8 +202,9 @@ async function backfillDescriptions() {
         console.log(`\n📦 Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})...`);
 
         for (const item of batch) {
-            // Skip items that already have long descriptions (already regenerated)
-            if (item.description && item.description.length >= 1000) {
+            // Skip items that already have decent length descriptions (likely already valid)
+            const MIN_DESCRIPTION_LENGTH = 750;
+            if (item.description && item.description.length >= MIN_DESCRIPTION_LENGTH) {
                 skippedCount++;
                 continue;
             }

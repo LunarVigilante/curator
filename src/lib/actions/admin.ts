@@ -107,6 +107,10 @@ export async function updateSystemConfig(data: {
     featureChallenges?: string
     voyageApiKey?: string
     steamGridApiKey?: string
+
+    omdbApiKey?: string
+    twitchClientId?: string
+    twitchClientSecret?: string
 }) {
     const session = await assertAdmin()
     console.log('[Admin] updateSystemConfig called by user:', session.user.id)
@@ -134,21 +138,17 @@ export async function updateSystemConfig(data: {
     if (data.bggApiKey) await upsertSetting('bgg_api_key', data.bggApiKey, 'MEDIA', true)
     if (data.metronUsername) await upsertSetting('metron_username', data.metronUsername, 'MEDIA', false)
     if (data.metronPassword) await upsertSetting('metron_password', data.metronPassword, 'MEDIA', true)
+    if (data.omdbApiKey) await upsertSetting('omdb_api_key', data.omdbApiKey, 'MEDIA', true)
 
     // Email Settings
     if (data.resendApiKey !== undefined) await upsertSetting('resend_api_key', data.resendApiKey, 'EMAIL', true)
     if (data.appUrl !== undefined) await upsertSetting('public_app_url', data.appUrl, 'GENERAL', false)
     if (data.fromEmail) await upsertSetting('resend_from_email', data.fromEmail, 'EMAIL', false)
 
-    // API Endpoints
-    if (data.tmdbApiUrl) await upsertSetting('tmdb_api_url', data.tmdbApiUrl, 'MEDIA', false)
-    if (data.rawgApiUrl) await upsertSetting('rawg_api_url', data.rawgApiUrl, 'MEDIA', false)
-    if (data.googleBooksApiUrl) await upsertSetting('google_books_api_url', data.googleBooksApiUrl, 'MEDIA', false)
-    if (data.spotifyApiUrl) await upsertSetting('spotify_api_url', data.spotifyApiUrl, 'MEDIA', false)
-    if (data.anilistApiUrl) await upsertSetting('anilist_api_url', data.anilistApiUrl, 'MEDIA', false)
-    if (data.comicVineApiUrl) await upsertSetting('comicvine_api_url', data.comicVineApiUrl, 'MEDIA', false)
-    if (data.bggApiUrl) await upsertSetting('bgg_api_url', data.bggApiUrl, 'MEDIA', false)
-    if (data.itunesApiUrl) await upsertSetting('itunes_api_url', data.itunesApiUrl, 'MEDIA', false)
+    // Twitch / IGDB
+    if (data.twitchClientId) await upsertSetting('twitch_client_id', data.twitchClientId, 'MEDIA', true)
+    if (data.twitchClientSecret) await upsertSetting('twitch_client_secret', data.twitchClientSecret, 'MEDIA', true)
+
 
     // Voyage AI (Embeddings)
     if (data.voyageApiKey) await upsertSetting('voyage_api_key', data.voyageApiKey, 'EMBEDDINGS', true)
@@ -375,7 +375,7 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
 }
 
 export async function testServiceConnection(data: {
-    service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron'
+    service: 'tmdb' | 'twitch' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron' | 'omdb' | 'steamgrid'
     apiKey: string
     clientSecret?: string  // Optional: for Spotify / Metron Password
 }) {
@@ -388,28 +388,31 @@ export async function testServiceConnection(data: {
     if (!apiKey || apiKey.includes('********')) {
         const keyMap: any = {
             tmdb: 'tmdb_api_key',
-            rawg: 'rawg_api_key',
+            twitch: 'twitch_client_id',
             googlebooks: 'google_books_api_key',
             spotify: 'spotify_client_id',
             resend: 'resend_api_key',
             comicvine: 'comicvine_api_key',
             bgg: 'bgg_api_key',
-            metron: 'metron_username'
+            metron: 'metron_username',
+            omdb: 'omdb_api_key',
+            steamgrid: 'STEAMGRIDDB_API_KEY'
         }
         const realKey = await SystemConfigService.getDecryptedConfig(keyMap[data.service])
         if (!realKey) throw new Error(`No API key found for ${data.service} and none provided.`)
         apiKey = realKey
     }
 
-    if (data.service === 'spotify') {
+    if (data.service === 'spotify' || data.service === 'twitch') {
         // Use provided clientSecret first, otherwise fetch from DB
         clientSecret = data.clientSecret || '';
         if (!clientSecret || clientSecret.includes('********')) {
-            clientSecret = await SystemConfigService.getDecryptedConfig('spotify_client_secret') || '';
+            const secretKey = data.service === 'spotify' ? 'spotify_client_secret' : 'twitch_client_secret';
+            clientSecret = await SystemConfigService.getDecryptedConfig(secretKey) || '';
         }
         if (!clientSecret) {
-            console.error('[ServiceTest] Spotify Client Secret is missing');
-            throw new Error("Spotify Client Secret is missing. Save your settings first, then test.");
+            console.error(`[ServiceTest] ${data.service} Client Secret is missing`);
+            throw new Error(`${data.service} Client Secret is missing. Save your settings first, then test.`);
         }
     }
 
@@ -423,13 +426,31 @@ export async function testServiceConnection(data: {
                 }
                 return { success: true, message: "TMDB: Connection Verified" }
             }
-            case 'rawg': {
-                const res = await fetch(`https://api.rawg.io/api/games/3498?key=${apiKey}`)
+            case 'twitch': {
+                const url = `https://id.twitch.tv/oauth2/token?client_id=${apiKey}&client_secret=${clientSecret}&grant_type=client_credentials`;
+                const res = await fetch(url, { method: 'POST' });
+
                 if (!res.ok) {
                     const error = await res.json()
-                    throw new Error(error.detail || 'RAWG Verification Failed')
+                    throw new Error(`Auth Failed: ${error.message || res.statusText}`)
                 }
-                return { success: true, message: "RAWG: Connection Verified" }
+                const data = await res.json()
+                if (!data.access_token) throw new Error('No access token received')
+
+                // Optional: Verify token works with IGDB
+                const igdbRes = await fetch('https://api.igdb.com/v4/games', {
+                    method: 'POST',
+                    headers: {
+                        'Client-ID': apiKey,
+                        'Authorization': `Bearer ${data.access_token}`,
+                        'Content-Type': 'text/plain'
+                    },
+                    body: 'fields name; limit 1;'
+                });
+
+                if (!igdbRes.ok) throw new Error('IGDB API check failed');
+
+                return { success: true, message: "Twitch/IGDB: Connection Verified" }
             }
             case 'resend': {
                 const res = await fetch('https://api.resend.com/api-keys', {
@@ -493,6 +514,25 @@ export async function testServiceConnection(data: {
                     throw new Error(`Metron Error: ${res.statusText}`);
                 }
                 return { success: true, message: "Metron: Connection Verified" }
+            }
+            case 'omdb': {
+                const res = await fetch(`https://www.omdbapi.com/?apikey=${apiKey}&t=Inception`)
+                if (!res.ok) throw new Error('OMDB Request Failed')
+                const jsonData = await res.json()
+                if (jsonData.Response === 'False') throw new Error(jsonData.Error || 'OMDB API Key Invalid')
+                return { success: true, message: "OMDB: Connection Verified" }
+            }
+            case 'steamgrid': {
+                const res = await fetch('https://www.steamgriddb.com/api/v2/search/autocomplete/portal', {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                })
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) throw new Error('SteamGridDB: Invalid API Key');
+                    throw new Error(`SteamGridDB Error: ${res.status} ${res.statusText}`);
+                }
+                const data = await res.json();
+                if (!data.success) throw new Error('SteamGridDB: API returned failure');
+                return { success: true, message: "SteamGridDB: Connection Verified" }
             }
             default:
                 throw new Error('Unsupported service')

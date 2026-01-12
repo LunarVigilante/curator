@@ -6,7 +6,8 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const GOOGLE_BOOKS_API_KEY = process.env.GOOGLE_BOOKS_API_KEY;
 const API_DELAY_MS = 300;
@@ -117,21 +118,27 @@ export async function harvestBooks(supabase: ReturnType<typeof createServiceRole
         }
 
         const originalDesc = vol.description || '';
+        const authors = vol.authors || [];
 
         try {
-            // AI rewrite with limiter
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, vol.title, originalDesc, 'Book')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: vol.title,
+                    originalDescription: originalDesc,
+                    type: 'Book',
+                    metadata: { authors, categories: vol.categories, publisher: vol.publisher }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags
             const tagNames = await aiLimiter(() =>
                 generateTags(supabase, vol.title, description, 'Book')
             );
             const validTags = await ensureTags(supabase, tagNames);
-
-            // Generate embedding
-            const embedding = await generateEmbedding(`${vol.title}: ${description}`);
 
             // Normalize language code (Google Books may use 'en' or 'eng')
             const normalizeLanguage = (lang?: string): string | null => {
@@ -147,13 +154,14 @@ export async function harvestBooks(supabase: ReturnType<typeof createServiceRole
             const item: HarvestItem = {
                 title: vol.title,
                 description,
+                description_parts,
                 image_url: vol.imageLinks?.thumbnail?.replace('http:', 'https:') ||
                     vol.imageLinks?.smallThumbnail?.replace('http:', 'https:') || null,
                 category_type: 'BOOK',
                 external_ids: { google_books: book.id },
                 original_language: normalizeLanguage(vol.language),
                 metadata: {
-                    authors: vol.authors || [],
+                    authors,
                     published_date: vol.publishedDate,
                     rating: vol.averageRating,
                     ratings_count: vol.ratingsCount,
@@ -164,9 +172,15 @@ export async function harvestBooks(supabase: ReturnType<typeof createServiceRole
                     source: 'google_books_harvest',
                     original_description: originalDesc
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'google_books', book.id);
             if (result) success++;

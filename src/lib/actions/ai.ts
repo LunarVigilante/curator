@@ -37,6 +37,7 @@ export async function generateDescriptionAction(input: z.input<typeof generateDe
     try {
         const { title, type, context } = generateDescriptionSchema.parse(input)
         const supabase = await createClient()
+        const serviceClient = createServiceRoleClient()
 
         // Refusal patterns - don't use cached descriptions that contain these
         const REFUSAL_PATTERNS = [
@@ -62,7 +63,7 @@ export async function generateDescriptionAction(input: z.input<typeof generateDe
 
         if (existingItem?.description && !isRefusal(existingItem.description)) {
             console.log(`[AI Cache] Hit for description: "${title}"`);
-            return { description: existingItem.description };
+            return { description: existingItem.description, description_parts: existingItem.description_parts };
         }
 
         // If cached description was a refusal, log it
@@ -70,124 +71,50 @@ export async function generateDescriptionAction(input: z.input<typeof generateDe
             console.log(`[AI Cache] Skipping cached refusal for: "${title}" - regenerating...`);
         }
 
-        // Fetch LLM config from database
-        const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
-        const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
-        const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
-        const model = await SystemConfigService.getDecryptedConfig('llm_model');
-        const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key');
-        const anthropicKey = await SystemConfigService.getDecryptedConfig('anthropic_api_key');
-        const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key');
-        const openrouterKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key');
-        const googleAiKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key');
+        // 2. Generate 4-part structured description using new system
+        console.log(`[AI] Generating structured description for: "${title}"`);
 
-        let finalApiKey = apiKey;
-        if (!finalApiKey) {
-            switch (provider) {
-                case 'ananas': finalApiKey = anannasKey; break;
-                case 'anthropic': finalApiKey = anthropicKey; break;
-                case 'openai': finalApiKey = openaiKey; break;
-                case 'openrouter': finalApiKey = openrouterKey; break;
-                case 'google': finalApiKey = googleAiKey; break;
-            }
-        }
-        finalApiKey = finalApiKey || openrouterKey || anannasKey || anthropicKey || openaiKey || googleAiKey;
+        // Import structured description functions
+        const { generateStructuredDescription, combineDescription } = await import('@/lib/ai/structured-description');
 
-        if (!finalApiKey) {
-            throw new Error('LLM API Key not configured in System Settings')
-        }
-
-        const systemPrompt = `You are an expert curator and critic optimizing descriptions for semantic search and discovery.
-
-DESCRIPTION FORMAT (150-250 words total):
-
-1. PREMISE (2-3 sentences): Core plot/concept and what makes it unique
-
-2. THEMES & TROPES (2-3 sentences): Explicitly name relevant themes and tropes that fans would search for:
-   - Character archetypes: "overpowered protagonist", "reluctant hero", "anti-hero", "chosen one"
-   - Story tropes: "isekai", "time loop", "found family", "enemies-to-lovers", "redemption arc"
-   - Themes: "power fantasy", "coming of age", "existential crisis", "revenge", "survival"
-
-3. TONE & APPEAL (1-2 sentences): Who would enjoy this and why. Mood keywords.
-
-4. FOOTER (on new line after double newline):
-Year: YYYY | Creator: [Name] | Notable Awards: [Awards or "None"]
-
-CRITICAL: Include searchable keywords that match how fans describe this genre/type.
-Return ONLY the description text. No JSON, no markdown, no quotes.`;
-
-        const userPrompt = `Generate a description for:
-Title: ${sanitizeInput(title, 150)}
-Type: ${sanitizeInput(type, 50)}
-${context ? `Additional Context: ${sanitizeInput(context, 300)}` : ''}`;
-
-        // ============================================
-        // ATTEMPT 1: Primary Model
-        // ============================================
-        let response = await callLLM({
-            userPrompt,
-            systemPrompt,
-            apiKey: finalApiKey,
-            provider,
-            model: model || undefined,
-            endpoint: endpoint || undefined,
-            timeoutMs: 60000
+        const description_parts = await generateStructuredDescription(serviceClient, {
+            title: sanitizeInput(title, 150),
+            originalDescription: context || '',
+            type: normalizedType,
+            metadata: {}
         });
 
-        let description = response.trim();
-        if (description.startsWith('{') || description.startsWith('"')) {
-            try {
-                const parsed = JSON.parse(description);
-                description = typeof parsed === 'string' ? parsed : parsed.description || description;
-            } catch { }
+        // Combine for backwards-compatible description field
+        const description = combineDescription(description_parts);
+
+        // Check for refusal in any part
+        const hasRefusal = [description_parts.premise, description_parts.themes, description_parts.tone, description_parts.style]
+            .some(part => isRefusal(part || ''));
+
+        if (hasRefusal) {
+            console.log(`[AI] Structured generation had refusal for "${title}". Using placeholder.`);
+            return {
+                description: `${title} - A ${type.toLowerCase()} title. No detailed description available.`,
+                description_parts: null
+            };
         }
 
-        // Check for refusal - if so, try Grok
-        if (isRefusal(description)) {
-            console.log(`[AI] Primary model refused "${title}". Switching to Grok...`);
-
-            // ============================================
-            // ATTEMPT 2: Grok Fallback (same prompt, different model)
-            // ============================================
-            try {
-                response = await callLLM({
-                    userPrompt,  // Same prompt as primary
-                    systemPrompt,  // Same system prompt as primary
-                    apiKey: openrouterKey || finalApiKey,
-                    provider: 'openrouter',
-                    model: 'x-ai/grok-4.1-fast',
-                    timeoutMs: 60000
-                });
-
-                description = response.trim();
-
-                // If Grok also refused, use a generic placeholder
-                if (isRefusal(description)) {
-                    console.log(`[AI] Grok also refused "${title}". Using placeholder.`);
-                    description = `${title} - A ${type.toLowerCase()} title. No detailed description available.`;
-                }
-            } catch {
-                console.log(`[AI] Grok fallback failed for "${title}". Using placeholder.`);
-                description = `${title} - A ${type.toLowerCase()} title. No detailed description available.`;
-            }
+        // 3. Update Cache with both description and description_parts
+        if (existingItem) {
+            await (supabase.from('global_items') as any)
+                .update({ description, description_parts, last_metadata_update: new Date().toISOString() })
+                .eq('id', existingItem.id)
+        } else {
+            await (supabase.from('global_items') as any).insert({
+                title,
+                description,
+                description_parts,
+                category_type: normalizedType
+            })
         }
 
-        // 2. Update Cache (only if not a refusal)
-        if (!isRefusal(description)) {
-            if (existingItem) {
-                await (supabase.from('global_items') as any)
-                    .update({ description })
-                    .eq('id', existingItem.id)
-            } else {
-                await (supabase.from('global_items') as any).insert({
-                    title,
-                    description,
-                    category_type: normalizedType
-                })
-            }
-        }
-
-        return { description }
+        console.log(`[AI] Structured description generated for "${title}"`);
+        return { description, description_parts }
 
     } catch (e: any) {
         console.error("Generate Description Error:", e)
@@ -293,7 +220,7 @@ ${description ? `Description: ${sanitizeInput(description, 300)}` : ''}`;
         // 3. Update Cache with proper {id, name}[] format (not stringified!)
         if (existingItem) {
             const { error } = await (supabase.from('global_items') as any)
-                .update({ cached_tags: validTags })
+                .update({ cached_tags: validTags, last_metadata_update: new Date().toISOString() })
                 .eq('id', existingItem.id)
             if (error) {
                 console.error('[AI Tags] Failed to update cached_tags:', error)

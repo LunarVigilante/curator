@@ -1,35 +1,33 @@
-
 import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
 import { TheAudioDBService } from '@/lib/services/theaudiodb';
 import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter } from '@/lib/harvesters/shared';
+// @ts-ignore
 import pLimit from 'p-limit';
 
 // Config
 const START_YEAR = 2026;
 const END_YEAR = 1980;
-const CONCURRENCY = 1; // Strict 1 for rate limits
-const DELAY_BETWEEN_ALBUMS = 2000; // 2 seconds for AudioDB
+const CONCURRENCY = 1; // Strict 1 is safest for deep harvesting
+const DELAY_BETWEEN_ALBUMS = 2000; // 2s for AudioDB
 
 const supabase = createServiceRoleClient();
 const imageService = new ImageService('covers');
 const limit = pLimit(CONCURRENCY);
 
 // ============================================================================
-// SPOTIFY HELPER (Internal to script)
+// SPOTIFY HELPER
 // ============================================================================
 class SpotifyHelper {
     private token: string | null = null;
     private clientId = process.env.SPOTIFY_CLIENT_ID;
     private clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+    private tokenExpiresAt = 0;
 
     async getAccessToken(): Promise<string | null> {
-        if (this.token) return this.token;
-        if (!this.clientId || !this.clientSecret) {
-            console.error('❌ Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET');
-            return null;
-        }
+        if (this.token && Date.now() < this.tokenExpiresAt) return this.token;
+        if (!this.clientId || !this.clientSecret) return null;
 
         try {
             const res = await fetch('https://accounts.spotify.com/api/token', {
@@ -44,9 +42,9 @@ class SpotifyHelper {
             const data = await res.json();
             if (data.access_token) {
                 this.token = data.access_token;
+                this.tokenExpiresAt = Date.now() + (data.expires_in * 1000) - 60000; // Buffer
                 return this.token;
             }
-            console.error('❌ Failed to get Spotify Token:', data);
             return null;
         } catch (err) {
             console.error('❌ Spotify Auth Error:', err);
@@ -54,32 +52,61 @@ class SpotifyHelper {
         }
     }
 
-    async searchAlbumsByYear(year: number, offset = 0): Promise<any[]> {
+    async fetch(endpoint: string): Promise<any> {
         const token = await this.getAccessToken();
-        if (!token) return [];
+        if (!token) return null;
 
-        const q = `year:${year}`;
-        const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=album&limit=50&offset=${offset}`;
+        const res = await fetch(`https://api.spotify.com/v1${endpoint}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-        try {
-            const res = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (!res.ok) {
-                if (res.status === 429) {
-                    console.warn('   ⚠️ Spotify Rate Limit. Waiting 5s...');
-                    await sleep(5000);
-                    return this.searchAlbumsByYear(year, offset);
-                }
-                return [];
-            }
-
-            const data = await res.json();
-            return data.albums?.items || [];
-        } catch {
-            return [];
+        if (res.status === 429) {
+            const retryAfter = parseInt(res.headers.get('Retry-After') || '5');
+            console.warn(`   ⚠️ Spotify Rate Limit. Sleeping ${retryAfter}s...`);
+            await sleep(retryAfter * 1000);
+            return this.fetch(endpoint);
         }
+
+        if (!res.ok) return null;
+        return await res.json();
+    }
+
+    // UPDATED: Deep pagination
+    async searchAlbumsByYear(year: number, offset = 0) {
+        // Spotify typically limits offset to 1000 for search. To go deeper, we'd need more specific queries,
+        // but for now, we'll hit the max allowed offset.
+        const q = encodeURIComponent(`year:${year} tag:new`); // Adding tag:new helps surface notable releases sometimes, but pure year is broader. 
+        // Let's stick to `year:${year}` for broad coverage. 
+        // Max limit is 50.
+        const query = encodeURIComponent(`year:${year}`);
+        const data = await this.fetch(`/search?q=${query}&type=album&limit=50&offset=${offset}`);
+        return data?.albums?.items || [];
+    }
+
+    async getFullAlbum(id: string) {
+        return await this.fetch(`/albums/${id}`);
+    }
+
+    async getAudioFeatures(trackIds: string[]) {
+        if (trackIds.length === 0) return {};
+        // Batched request (up to 100)
+        // Split into chunks of 100
+        const map: Record<string, any> = {};
+
+        for (let i = 0; i < trackIds.length; i += 100) {
+            const chunk = trackIds.slice(i, i + 100);
+            const data = await this.fetch(`/audio-features?ids=${chunk.join(',')}`);
+            if (data?.audio_features) {
+                data.audio_features.forEach((f: any) => {
+                    if (f) map[f.id] = f;
+                });
+            }
+        }
+        return map;
+    }
+
+    async getArtist(id: string) {
+        return await this.fetch(`/artists/${id}`);
     }
 }
 
@@ -89,156 +116,258 @@ const spotify = new SpotifyHelper();
 // MAIN HARVESTER
 // ============================================================================
 
-const existingSpotifyIds = new Set<string>();
+// We cache artist IDs locally to avoid re-fetching/re-embedding the same artist 50 times
+const processedArtists = new Set<string>();
 
 async function startHarvest() {
-    console.log(`🚀 STARTING SMART MUSIC HARVEST`);
+    console.log(`🚀 STARTING SMART MUSIC HARVEST (Artist -> Album -> Track)`);
     console.log(`   📅 Years: ${START_YEAR} -> ${END_YEAR}`);
-    console.log(`   ⚡ Concurrency: ${CONCURRENCY} (Strict Serial)`);
+    console.log(`   🎯 Mode: DEEP HARVEST (Max Pagination)`);
 
-    // 1. Load Existing (Dedupe)
-    console.log(`\n📥 Loading existing spotify_ids...`);
-    const { data: existing, error } = await supabase
-        .from('global_items')
-        .select('external_ids')
-        .not('external_ids', 'is', null);
-
-    if (!error && existing) {
-        existing.forEach((row: any) => {
-            if (row.external_ids?.spotify) {
-                existingSpotifyIds.add(row.external_ids.spotify);
-            }
-        });
-    }
-    console.log(`   ✅ Loaded ${existingSpotifyIds.size} existing albums.`);
-
-    // 2. Iterate Years
     for (let year = START_YEAR; year >= END_YEAR; year--) {
         console.log(`\n📅 Processing Year: ${year}`);
+        let totalFetched = 0;
+        let emptyBatches = 0;
 
-        // Pagination: Fetch up to 200 items (4 pages of 50)
-        let totalFetchedForYear = 0;
-        const TARGET_PER_YEAR = 200;
+        // Spotify Search API limit is usually 1,000 items (offset 0 to 950).
+        // To get "absolute max", we loop until we hit the empty return or the API limit.
+        const MAX_OFFSET = 1000;
 
-        for (let offset = 0; offset < TARGET_PER_YEAR; offset += 50) {
-            console.log(`   📄 Fetching Page (Offset ${offset})...`);
-
+        for (let offset = 0; offset <= MAX_OFFSET; offset += 50) {
+            process.stdout.write(`   � Offset ${offset}... `);
             const albums = await spotify.searchAlbumsByYear(year, offset);
-            if (albums.length === 0) break;
 
-            let newCount = 0;
-            let skippedCount = 0;
-
-            for (const album of albums) {
-                // Dedupe
-                if (existingSpotifyIds.has(album.id)) {
-                    skippedCount++;
-                    continue;
-                }
-
-                // Process (Serial execution to respect AudioDB delay)
-                await processAlbum(album, year);
-                newCount++;
+            if (!albums || albums.length === 0) {
+                console.log('Done (No more results).');
+                break;
             }
 
-            totalFetchedForYear += albums.length;
-            console.log(`      Page Summary: ${newCount} New, ${skippedCount} Skipped.`);
+            process.stdout.write(`Found ${albums.length}. Processing...\n`);
+
+            for (const album of albums) {
+                // Serial execution to respect AudioDB delay
+                await processFullHierarchy(album.id, year);
+            }
+            totalFetched += albums.length;
+
+            // Respect rate limits between batches slightly
+            await sleep(500);
         }
-
-        console.log(`   ✅ Year ${year} Complete. Total Fetched: ${totalFetchedForYear}`);
+        console.log(`   ✅ Year ${year} Complete. Fetched ${totalFetched} albums.`);
     }
-
-    console.log('\n✅ MUSIC HARVEST COMPLETE');
 }
 
-async function processAlbum(album: any, year: number) {
-    const artistName = album.artists?.[0]?.name || 'Unknown Artist';
+async function processFullHierarchy(albumId: string, year: number) {
+    // 1. Fetch Full Album (includes Tracks info)
+    const album = await spotify.getFullAlbum(albumId);
+    if (!album) return;
+
+    // Skip singles if we only want albums? The prompt said "albums AND artists", implying all releases.
+    // But singles clutter quickly. Let's keep them but categorize correctly.
+
+    // Safety check for empty artists
+    if (!album.artists || album.artists.length === 0) return;
+
+    const artistSimple = album.artists[0]; // Primary artist
+    const artistName = artistSimple.name;
     const albumTitle = album.name;
-    const spotifyId = album.id;
-    const spotifyImage = album.images?.[0]?.url;
 
-    console.log(`   🎵 Processing: "${albumTitle}" by ${artistName}`);
+    // console.log(`      🎵 [${artistName}] ${albumTitle}`);
 
-    try {
-        // Step 2: AudioDB Art (Visual Upgrade)
-        // MUST Wait 2s before call
-        await sleep(DELAY_BETWEEN_ALBUMS);
+    // ======================================================
+    // LEVEL 1: ARTIST (Upsert if new)
+    // ======================================================
+    if (!processedArtists.has(artistSimple.id)) {
+        const fullArtist = await spotify.getArtist(artistSimple.id);
+        if (fullArtist) {
+            const artistImg = fullArtist.images?.[0]?.url;
+            const hostedArtistImg = await imageService.processAndUpload(artistImg, 'music');
 
-        let coverUrl = await TheAudioDBService.getBestAlbumCover(artistName, albumTitle);
+            // Simple AI Gen for Artist
+            const artistDesc = await aiLimiter(() =>
+                rewriteDescription(supabase, artistName, `Music Artist. Genres: ${fullArtist.genres.join(', ')}`, 'MUSIC_ARTIST')
+            );
 
-        if (coverUrl) {
-            console.log(`      ✨ Found AudioDB High-Res Cover!`);
-        } else {
-            // Fallback to Spotify
-            // console.log(`      ⚠️ No AudioDB Cover. Using Spotify fallback.`);
-            coverUrl = spotifyImage;
+            // Start check-then-upsert for ARTIST
+            const { data: existingArtist } = await supabase
+                .from('global_items')
+                .select('id, description_parts')
+                .contains('external_ids', { spotify: fullArtist.id })
+                .maybeSingle();
+
+            const artistPayload = {
+                title: artistName,
+                category_type: 'MUSIC_ARTIST',
+                description: artistDesc,
+                image_url: hostedArtistImg,
+                genres: fullArtist.genres,
+                followers: fullArtist.followers?.total,
+                popularity: fullArtist.popularity,
+                external_ids: { spotify: fullArtist.id },
+                metadata: { source: 'spotify_smart' },
+                last_metadata_update: new Date().toISOString()
+            };
+
+            // Artist Update
+            if (existingArtist) {
+                const updatePayload = { ...artistPayload };
+                // STRICT SAFETY: Never overwrite description/image on update
+                delete (updatePayload as any).description;
+                delete (updatePayload as any).image_url;
+
+                const { error } = await (supabase.from('global_items') as any)
+                    .update(updatePayload)
+                    .eq('id', (existingArtist as any).id);
+                if (error) console.error(`❌ Error updating artist ${artistName}:`, error);
+            } else {
+                // Insert
+                const { error } = await (supabase.from('global_items') as any).insert(artistPayload);
+                if (error && error.code !== '23505') console.error(`❌ Error inserting artist ${artistName}:`, error);
+            }
+
+            processedArtists.add(artistSimple.id);
+            // console.log(`      👤 Saved Artist: ${artistName}`);
         }
 
-        if (!coverUrl) {
-            console.warn(`      ❌ No cover art found at all. Skipping.`);
-            return;
-        }
+        // ======================================================
+        // LEVEL 2: ALBUM (With AudioDB Cover)
+        // ======================================================
 
-        // Step 3 & 4: Process Image & Upload
-        const finalImageUrl = await imageService.processAndUpload(coverUrl, 'music');
-        if (!finalImageUrl) return;
+        let coverUrl = album.images?.[0]?.url;
+        const hostedAlbumImg = await imageService.processAndUpload(coverUrl, 'music');
 
-        // Step 5: Metadata & AI
-        const categoryType = 'ALBUM';
-        const baseDesc = `${albumTitle} is an album by ${artistName}, released in ${year}. Contains ${album.total_tracks} tracks.`;
+        // AI Description for Album
+        // RICH CONTEXT for Album
+        const richContext = `
+Album: ${albumTitle} (${year})
+Artist: ${artistName}
+Type: ${album.album_type}
+Tracks: ${album.total_tracks}
+Genres: ${album.genres.join(', ') || 'N/A'}
+        `.trim();
 
-        const description = await aiLimiter(() =>
-            rewriteDescription(supabase, albumTitle, baseDesc, categoryType)
-        );
+        const albumDesc = await aiLimiter(() => rewriteDescription(supabase, albumTitle, richContext, 'MUSIC_ALBUM'));
 
-        // Tags
-        const tagNames = await aiLimiter(() =>
-            generateTags(supabase, albumTitle, description, categoryType)
-        );
-        const validTags = await ensureTags(supabase, tagNames);
-        const embedding = await generateEmbedding(`${albumTitle} ${artistName}: ${description}`);
+        const contextTags = `${album.genres.join(', ')} ${artistName}`;
+        const tags = await aiLimiter(() => generateTags(supabase, albumTitle, `${albumDesc} ${contextTags}`, 'MUSIC_ALBUM'));
+        const validTags = await ensureTags(supabase, tags);
 
-        // Construct Item
-        const newItem: any = {
+        const albumPayload = {
             title: albumTitle,
-            description: description,
-            image_url: finalImageUrl,
-            category_type: categoryType,
-            source: 'spotify', // Required for unique constraint
-            external_id: spotifyId, // Required for unique constraint
-            external_ids: { spotify: spotifyId },
-            metadata: {
-                source: 'spotify_smart',
-                artist: artistName,
-                release_date: album.release_date,
-                total_tracks: album.total_tracks,
-                spotify_url: album.external_urls?.spotify,
-                image_source: coverUrl.includes('theaudiodb') ? 'TheAudioDB' : 'Spotify'
-            },
-            cached_tags: validTags,
-
-            // Core columns mapped 
+            category_type: 'MUSIC_ALBUM',
+            description: albumDesc,
+            image_url: hostedAlbumImg,
             release_year: year,
+            release_date: album.release_date,
 
-            ...(embedding ? { vector_text: JSON.stringify(embedding) } : {})
+            // Extended Metadata
+            album_type: album.album_type,
+            total_tracks: album.total_tracks,
+            label: album.label,
+            popularity: album.popularity,
+            upc: album.external_ids?.upc,
+            genres: album.genres.length ? album.genres : [],
+
+            external_ids: { spotify: album.id },
+            metadata: { source: 'spotify_smart' },
+            cached_tags: validTags,
+            last_metadata_update: new Date().toISOString()
         };
 
-        const { error } = await supabase
+        // Safe Upsert for Album
+        const { data: existingAlbum } = await supabase
             .from('global_items')
-            .upsert(newItem, { onConflict: 'source,external_id' } as any);
+            .select('id, description_parts')
+            .contains('external_ids', { spotify: album.id })
+            .maybeSingle();
 
-        if (error) {
-            console.error(`      ❌ DB Insert Error:`, error.message);
-            // Debug Log to see what keys we are actually sending if it fails
-            console.log('      DEBUG Payload Keys:', Object.keys(newItem));
+        if (existingAlbum) {
+            // STRICT SAFETY: Never overwrite description/tags on update
+            const updatePayload = { ...albumPayload };
+            delete (updatePayload as any).description;
+            delete (updatePayload as any).image_url;
+            delete (updatePayload as any).cached_tags;
+
+            await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingAlbum as any).id);
         } else {
-            console.log(`      ✅ Saved: "${albumTitle}"`);
-            existingSpotifyIds.add(spotifyId);
+            await (supabase.from('global_items') as any).insert(albumPayload).catch(() => { });
         }
 
-    } catch (err) {
-        console.error(`      ❌ Error processing album:`, err);
+        // ======================================================
+        // LEVEL 3: TRACKS (With Audio Features)
+        // ======================================================
+
+        const tracks = album.tracks?.items || [];
+        if (tracks.length === 0) return;
+
+        // Fetch Vibe Data for all tracks at once
+        const trackIds = tracks.map((t: any) => t.id);
+        const featuresMap = await spotify.getAudioFeatures(trackIds);
+
+        // Filter out existing tracks to avoid massive unnecessary reads/writes?
+        // Optimization: Just do the safe check logic
+
+        for (const track of tracks) {
+            const features = featuresMap[track.id];
+
+            // Vibe String for Vector
+            const vibeStr = features ?
+                `Danceability: ${features.danceability}, Energy: ${features.energy}, Tempo: ${features.tempo} BPM, Valence: ${features.valence}`
+                : '';
+
+            const vectorText = `
+            Title: ${track.name}
+            Artist: ${artistName}
+            Album: ${albumTitle}
+            Vibe: ${vibeStr}
+        `.trim();
+
+            const embedding = await generateEmbedding(vectorText);
+
+            const trackPayload = {
+                title: track.name,
+                category_type: 'MUSIC_TRACK',
+                description: `Track ${track.track_number} on ${albumTitle}`,
+                image_url: hostedAlbumImg,
+
+                // Track Specifics
+                duration_ms: track.duration_ms,
+                preview_url: track.preview_url,
+                isrc: track.external_ids?.isrc,
+                audio_features: features,
+
+                // Linkage
+                artist_names: track.artists.map((a: any) => a.name),
+                album_name: albumTitle,
+
+                external_ids: { spotify: track.id },
+                metadata: { source: 'spotify_smart' },
+                vector_text: JSON.stringify(embedding),
+                last_metadata_update: new Date().toISOString()
+            };
+
+            const { data: existingTrack } = await supabase
+                .from('global_items')
+                .select('id, description_parts')
+                .contains('external_ids', { spotify: track.id })
+                .maybeSingle();
+
+            if (existingTrack) {
+                // STRICT SAFETY: Never overwrite description on update
+                const updatePayload = { ...trackPayload };
+                delete (updatePayload as any).description;
+                delete (updatePayload as any).vector_text;
+
+                await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingTrack as any).id);
+            } else {
+                await (supabase.from('global_items') as any).insert(trackPayload).catch(() => { });
+            }
+        }
+
+        // console.log(`      💿 Saved Album + ${tracks.length} Tracks.`);
     }
+
+
 }
 
 startHarvest().catch(console.error);

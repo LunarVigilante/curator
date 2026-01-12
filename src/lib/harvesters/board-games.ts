@@ -5,7 +5,8 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '../services/image/imageService';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const imageService = new ImageService();
 
@@ -217,10 +218,18 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
         const game = games[i];
 
         try {
-            // AI rewrite with limiter
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, game.name, game.description, 'Board Game')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: game.name,
+                    originalDescription: game.description,
+                    type: 'Board Game',
+                    metadata: { mechanics: game.mechanics, categories: game.categories, designers: game.designers }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags (combine mechanics and categories as hints)
             const tagHints = [...(game.mechanics || []), ...(game.categories || [])].join(', ');
@@ -228,9 +237,6 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
                 generateTags(supabase, game.name, `${description} Features: ${tagHints}`, 'Board Game')
             );
             const validTags = await ensureTags(supabase, tagNames);
-
-            // Generate embedding
-            const embedding = await generateEmbedding(`${game.name}: ${description}`);
 
             // Process Image (CDN -> Self-Hosted)
             let image_url = game.image || null;
@@ -244,9 +250,12 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
             const item: HarvestItem = {
                 title: game.name,
                 description,
+                description_parts,
                 image_url,
                 category_type: 'BOARD_GAME',
                 external_ids: { bgg: game.id },
+                mechanics: game.mechanics,
+                designers: game.designers,
                 metadata: {
                     year_published: game.yearPublished,
                     rating: game.rating,
@@ -259,9 +268,15 @@ export async function harvestBoardGames(supabase: ReturnType<typeof createServic
                     source: 'bgg_harvest',
                     original_description: game.description
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'bgg', game.id);
             if (result) success++;
@@ -332,17 +347,24 @@ export async function processBGGIds(
         const game = games[i];
 
         try {
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, game.name, game.description, 'Board Game')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: game.name,
+                    originalDescription: game.description,
+                    type: 'Board Game',
+                    metadata: { mechanics: game.mechanics, categories: game.categories, designers: game.designers }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             const tagHints = [...(game.mechanics || []), ...(game.categories || [])].join(', ');
             const tagNames = await aiLimiter(() =>
                 generateTags(supabase, game.name, `${description} Features: ${tagHints}`, 'Board Game')
             );
             const validTags = await ensureTags(supabase, tagNames);
-
-            const embedding = await generateEmbedding(`${game.name}: ${description}`);
 
             // Process Image (CDN -> Self-Hosted)
             let image_url = game.image || null;
@@ -356,9 +378,12 @@ export async function processBGGIds(
             const item: HarvestItem = {
                 title: game.name,
                 description,
+                description_parts,
                 image_url,
                 category_type: 'BOARD_GAME',
                 external_ids: { bgg: game.id },
+                mechanics: game.mechanics,
+                designers: game.designers,
                 metadata: {
                     year_published: game.yearPublished,
                     rating: game.rating,
@@ -371,9 +396,15 @@ export async function processBGGIds(
                     source,
                     original_description: game.description
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'bgg', game.id);
             if (result) success++;

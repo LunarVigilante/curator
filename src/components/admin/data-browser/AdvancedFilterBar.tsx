@@ -30,7 +30,7 @@ type FilterField =
     | 'developer' | 'publisher' | 'platform'
     | 'designer' | 'mechanic' | 'artist' | 'category'
 
-const FILTER_FIELDS: { label: string; field: FilterField; icon?: any }[] = [
+const FILTER_FIELDS: { label: string; field: FilterField | 'language' | 'production'; icon?: any }[] = [
     { label: 'Genre', field: 'genre' },
     { label: 'Year', field: 'year' },
     { label: 'Content Rating', field: 'content_rating' },
@@ -39,6 +39,8 @@ const FILTER_FIELDS: { label: string; field: FilterField; icon?: any }[] = [
     { label: 'Writer', field: 'writer' },
     { label: 'Cast', field: 'cast' },
     { label: 'Country', field: 'country' },
+    { label: 'Language', field: 'language' },
+    { label: 'Production', field: 'production' },
     // Game specific
     { label: 'Developer', field: 'developer' },
     { label: 'Publisher', field: 'publisher' },
@@ -57,7 +59,13 @@ const SORT_OPTIONS = [
     { label: 'Critic Rating', value: 'metacritic' },
     { label: 'Audience Rating', value: 'vote_average' },
     { label: 'Runtime', value: 'runtime' },
-    { label: 'Popularity', value: 'total_rating_count' }, // If available
+    { label: 'Last Updated', value: 'last_metadata_update' },
+    { label: 'Reference ID', value: 'id' },
+    { label: 'Director', value: 'director' },
+    { label: 'Studio', value: 'studio' },
+    { label: 'Writer', value: 'writer' },
+    { label: 'Content Rating', value: 'content_rating' },
+    { label: 'Language', value: 'original_language' },
 ]
 
 export function AdvancedFilterBar({ categoryType, onSortChange, currentSort, currentOrder }: AdvancedFilterBarProps) {
@@ -67,7 +75,7 @@ export function AdvancedFilterBar({ categoryType, onSortChange, currentSort, cur
 
     // State for Filter Popover
     const [openFilter, setOpenFilter] = useState(false)
-    const [selectedField, setSelectedField] = useState<FilterField | null>(null)
+    const [selectedField, setSelectedField] = useState<FilterField | 'language' | 'production' | null>(null)
     const [filterValues, setFilterValues] = useState<FilterOption[]>([])
     const [loadingValues, setLoadingValues] = useState(false)
     const [filterSearch, setFilterSearch] = useState('')
@@ -108,6 +116,8 @@ export function AdvancedFilterBar({ categoryType, onSortChange, currentSort, cur
                 if (selectedField === 'mechanic') dbColumn = 'mechanics'
                 if (selectedField === 'artist') dbColumn = 'artists'
                 if (selectedField === 'category') dbColumn = 'categories' // board game categories
+                if (selectedField === 'language') dbColumn = 'original_language'
+                if (selectedField === 'production') dbColumn = 'production_companies'
 
                 const { data, error } = await supabase.rpc('get_filter_values', {
                     p_column: dbColumn,

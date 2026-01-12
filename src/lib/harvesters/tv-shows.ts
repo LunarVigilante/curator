@@ -5,7 +5,8 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { HarvestItem, HarvestResult, sleep, aiLimiter, rewriteDescription, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { HarvestItem, HarvestResult, sleep, aiLimiter, upsertItem, generateEmbedding, generateTags, ensureTags } from './shared';
+import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const API_DELAY_MS = 250;  // 250ms between calls for rate limiting
@@ -91,10 +92,18 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
         const show = shows[i];
 
         try {
-            // AI rewrite with limiter
-            const description = await aiLimiter(() =>
-                rewriteDescription(supabase, show.name, show.overview, 'TV Show')
+            // Generate 4-part structured description (parallel LLM calls)
+            const description_parts = await aiLimiter(() =>
+                generateStructuredDescription(supabase, {
+                    title: show.name,
+                    originalDescription: show.overview,
+                    type: 'TV Show',
+                    metadata: { genre_ids: show.genre_ids, first_air_date: show.first_air_date }
+                })
             );
+
+            // Combine for backwards compatibility
+            const description = combineDescription(description_parts);
 
             // Generate tags
             const tagNames = await aiLimiter(() =>
@@ -102,19 +111,17 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
             );
             const validTags = await ensureTags(supabase, tagNames);
 
-            // Generate embedding
-            const embedding = await generateEmbedding(`${show.name}: ${description}`);
-
             const item: HarvestItem = {
                 title: show.name,
                 description,
+                description_parts,
                 image_url: show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : null,
                 category_type: 'TV_SHOW',
                 external_ids: { tmdb_tv: show.id },
                 original_language: show.original_language || null,
                 origin_countries: show.origin_country || [],
                 metadata: {
-                    release_date: show.first_air_date,  // Mapped from first_air_date
+                    release_date: show.first_air_date,
                     first_air_date: show.first_air_date,
                     vote_average: show.vote_average,
                     vote_count: show.vote_count,
@@ -122,13 +129,19 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
                     genre_ids: show.genre_ids,
                     original_language: show.original_language,
                     origin_country: show.origin_country,
-                    media_type: 'tv',  // Distinguish from movies
+                    media_type: 'tv',
                     source: 'tmdb_harvest',
                     original_overview: show.overview
                 },
-                cached_tags: validTags,
-                ...(embedding ? { embedding } : {})
+                cached_tags: validTags
             };
+
+            // Generate rich embedding from all item data
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
+            if (embedding) {
+                item.embedding = embedding;
+            }
 
             const result = await upsertItem(supabase, item, 'tmdb_tv', show.id);
             if (result) success++;
@@ -142,9 +155,10 @@ export async function harvestTvShows(supabase: ReturnType<typeof createServiceRo
             console.log(`   📺 TV Shows: ${i + 1}/${shows.length} (${success} added, ${failed} failed)`);
         }
 
-        await sleep(50);  // Small delay between DB operations
+        await sleep(50);
     }
 
     console.log(`✅ TV Shows: ${success} added, ${skipped} skipped, ${failed} failed`);
     return { success, skipped, failed, category: 'TV Shows' };
 }
+

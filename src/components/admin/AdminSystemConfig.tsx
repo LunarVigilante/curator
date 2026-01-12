@@ -47,19 +47,15 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     const [bggApiKey, setBggApiKey] = useState(settings?.['bgg_api_key'] || '');
     const [metronUsername, setMetronUsername] = useState(settings?.['metron_username'] || '');
     const [metronPassword, setMetronPassword] = useState(settings?.['metron_password'] || '');
+    const [omdbApiKey, setOmdbApiKey] = useState(settings?.['omdb_api_key'] || '');
 
     // Voyage AI (Embeddings)
     const [voyageApiKey, setVoyageApiKey] = useState(settings?.['voyage_api_key'] || '');
 
     // Media API Endpoints (Custom URLs)
-    const [tmdbApiUrl, setTmdbApiUrl] = useState(settings?.['tmdb_api_url'] || 'https://api.themoviedb.org/3');
-    const [rawgApiUrl, setRawgApiUrl] = useState(settings?.['rawg_api_url'] || 'https://api.rawg.io/api');
-    const [googleBooksApiUrl, setGoogleBooksApiUrl] = useState(settings?.['google_books_api_url'] || 'https://www.googleapis.com/books/v1');
-    const [spotifyApiUrl, setSpotifyApiUrl] = useState(settings?.['spotify_api_url'] || 'https://api.spotify.com/v1');
-    const [anilistApiUrl, setAnilistApiUrl] = useState(settings?.['anilist_api_url'] || 'https://graphql.anilist.co');
-    const [comicVineApiUrl, setComicVineApiUrl] = useState(settings?.['comicvine_api_url'] || 'https://comicvine.gamespot.com/api');
-    const [bggApiUrl, setBggApiUrl] = useState(settings?.['bgg_api_url'] || 'https://boardgamegeek.com/xmlapi2');
-    const [itunesApiUrl, setItunesApiUrl] = useState(settings?.['itunes_api_url'] || 'https://itunes.apple.com');
+    // Twitch / IGDB
+    const [twitchClientId, setTwitchClientId] = useState(settings?.['twitch_client_id'] || '');
+    const [twitchClientSecret, setTwitchClientSecret] = useState(settings?.['twitch_client_secret'] || '');
 
     // Email State
     const [resendKey, setResendKey] = useState(settings?.['resend_api_key'] || '');
@@ -80,14 +76,15 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     // Connection Status for Services
     const [serviceStatuses, setServiceStatuses] = useState<Record<string, { status: 'idle' | 'loading' | 'success' | 'error', message?: string }>>({
         tmdb: { status: 'idle' },
-        rawg: { status: 'idle' },
         googlebooks: { status: 'idle' },
         spotify: { status: 'idle' },
         resend: { status: 'idle' },
         comicvine: { status: 'idle' },
         bgg: { status: 'idle' },
         metron: { status: 'idle' },
-        steamgrid: { status: 'idle' }
+        steamgrid: { status: 'idle' },
+        omdb: { status: 'idle' },
+        twitch: { status: 'idle' }
     });
 
 
@@ -111,6 +108,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
 
             if (config['tmdb_api_key']) setTmdbApiKey(config['tmdb_api_key']);
             if (config['rawg_api_key']) setRawgApiKey(config['rawg_api_key']);
+            if (config['twitch_client_id']) setTwitchClientId(config['twitch_client_id']);
+            if (config['twitch_client_secret']) setTwitchClientSecret(config['twitch_client_secret']);
             if (config['google_books_api_key']) setGoogleBooksApiKey(config['google_books_api_key']);
             if (config['spotify_client_id']) setSpotifyClientId(config['spotify_client_id']);
             if (config['spotify_client_secret']) setSpotifyClientSecret(config['spotify_client_secret']);
@@ -118,6 +117,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
             if (config['bgg_api_key']) setBggApiKey(config['bgg_api_key']);
             if (config['metron_username']) setMetronUsername(config['metron_username']);
             if (config['metron_password']) setMetronPassword(config['metron_password']);
+            if (config['omdb_api_key']) setOmdbApiKey(config['omdb_api_key']);
 
             if (config['resend_api_key']) setResendKey(config['resend_api_key']);
             if (config['resend_from_email']) setFromEmail(config['resend_from_email']);
@@ -158,7 +158,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
     };
 
-    const handleTestService = async (service: 'tmdb' | 'rawg' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron', apiKey: string, clientSecret?: string) => {
+    const handleTestService = async (service: 'tmdb' | 'twitch' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron' | 'omdb' | 'steamgrid', apiKey: string, clientSecret?: string) => {
         setServiceStatuses(prev => ({ ...prev, [service]: { status: 'loading' } }));
         try {
             const result = await testServiceConnection({ service, apiKey, clientSecret });
@@ -234,26 +234,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 llmModel,
                 systemPrompt,
                 tmdbApiKey,
-                rawgApiKey,
-                googleBooksApiKey,
-                spotifyClientId,
-                spotifyClientSecret,
-                comicVineApiKey,
-                bggApiKey,
-                metronUsername,
-                metronPassword,
-                resendApiKey: resendKey,
-                fromEmail,
-                appUrl,
-                // API Endpoints
-                tmdbApiUrl,
-                rawgApiUrl,
-                googleBooksApiUrl,
-                spotifyApiUrl,
-                anilistApiUrl,
-                comicVineApiUrl,
-                bggApiUrl,
-                itunesApiUrl,
+                twitchClientId,
+                twitchClientSecret,
                 // Voyage AI
                 voyageApiKey,
                 steamGridApiKey,
@@ -529,60 +511,68 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                             />
                             {serviceStatuses.tmdb.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.tmdb.message}</p>}
                             <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://www.themoviedb.org/settings/api" target="_blank" className="underline hover:text-white">themoviedb.org</a></p>
-                            <Input
-                                type="text"
-                                value={tmdbApiUrl}
-                                onChange={e => setTmdbApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://api.themoviedb.org/3)"
-                                className="text-xs h-8 bg-white/5"
-                            />
                         </div>
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between">
-                                <Label>RAWG.io API Key (Games)</Label>
+                                <Label>Twitch API (IGDB / Video Games)</Label>
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => handleTestService('rawg', rawgApiKey)}
-                                    disabled={serviceStatuses.rawg.status === 'loading' || !rawgApiKey}
+                                    onClick={() => handleTestService('twitch', twitchClientId, twitchClientSecret)}
+                                    disabled={serviceStatuses.twitch?.status === 'loading' || !twitchClientId || !twitchClientSecret}
                                     className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
                                 >
-                                    {serviceStatuses.rawg.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.rawg.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.rawg.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test RAWG
+                                    {serviceStatuses.twitch?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
+                                        serviceStatuses.twitch?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
+                                            serviceStatuses.twitch?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
+                                    Test Twitch
                                 </Button>
                             </div>
-                            <Input
-                                type="password"
-                                value={rawgApiKey}
-                                onChange={e => { setRawgApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, rawg: { status: 'idle' } })); }}
-                                placeholder="RAWG Video Games Database Key"
-                                className={serviceStatuses.rawg.status === 'success' ? 'border-green-500/50' : serviceStatuses.rawg.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.rawg.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.rawg.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://rawg.io/apidocs" target="_blank" className="underline hover:text-white">rawg.io</a></p>
-                            <Input
-                                type="text"
-                                value={rawgApiUrl}
-                                onChange={e => setRawgApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://api.rawg.io/api)"
-                                className="text-xs h-8 bg-white/5"
-                            />
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                    type="password"
+                                    value={twitchClientId}
+                                    onChange={e => { setTwitchClientId(e.target.value); setServiceStatuses(prev => ({ ...prev, twitch: { status: 'idle' } })); }}
+                                    placeholder="Client ID"
+                                    className={serviceStatuses.twitch?.status === 'success' ? 'border-green-500/50' : serviceStatuses.twitch?.status === 'error' ? 'border-red-500/50' : ''}
+                                />
+                                <Input
+                                    type="password"
+                                    value={twitchClientSecret}
+                                    onChange={e => { setTwitchClientSecret(e.target.value); setServiceStatuses(prev => ({ ...prev, twitch: { status: 'idle' } })); }}
+                                    placeholder="Client Secret"
+                                />
+                            </div>
+                            {serviceStatuses.twitch?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.twitch.message}</p>}
+                            <p className="text-[10px] text-muted-foreground">Required for game metadata. Get credentials from <a href="https://dev.twitch.tv/console" target="_blank" className="underline hover:text-white">Twitch Console</a></p>
                         </div>
 
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between">
                                 <Label>SteamGridDB API Key (Game Covers)</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleTestService('steamgrid', steamGridApiKey)}
+                                    disabled={serviceStatuses.steamgrid?.status === 'loading' || !steamGridApiKey}
+                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
+                                >
+                                    {serviceStatuses.steamgrid?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
+                                        serviceStatuses.steamgrid?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
+                                            serviceStatuses.steamgrid?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
+                                    Test SteamGridDB
+                                </Button>
                             </div>
                             <Input
                                 type="password"
                                 value={steamGridApiKey}
-                                onChange={e => setSteamGridApiKey(e.target.value)}
+                                onChange={e => { setSteamGridApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, steamgrid: { status: 'idle' } })); }}
                                 placeholder="SteamGridDB API Key"
-                                className="bg-zinc-900/50"
+                                className={serviceStatuses.steamgrid?.status === 'success' ? 'border-green-500/50' : serviceStatuses.steamgrid?.status === 'error' ? 'border-red-500/50' : ''}
                             />
+                            {serviceStatuses.steamgrid?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.steamgrid.message}</p>}
                             <p className="text-[10px] text-muted-foreground">Required for high-quality vertical game covers. Get key from <a href="https://www.steamgriddb.com/profile/preferences" target="_blank" className="underline hover:text-white">SteamGridDB Preferences</a></p>
                         </div>
 
@@ -612,13 +602,6 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                             />
                             {serviceStatuses.googlebooks?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.googlebooks.message}</p>}
                             <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline hover:text-white">Google Cloud Console</a></p>
-                            <Input
-                                type="text"
-                                value={googleBooksApiUrl}
-                                onChange={e => setGoogleBooksApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://www.googleapis.com/books/v1)"
-                                className="text-xs h-8 bg-white/5"
-                            />
                         </div>
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between">
@@ -654,13 +637,6 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                             </div>
                             {serviceStatuses.spotify?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.spotify.message}</p>}
                             <p className="text-[10px] text-muted-foreground">Get your credentials from <a href="https://developer.spotify.com/dashboard" target="_blank" className="underline hover:text-white">Spotify Developer Dashboard</a></p>
-                            <Input
-                                type="text"
-                                value={spotifyApiUrl}
-                                onChange={e => setSpotifyApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://api.spotify.com/v1)"
-                                className="text-xs h-8 bg-white/5"
-                            />
                         </div>
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between">
@@ -688,13 +664,6 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                             />
                             {serviceStatuses.comicvine?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.comicvine.message}</p>}
                             <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://comicvine.gamespot.com/api/" target="_blank" className="underline hover:text-white">ComicVine API</a></p>
-                            <Input
-                                type="text"
-                                value={comicVineApiUrl}
-                                onChange={e => setComicVineApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://comicvine.gamespot.com/api)"
-                                className="text-xs h-8 bg-white/5"
-                            />
                         </div>
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between">
@@ -722,13 +691,35 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                             />
                             {serviceStatuses.bgg?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.bgg.message}</p>}
                             <p className="text-[10px] text-muted-foreground">Register at <a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" className="underline hover:text-white">BGG API Terms</a> to get access</p>
+                        </div>
+
+                        {/* OMDB (Ratings) */}
+                        <div className="grid gap-2">
+                            <div className="flex items-center justify-between">
+                                <Label>OMDB API Key (Global Ratings)</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleTestService('omdb', omdbApiKey)}
+                                    disabled={serviceStatuses.omdb?.status === 'loading' || !omdbApiKey}
+                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
+                                >
+                                    {serviceStatuses.omdb?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
+                                        serviceStatuses.omdb?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
+                                            serviceStatuses.omdb?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
+                                    Test OMDB
+                                </Button>
+                            </div>
                             <Input
-                                type="text"
-                                value={bggApiUrl}
-                                onChange={e => setBggApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://boardgamegeek.com/xmlapi2)"
-                                className="text-xs h-8 bg-white/5"
+                                type="password"
+                                value={omdbApiKey}
+                                onChange={e => { setOmdbApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, omdb: { status: 'idle' } })); }}
+                                placeholder="OMDB API Key"
+                                className={serviceStatuses.omdb?.status === 'success' ? 'border-green-500/50' : serviceStatuses.omdb?.status === 'error' ? 'border-red-500/50' : ''}
                             />
+                            {serviceStatuses.omdb?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.omdb.message}</p>}
+                            <p className="text-[10px] text-muted-foreground">Required for fetching Rotten Tomatoes & IMDb ratings. Get key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" className="underline hover:text-white">omdbapi.com</a></p>
                         </div>
 
                         {/* Metron (Comic Backup) */}
@@ -769,30 +760,10 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                         </div>
 
                         {/* AniList (No API Key Required) */}
-                        <div className="grid gap-2">
-                            <Label>AniList API Endpoint (Anime & Manga)</Label>
-                            <Input
-                                type="text"
-                                value={anilistApiUrl}
-                                onChange={e => setAnilistApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://graphql.anilist.co)"
-                                className="text-xs h-8 bg-white/5"
-                            />
-                            <p className="text-[10px] text-muted-foreground">GraphQL API - No API key required. <a href="https://anilist.gitbook.io/anilist-apiv2-docs/" target="_blank" className="underline hover:text-white">AniList API Docs</a></p>
-                        </div>
+
 
                         {/* iTunes (No API Key Required) */}
-                        <div className="grid gap-2">
-                            <Label>iTunes API Endpoint (Podcasts)</Label>
-                            <Input
-                                type="text"
-                                value={itunesApiUrl}
-                                onChange={e => setItunesApiUrl(e.target.value)}
-                                placeholder="API Endpoint (default: https://itunes.apple.com)"
-                                className="text-xs h-8 bg-white/5"
-                            />
-                            <p className="text-[10px] text-muted-foreground">No API key required. <a href="https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/" target="_blank" className="underline hover:text-white">iTunes Search API Docs</a></p>
-                        </div>
+
                     </CardContent>
                     <CardFooter className="pt-4">
                         <Button type="submit" disabled={isLoading}>

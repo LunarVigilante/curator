@@ -8,8 +8,11 @@ export const CATEGORY_TYPES = {
     ANIME: 'ANIME',
     MUSIC_ARTIST: 'MUSIC_ARTIST',
     ALBUM: 'ALBUM',
+    MUSIC_TRACK: 'MUSIC_TRACK',
     PODCAST: 'PODCAST',
-    COMICS: 'COMICS'
+    COMICS: 'COMICS',
+    MANGA: 'MANGA',
+    LIGHT_NOVEL: 'LIGHT_NOVEL'
 } as const
 
 export const CATEGORY_LABELS: Record<string, string> = {
@@ -22,9 +25,12 @@ export const CATEGORY_LABELS: Record<string, string> = {
     [CATEGORY_TYPES.ANIME]: 'Anime',
     [CATEGORY_TYPES.MUSIC_ARTIST]: 'Artists',
     [CATEGORY_TYPES.ALBUM]: 'Albums',
+    [CATEGORY_TYPES.MUSIC_TRACK]: 'Tracks',
     'MUSIC': 'Artists',
     [CATEGORY_TYPES.PODCAST]: 'Podcasts',
-    [CATEGORY_TYPES.COMICS]: 'Comics'
+    [CATEGORY_TYPES.COMICS]: 'Comics',
+    [CATEGORY_TYPES.MANGA]: 'Manga',
+    [CATEGORY_TYPES.LIGHT_NOVEL]: 'Light Novels'
 }
 
 export const DEFAULT_CATEGORIES = [
@@ -36,6 +42,7 @@ export const DEFAULT_CATEGORIES = [
     { name: 'Anime', description: 'Japanese animation', image: '', type: CATEGORY_TYPES.ANIME },
     { name: 'Artists', description: 'Favorite artists', image: '', type: CATEGORY_TYPES.MUSIC_ARTIST },
     { name: 'Albums', description: 'Music albums', image: '', type: CATEGORY_TYPES.ALBUM },
+    { name: 'Tracks', description: 'Individual songs', image: '', type: CATEGORY_TYPES.MUSIC_TRACK },
     { name: 'Podcasts', description: 'Podcasts subscriptions', image: '', type: CATEGORY_TYPES.PODCAST },
     { name: 'Comics', description: 'Comics and manga', image: '', type: CATEGORY_TYPES.COMICS }
 ]
@@ -50,6 +57,7 @@ export function normalizeCategory(cat: string | null): string {
     if (upper === 'BOOKS' || upper === 'BOOK') return CATEGORY_TYPES.BOOKS
     if (upper === 'GAMES' || upper === 'GAME') return CATEGORY_TYPES.VIDEO_GAME
     if (upper === 'MUSIC') return CATEGORY_TYPES.MUSIC_ARTIST
+    if (upper === 'TRACKS' || upper === 'TRACK' || upper === 'SONGS') return CATEGORY_TYPES.MUSIC_TRACK
 
     return upper
 }

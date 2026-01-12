@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 interface FilterPillProps {
     label: string
-    type: 'director' | 'cast' | 'studio' | 'genre' | 'tag' | 'developer' | 'platform' | 'designer' | 'mechanic' | 'artist' | 'content_rating' | 'year'
+    type: 'director' | 'cast' | 'studio' | 'genre' | 'tag' | 'developer' | 'platform' | 'designer' | 'mechanic' | 'artist' | 'content_rating' | 'year' | 'writer' | 'production' | 'language'
     category?: string
     className?: string
 }
@@ -28,7 +28,7 @@ export function FilterPill({ label, type, category, className }: FilterPillProps
             className={cn(
                 "inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full",
                 "bg-zinc-800 text-zinc-300 border border-zinc-700",
-                "hover:bg-red-900/70 hover:text-red-100 hover:border-red-800",
+                "hover:bg-blue-900/70 hover:text-blue-100 hover:border-blue-800",
                 "transition-colors duration-150 cursor-pointer",
                 className
             )}
