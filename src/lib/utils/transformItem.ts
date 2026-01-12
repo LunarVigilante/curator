@@ -1,4 +1,3 @@
-'use server'
 
 /**
  * Shared item transformation logic.
