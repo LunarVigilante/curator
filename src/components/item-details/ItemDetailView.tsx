@@ -189,7 +189,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
     const category = normalizeCategory(item.category_type)
     const isAnime = category === 'ANIME'
     const isTV = category === 'TV' || isAnime // Standardize Anime as TV-like for specs
-    const CategoryIcon = getCategoryIcon(item.category_type)
+    const CategoryIconComponent = getCategoryIcon(item.category_type)
 
     // Background Logic
     const backdropPathRaw = item.backdrop_path
@@ -294,7 +294,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                 />
                             ) : (
                                 <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
-                                    <CategoryIcon className="w-16 h-16 text-zinc-700" />
+                                    {React.createElement(CategoryIconComponent, { className: "w-16 h-16 text-zinc-700" })}
                                 </div>
                             )}
 
@@ -418,7 +418,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                             {/* Breadcrumb / Meta */}
                             <div className="flex items-center gap-3 mb-4">
                                 <Badge className="bg-white/10 text-white border-white/5 backdrop-blur-md px-3 py-1 text-xs font-bold tracking-wider uppercase hover:bg-white/20 transition-colors">
-                                    <CategoryIcon className="w-3 h-3 mr-2" />
+                                    {React.createElement(CategoryIconComponent, { className: "w-3 h-3 mr-2" })}
                                     {item.category_type?.replace(/_/g, ' ') || 'Unknown'}
                                 </Badge>
                                 {item.release_year && (
