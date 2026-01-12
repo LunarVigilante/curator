@@ -10,6 +10,7 @@ import { zfd } from 'zod-form-data'
 import { getSession } from '@/lib/auth'
 import { searchMediaAction } from './media'
 import { getCategory } from './categories'
+import { transformItem, transformItems } from '@/lib/utils/transformItem'
 
 export async function getItems(
     query?: string,
@@ -52,23 +53,8 @@ export async function getItems(
 
     const totalCount = count || 0
 
-    // Transform items
-    const transformedItems = (data || []).map((item: any) => {
-        // Use user-specific tags first, fallback to global cached_tags
-        const userTags = item.tags?.map((t: any) => t.tag).filter(Boolean) || [];
-        const globalTags = item.global_item?.cached_tags || [];
-        const tags = userTags.length > 0 ? userTags : globalTags;
-
-        return {
-            ...item,
-            name: item.global_item?.title || item.name || 'Untitled',
-            description: item.global_item?.description || item.description,
-            image: item.global_item?.image_url || item.image,
-            categoryType: item.global_item?.category_type,
-            tags,
-            ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : []
-        };
-    })
+    // Transform items using shared helper
+    const transformedItems = transformItems(data || [], userId || undefined)
 
     return {
         items: transformedItems,
@@ -95,21 +81,8 @@ export async function getItem(id: string) {
     if (error && error.code !== 'PGRST116') throw error
     if (!item) return null
 
-    // Use user-specific tags first, fallback to global cached_tags
-    const userTags = item.tags?.map((t: any) => t.tag).filter(Boolean) || [];
-    const globalTags = item.global_item?.cached_tags || [];
-    const tags = userTags.length > 0 ? userTags : globalTags;
-
-    return {
-        ...item,
-        name: item.global_item?.title || item.name || 'Untitled',
-        description: item.global_item?.description || item.description,
-        image: item.global_item?.image_url || item.image,
-        categoryType: item.global_item?.category_type,
-        tags,
-        ratings: userId ? item.ratings?.filter((r: any) => r.user_id === userId) : [],
-        category: item.category
-    }
+    // Transform using shared helper
+    return transformItem(item, userId || undefined)
 }
 
 // Zod Schemas
@@ -360,11 +333,14 @@ export async function createItem(formData: FormData) {
 }
 
 export async function updateItemInternal(id: string, input: z.input<typeof updateItemSchema>) {
+    const userId = await getGuestUserId()
+    if (!userId) throw new Error('Unauthorized: Not authenticated')
+
     const data = updateItemSchema.parse(input)
     const supabase = await createClient()
     const { name, description, categoryId, image, metadata, tags: tagIds, notes, tier, rank, categoryType } = data
 
-    // Fetch existing item to get globalItemId
+    // Fetch existing item to get globalItemId and verify ownership
     const { data: existingItem, error: fetchError } = await (supabase.from('items') as any)
         .select('*, global_item:global_items(*)')
         .eq('id', id)
@@ -372,6 +348,11 @@ export async function updateItemInternal(id: string, input: z.input<typeof updat
 
     if (fetchError || !existingItem) {
         throw new Error('Item not found')
+    }
+
+    // Verify ownership
+    if (existingItem.user_id !== userId) {
+        throw new Error('Unauthorized: You do not own this item')
     }
 
     // Auto-localize external images
@@ -516,7 +497,20 @@ export async function applyItemEnhancement(itemId: string, enhancement: { sugges
 }
 
 export async function deleteItem(id: string, categoryId?: string) {
+    const userId = await getGuestUserId()
+    if (!userId) throw new Error('Unauthorized: Not authenticated')
+
     const supabase = await createClient()
+
+    // Verify ownership before deletion
+    const { data: item, error: fetchError } = await (supabase.from('items') as any)
+        .select('user_id')
+        .eq('id', id)
+        .single()
+
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError
+    if (!item) throw new Error('Item not found')
+    if (item.user_id !== userId) throw new Error('Unauthorized: You do not own this item')
 
     const { error } = await (supabase.from('items') as any)
         .delete()
