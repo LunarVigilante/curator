@@ -1,4 +1,5 @@
 
+
 /**
  * Shared item transformation logic.
  * Transforms raw Supabase item rows into the format expected by the UI.
