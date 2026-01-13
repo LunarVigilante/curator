@@ -30,6 +30,12 @@ export interface TransformedItem extends Omit<RawItemRow, 'tags' | 'ratings'> {
     categoryType: string | null
     tags: Tag[]
     ratings: Rating[]
+    // CamelCase convenience fields for UI component compatibility
+    categoryId: string | null
+    eloScore: number
+    createdAt?: Date
+    updatedAt?: Date
+    metadata: string | null
 }
 
 /**
@@ -85,6 +91,13 @@ export function transformItem(rawItem: RawItemRow, userId?: string): Transformed
         ? (rawItem.ratings?.filter(r => r.user_id === userId) || [])
         : (rawItem.ratings || [])
 
+    // Build metadata string from global_item if available
+    const metadata = rawItem.global_item?.metadata
+        ? (typeof rawItem.global_item.metadata === 'string'
+            ? rawItem.global_item.metadata
+            : JSON.stringify(rawItem.global_item.metadata))
+        : (rawItem.metadata ? String(rawItem.metadata) : null)
+
     return {
         ...rawItem,
         name: rawItem.global_item?.title || rawItem.name || 'Untitled',
@@ -93,6 +106,12 @@ export function transformItem(rawItem: RawItemRow, userId?: string): Transformed
         categoryType: rawItem.global_item?.category_type || null,
         tags,
         ratings,
+        // CamelCase convenience fields
+        categoryId: rawItem.category_id,
+        eloScore: rawItem.elo_score ?? 1200,
+        createdAt: rawItem.created_at ? new Date(rawItem.created_at) : undefined,
+        updatedAt: rawItem.updated_at ? new Date(rawItem.updated_at) : undefined,
+        metadata,
     }
 }
 

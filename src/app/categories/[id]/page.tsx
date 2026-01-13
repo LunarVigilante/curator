@@ -72,7 +72,7 @@ export default async function CategoryPage(props: { params: Promise<{ id: string
 
             <CategoryView
                 category={category}
-                items={items}
+                items={items as any}
                 customRanks={customRanks}
                 isOwner={isOwner}
                 isAdmin={isAdmin}
