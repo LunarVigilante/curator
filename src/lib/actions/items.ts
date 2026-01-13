@@ -11,6 +11,8 @@ import { getSession } from '@/lib/auth'
 import { searchMediaAction } from './media'
 import { getCategory } from './categories'
 import { transformItem, transformItems } from '@/lib/utils/transformItem'
+import { upsertGlobalItem } from '@/lib/utils/globalItems'
+import { requireAuth, requireOwnership, requireResource } from '@/lib/utils/errors'
 
 export async function getItems(
     query?: string,
@@ -166,128 +168,7 @@ export async function createItemInternal(input: z.input<typeof createItemSchema>
     return newItem
 }
 
-// Global Item Logic (Helper)
-async function upsertGlobalItem(data: {
-    externalId?: string | null
-    title: string
-    description?: string | null
-    imageUrl?: string | null
-    metadata?: string | null
-    categoryType?: string | null
-}) {
-    const supabase = await createClient()
-
-    // 3. Extract tags from metadata for cached_tags logic (Reusable)
-    let cachedTags: string[] = []
-    let parsedMeta: any = null
-    if (data.metadata) {
-        try {
-            parsedMeta = JSON.parse(data.metadata)
-            if (Array.isArray(parsedMeta.genres)) cachedTags.push(...parsedMeta.genres)
-            if (Array.isArray(parsedMeta.tags)) cachedTags.push(...parsedMeta.tags.slice(0, 10))
-            if (Array.isArray(parsedMeta.categories)) cachedTags.push(...parsedMeta.categories)
-            cachedTags = [...new Set(cachedTags)]
-
-            // DEBUG LOGGING
-            console.log(`[upsertGlobalItem] Title: "${data.title}"`)
-            console.log(`[upsertGlobalItem] Metadata Keys: ${Object.keys(parsedMeta).join(', ')}`)
-            if (parsedMeta.categories) console.log(`[upsertGlobalItem] Categories: ${JSON.stringify(parsedMeta.categories)}`)
-            console.log(`[upsertGlobalItem] Extracted Cached Tags: ${JSON.stringify(cachedTags)}`)
-        } catch (e) {
-            console.error('[upsertGlobalItem] Metadata parse error:', e)
-        }
-    } else {
-        console.log(`[upsertGlobalItem] No metadata provided for "${data.title}"`)
-    }
-
-    // UPDATE HELPER: If we found an existing item, check if we can improve it
-    const updateExisting = async (existing: any) => {
-        const updates: any = {}
-        let hasUpdates = false
-
-        // Update external_id if missing
-        if (!existing.external_id && data.externalId) {
-            updates.external_id = data.externalId
-            hasUpdates = true
-        }
-
-        // Update description if missing and present in new data
-        if (!existing.description && data.description) {
-            updates.description = data.description
-            hasUpdates = true
-        }
-
-        // Update cached_tags if missing
-        if ((!existing.cached_tags || existing.cached_tags.length === 0) && cachedTags.length > 0) {
-            updates.cached_tags = cachedTags
-            hasUpdates = true
-        }
-
-        // Update metadata if missing or we have more info (simple check)
-        if (!existing.metadata && parsedMeta) {
-            updates.metadata = parsedMeta
-            hasUpdates = true
-        }
-
-        // Update Image URL if missing
-        if (!existing.image_url && data.imageUrl) {
-            updates.image_url = data.imageUrl
-            hasUpdates = true
-        }
-
-        // Update category_type if provided (Correction)
-        if (data.categoryType && existing.category_type !== data.categoryType) {
-            updates.category_type = data.categoryType
-            hasUpdates = true
-        }
-
-        if (hasUpdates) {
-            console.log(`[upsertGlobalItem] Enhancing existing item "${existing.title}" with new data`)
-            const { data: updated, error } = await (supabase.from('global_items') as any)
-                .update(updates)
-                .eq('id', existing.id)
-                .select()
-                .single()
-
-            if (!error && updated) return updated
-        }
-        return existing
-    }
-
-    // 1. Check for existing GlobalItem by externalId
-    if (data.externalId) {
-        const { data: existing } = await (supabase.from('global_items') as any)
-            .select('*')
-            .eq('external_id', data.externalId)
-            .single()
-        if (existing) return await updateExisting(existing)
-    }
-
-    // 2. Check for existing GlobalItem by exact title + image as fallback
-    const { data: existingByTitle } = await (supabase.from('global_items') as any)
-        .select('*')
-        .eq('title', data.title)
-        .eq('image_url', data.imageUrl || '')
-        .single()
-    if (existingByTitle) return await updateExisting(existingByTitle)
-
-    // 4. Create new GlobalItem with cached_tags populated
-    const { data: newItem, error } = await (supabase.from('global_items') as any)
-        .insert({
-            external_id: data.externalId,
-            title: data.title,
-            description: data.description,
-            image_url: data.imageUrl,
-            metadata: parsedMeta,
-            cached_tags: cachedTags.length > 0 ? cachedTags : null,
-            category_type: data.categoryType
-        })
-        .select()
-        .single()
-
-    if (error) throw error
-    return newItem
-}
+// Note: upsertGlobalItem is now imported from '@/lib/utils/globalItems'
 
 // FormData schemas using zod-form-data
 const createItemFormSchema = zfd.formData({
