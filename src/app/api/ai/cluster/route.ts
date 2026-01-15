@@ -32,12 +32,12 @@ export async function POST(request: Request) {
 
         for (const itemId of itemIds.slice(0, 10)) { // Limit to prevent rate limiting
             try {
-                const similar = await findSimilarItems(itemId, 20)
+                const similar = await findSimilarItems(itemId, { limit: 20 })
                 const itemSimilarities = new Map<string, number>()
 
                 for (const s of similar) {
                     if (itemIds.includes(s.id)) {
-                        itemSimilarities.set(s.id, s.similarity)
+                        itemSimilarities.set(s.id, s.score)
                     }
                 }
 

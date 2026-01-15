@@ -12,22 +12,21 @@ import {
     Connection,
     Node,
     Edge,
-    NodeTypes,
     Panel,
     BackgroundVariant,
+    type NodeMouseHandler,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Layers, Sparkles, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
+import { Layers, Sparkles } from 'lucide-react'
 import { ItemNode, ItemNodeData } from './ItemNode'
 import { AISidekick } from './AISidekick'
 
-// Node types registration
-const nodeTypes: NodeTypes = {
+// Node types registration - use type assertion for compatibility
+const nodeTypes = {
     item: ItemNode,
-}
+} as const
 
 export interface CanvasItem {
     id: string
@@ -47,7 +46,7 @@ interface InfiniteCanvasProps {
 }
 
 // Layout algorithm for initial placement
-function calculateInitialLayout(items: CanvasItem[]): Node<ItemNodeData>[] {
+function calculateInitialLayout(items: CanvasItem[]): Node[] {
     const GRID_SPACING = 200
     const ITEMS_PER_ROW = Math.ceil(Math.sqrt(items.length))
 
@@ -68,7 +67,7 @@ function calculateInitialLayout(items: CanvasItem[]): Node<ItemNodeData>[] {
                 tier: item.tier,
                 category: item.category_type,
                 similarity: item.similarity,
-            }
+            } satisfies ItemNodeData
         }
     })
 }
@@ -126,15 +125,15 @@ export function InfiniteCanvas({
         [setEdges]
     )
 
-    const onNodeClick = useCallback((_: React.MouseEvent, node: Node<ItemNodeData>) => {
+    const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
         const item = items.find(i => i.id === node.id)
         if (item && onItemClick) {
             onItemClick(item)
         }
     }, [items, onItemClick])
 
-    const onSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
-        setSelectedNodes(nodes.map(n => n.id))
+    const onSelectionChange = useCallback(({ nodes: selectedNodesList }: { nodes: Node[] }) => {
+        setSelectedNodes(selectedNodesList.map(n => n.id))
     }, [])
 
     const handleClusterSelected = useCallback(() => {
@@ -184,7 +183,8 @@ export function InfiniteCanvas({
                 <MiniMap
                     className="bg-black/50 backdrop-blur-md border border-white/10 rounded-lg"
                     nodeColor={(node) => {
-                        const tier = (node.data as ItemNodeData)?.tier
+                        const nodeData = node.data as ItemNodeData
+                        const tier = nodeData?.tier
                         switch (tier) {
                             case 'S': return '#f87171'
                             case 'A': return '#fb923c'

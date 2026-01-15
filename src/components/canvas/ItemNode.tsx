@@ -1,11 +1,11 @@
 'use client'
 
 import React, { memo } from 'react'
-import { Handle, Position, NodeProps } from '@xyflow/react'
+import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
-export interface ItemNodeData {
+export interface ItemNodeData extends Record<string, unknown> {
     title: string
     image: string | null
     tier?: string | null
@@ -23,8 +23,9 @@ const TIER_COLORS: Record<string, string> = {
     'F': 'bg-purple-500 border-purple-400',
 }
 
-function ItemNodeComponent({ data, selected }: NodeProps<ItemNodeData>) {
-    const { title, image, tier, similarity } = data
+function ItemNodeComponent({ data, selected }: NodeProps) {
+    const nodeData = data as ItemNodeData
+    const { title, image, tier, similarity } = nodeData
 
     return (
         <div
