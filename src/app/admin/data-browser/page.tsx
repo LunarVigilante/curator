@@ -227,6 +227,10 @@ export default function DataBrowserPage() {
     // Bulk action state
     const [bulkActionProgress, setBulkActionProgress] = useState<{ current: number; total: number; action: string } | null>(null)
 
+    // Per-item regeneration loading states
+    const [regeneratingDescriptionIds, setRegeneratingDescriptionIds] = useState<Set<string>>(new Set())
+    const [regeneratingTagIds, setRegeneratingTagIds] = useState<Set<string>>(new Set())
+
     const supabase = createClient()
 
     // Fetch config on mount/open
@@ -356,13 +360,11 @@ export default function DataBrowserPage() {
             .order(sortField, { ascending: sortOrder === 'asc', nullsFirst: false })
             .range((page - 1) * pageSize, page * pageSize - 1)
 
-        // Text Search
-        if (searchQuery) {
-            const fuzzyQuery = searchQuery
-                .split(/[\s\-_:,.]+/)
-                .filter(Boolean)
-                .join('%')
-            query = query.ilike('title', `%${fuzzyQuery}%`)
+        // Text Search - require 3+ chars to avoid expensive full-table scans
+        if (searchQuery && searchQuery.length >= 3) {
+            // Use simpler pattern matching for better performance
+            const cleanQuery = searchQuery.trim()
+            query = query.ilike('title', `%${cleanQuery}%`)
         }
 
         // URL-based filters (from FilterPill clicks)
@@ -731,6 +733,9 @@ export default function DataBrowserPage() {
     }
 
     const handleRegenerate = async (item: GlobalItem) => {
+        // Add to loading set
+        setRegeneratingDescriptionIds(prev => new Set(prev).add(item.id))
+
         try {
             const response = await fetch('/api/ai/regenerate-description', {
                 method: 'POST',
@@ -739,37 +744,74 @@ export default function DataBrowserPage() {
             })
 
             if (response.ok) {
-                fetchItems()
+                const data = await response.json()
+                // Update local state immediately with new description
+                setItems(prev => prev.map(i =>
+                    i.id === item.id
+                        ? { ...i, description: data.description, description_parts: data.description_parts }
+                        : i
+                ))
+                toast.success('Description regenerated')
+            } else {
+                toast.error('Failed to regenerate description')
             }
         } catch (error) {
             console.error('Failed to regenerate:', error)
+            toast.error('Failed to regenerate description')
+        } finally {
+            // Remove from loading set
+            setRegeneratingDescriptionIds(prev => {
+                const next = new Set(prev)
+                next.delete(item.id)
+                return next
+            })
         }
     }
 
     const handleGenerateTagsForItem = async (item: GlobalItem) => {
-        const { generateTagsAction } = await import('@/lib/actions/ai')
-        toast.promise(async () => {
+        // Add to loading set
+        setRegeneratingTagIds(prev => new Set(prev).add(item.id))
+
+        try {
+            const { generateTagsAction } = await import('@/lib/actions/ai')
             const data = await generateTagsAction({
                 title: item.title,
                 type: item.category_type,
                 description: item.description || ''
             })
+
             if (data.tags && data.tags.length > 0) {
                 const { createTagsBatch } = await import('@/lib/actions/tags')
                 const validTags = await createTagsBatch(data.tags)
-                // Save to item
+                const cachedTags = validTags.map(t => ({ id: t.id, name: t.name }))
+
+                // Save to database
                 await (supabase.from('global_items') as any).update({
-                    cached_tags: validTags.map(t => ({ id: t.id, name: t.name }))
+                    cached_tags: cachedTags
                 }).eq('id', item.id)
-                fetchItems()
-                return `Generated ${validTags.length} tags`
+
+                // Update local state immediately
+                setItems(prev => prev.map(i =>
+                    i.id === item.id
+                        ? { ...i, cached_tags: cachedTags }
+                        : i
+                ))
+
+                toast.success(`Generated ${validTags.length} tags`)
+            } else {
+                toast.error('No tags generated')
             }
-            throw new Error('No tags generated')
-        }, {
-            loading: 'Generating tags...',
-            success: (msg: any) => msg,
-            error: 'Failed to generate tags'
-        })
+        } catch (error) {
+            console.error('Failed to generate tags:', error)
+            toast.error('Failed to generate tags')
+        } finally {
+            // Remove from loading set
+            setRegeneratingTagIds(prev => {
+                const next = new Set(prev)
+                next.delete(item.id)
+                return next
+            })
+        }
     }
 
     // ========================================================================
@@ -1211,25 +1253,35 @@ export default function DataBrowserPage() {
                                                             size="icon"
                                                             variant="secondary"
                                                             className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
+                                                            disabled={regeneratingDescriptionIds.has(item.id)}
                                                             onClick={(e) => {
                                                                 e.stopPropagation()
                                                                 handleRegenerate(item)
                                                             }}
                                                             title="Regenerate Description"
                                                         >
-                                                            <Sparkles className="w-4 h-4" />
+                                                            {regeneratingDescriptionIds.has(item.id) ? (
+                                                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                                            ) : (
+                                                                <Sparkles className="w-4 h-4" />
+                                                            )}
                                                         </Button>
                                                         <Button
                                                             size="icon"
                                                             variant="secondary"
                                                             className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
+                                                            disabled={regeneratingTagIds.has(item.id)}
                                                             onClick={(e) => {
                                                                 e.stopPropagation()
                                                                 handleGenerateTagsForItem(item)
                                                             }}
                                                             title="Generate Tags"
                                                         >
-                                                            <Wand2 className="w-4 h-4" />
+                                                            {regeneratingTagIds.has(item.id) ? (
+                                                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                                            ) : (
+                                                                <Wand2 className="w-4 h-4" />
+                                                            )}
                                                         </Button>
                                                         <Button
                                                             size="icon"
