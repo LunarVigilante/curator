@@ -55,6 +55,27 @@ export interface LLMConfig {
 // SHARED UTILITIES
 // ============================================================================
 
+/**
+ * Decode HTML entities (e.g., &amp;#039; -> ')
+ */
+export function decodeHTMLEntities(text: string): string {
+    if (!text) return '';
+    return text
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&#39;/g, "'")
+        .replace(/&#x27;/g, "'")
+        .replace(/&ndash;/g, '–')
+        .replace(/&mdash;/g, '—')
+        .replace(/&hellip;/g, '…')
+        .replace(/&#10;/g, ' ')
+        .replace(/&nbsp;/g, ' ');
+}
+
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Patterns to remove - only match at START of line or after newline
