@@ -4,7 +4,6 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { AntigravityBackground } from "@/components/ui/AntigravityBackground";
-import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { Navbar } from "@/components/layout/Navbar";
 import { PasswordResetGuard } from "@/components/auth/PasswordResetGuard";
 
@@ -40,27 +39,23 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-          <PostHogProvider
-            apiKey={process.env.NEXT_PUBLIC_POSTHOG_KEY}
-            apiHost={process.env.NEXT_PUBLIC_POSTHOG_HOST}
-          >
-            <PasswordResetGuard />
+          <PasswordResetGuard />
 
-            {/* 1. Global Background (The Base) */}
-            <AntigravityBackground className="fixed inset-0 z-0" />
+          {/* 1. Global Background (The Base) */}
+          <AntigravityBackground className="fixed inset-0 z-0" />
 
-            {/* 2. Main Content Wrapper */}
-            <div className="relative z-10 flex flex-col min-h-screen">
-              <Navbar />
-              <main className="flex-1">
-                {children}
-              </main>
-            </div>
+          {/* 2. Main Content Wrapper */}
+          <div className="relative z-10 flex flex-col min-h-screen">
+            <Navbar />
+            <main className="flex-1">
+              {children}
+            </main>
+          </div>
 
-            <Toaster />
-          </PostHogProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>
   );
 }
+

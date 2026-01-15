@@ -13,7 +13,7 @@ export default async function ItemsPage({
 
     return (
         <ItemsPageClient
-            items={items}
+            items={items as any}
             initialQuery={query}
             totalPages={totalPages}
             currentPage={currentPage}

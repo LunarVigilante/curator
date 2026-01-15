@@ -24,7 +24,7 @@ export default function LoginPage() {
         setError(null);
 
         try {
-            const { data, error: signInError } = await signIn(email, password);
+            const { error: signInError } = await signIn(email, password);
 
             if (signInError) {
                 setError(signInError.message);
@@ -32,11 +32,6 @@ export default function LoginPage() {
                 return;
             }
 
-            if (typeof window !== 'undefined' && (window as any).posthog) {
-                if (data?.user) {
-                    (window as any).posthog.identify(data.user.id, { email: data.user.email });
-                }
-            }
             router.push('/');
             router.refresh();
         } catch (err: any) {

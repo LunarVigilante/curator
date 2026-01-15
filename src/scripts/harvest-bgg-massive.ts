@@ -96,14 +96,14 @@ function decodeHTMLEntities(text: string): string {
 // BGG PARSING LOGIC
 // ============================================================================
 
-function parsePolls($item: cheerio.Cheerio<any>, $: any) {
+function parsePolls($item: any, $: any) {
     // 1. Player Count Poll
     let bestPlayers: string[] = [];
     let recPlayers: string[] = [];
 
     const playersPoll = $item.find('poll[name="suggested_numplayers"]');
     if (playersPoll.length) {
-        playersPoll.find('results').each((_, results) => {
+        playersPoll.find('results').each((_: number, results: any) => {
             const numPlayers = $(results).attr('numplayers');
             if (!numPlayers) return;
 
@@ -131,7 +131,7 @@ function parsePolls($item: cheerio.Cheerio<any>, $: any) {
     const langPoll = $item.find('poll[name="language_dependence"]');
     if (langPoll.length) {
         let maxVotes = -1;
-        langPoll.find('result').each((_, res) => {
+        langPoll.find('result').each((_: number, res: any) => {
             const votes = parseInt($(res).attr('numvotes') || '0');
             const value = $(res).attr('value'); // e.g. "No necessary in-game text"
             if (votes > maxVotes && value) {
@@ -146,7 +146,7 @@ function parsePolls($item: cheerio.Cheerio<any>, $: any) {
     const agePoll = $item.find('poll[name="suggested_playerage"]');
     if (agePoll.length) {
         let maxVotes = -1;
-        agePoll.find('result').each((_, res) => {
+        agePoll.find('result').each((_: number, res: any) => {
             const votes = parseInt($(res).attr('numvotes') || '0');
             const value = $(res).attr('value');
             if (votes > maxVotes && value) {
@@ -172,7 +172,7 @@ async function fetchBatch(ids: number[]): Promise<ParsedGame[]> {
         const xml = await fetchFromBgg(`thing?id=${idsParam}&stats=1`);
         const $ = cheerio.load(xml, { xmlMode: true });
 
-        $('item').each((_, el) => {
+        $('item').each((_: number, el: any) => {
             const $item = $(el);
             const id = parseInt($item.attr('id') || '0');
             const type = $item.attr('type') || 'unknown';
@@ -203,7 +203,7 @@ async function fetchBatch(ids: number[]): Promise<ParsedGame[]> {
             const minAge = parseInt($item.find('minage').attr('value') || '0');
 
             // Arrays (Links)
-            const getLinks = (type: string) => $item.find(`link[type="${type}"]`).map((_, l) => $(l).attr('value')).get();
+            const getLinks = (type: string) => $item.find(`link[type="${type}"]`).map((_: number, l: any) => $(l).attr('value')).get();
 
             const mechanics = getLinks('boardgamemechanic');
             const categories = getLinks('boardgamecategory');
@@ -392,25 +392,128 @@ Description: ${game.description}
         };
 
         // Safe Upsert Logic
-        const { data: existingBgg } = await supabase
+        const { data: existing } = await supabase
             .from('global_items')
-            .select('id, description_parts')
+            .select('*')
             .eq('source', 'bgg')
             .eq('external_id', String(game.id))
             .maybeSingle();
 
-        if (existingBgg) {
-            // Update - STRICTLY preserving description/tags/vectors
-            const updatePayload = { ...payload };
-            delete (updatePayload as any).description;
-            delete (updatePayload as any).description_parts;
-            delete (updatePayload as any).cached_tags;
-            delete (updatePayload as any).vector_text;
-            delete (updatePayload as any).image_url;
+        if (existing) {
+            // ═══════════════════════════════════════════════════════════════
+            // SMART BACKFILL: Only update fields that are null/missing
+            // NEVER touch: description, description_parts, cached_tags, vector_text
+            // ═══════════════════════════════════════════════════════════════
+            const backfillPayload: Record<string, any> = {};
+
+            // Helper: Add to payload only if existing value is null/undefined/empty
+            const backfill = (key: string, newValue: any) => {
+                const existingVal = (existing as any)[key];
+                const isEmpty = existingVal === null || existingVal === undefined ||
+                    (Array.isArray(existingVal) && existingVal.length === 0) ||
+                    existingVal === '';
+                if (isEmpty && newValue !== null && newValue !== undefined) {
+                    backfillPayload[key] = newValue;
+                }
+            };
+
+            // Core metadata
+            backfill('image_url', finalImageUrl);
+            backfill('release_year', game.yearPublished);
+            backfill('vote_average', game.rating ? parseFloat(game.rating.toFixed(2)) : null);
+
+            // Board game specs
+            backfill('min_players', game.minPlayers || null);
+            backfill('max_players', game.maxPlayers || null);
+            backfill('min_playtime', game.minPlaytime || null);
+            backfill('max_playtime', game.maxPlaytime || null);
+            backfill('min_age', game.minAge || null);
+
+            // Rich data
+            backfill('mechanics', game.mechanics);
+            backfill('categories', game.categories);
+            backfill('families', game.families);
+            backfill('complexity', game.weight || null);
+            backfill('rank_overall', game.rank);
+
+            // Community data
+            backfill('best_players', game.bestPlayers);
+            backfill('min_age_community', game.communityMinAge);
+            backfill('language_dependence', game.languageDependence);
+
+            // People
+            backfill('designers', game.designers);
+            backfill('artists', game.artists);
+            backfill('publishers', game.publishers);
+
+            // Other
+            backfill('is_expansion', isExpansion);
+            backfill('bgg_id', game.id);
+
+            // Special: Import BGG tags ONLY if cached_tags is empty
+            const existingTags = (existing as any).cached_tags;
+            if (!existingTags || existingTags.length === 0) {
+                backfillPayload.cached_tags = validTags;
+                console.log(`   ║    📥 Backfilling tags (was empty)`);
+            }
+
+            // Always update metadata and last_metadata_update
+            backfillPayload.metadata = {
+                ...(existing as any).metadata,
+                source: 'bgg_ultimate',
+                users_rated: game.usersRated,
+                recommended_players: game.recommendedPlayers,
+                original_description: game.description.substring(0, 1000)
+            };
+            backfillPayload.last_metadata_update = new Date().toISOString();
+
+            const fieldsToUpdate = Object.keys(backfillPayload).filter(k => k !== 'metadata' && k !== 'last_metadata_update');
+
+            // Regenerate embedding if we backfilled meaningful metadata
+            const meaningfulFields = ['mechanics', 'categories', 'designers', 'complexity', 'best_players', 'families'];
+            const backfilledMeaningful = fieldsToUpdate.some(f => meaningfulFields.includes(f));
+
+            if (backfilledMeaningful || fieldsToUpdate.length > 3) {
+                console.log(`   ╟────────────────────────────────────────────────────────────────`);
+                console.log(`   ║ 🧮 REGENERATING EMBEDDING (metadata enriched)...`);
+
+                // Build rich vector text using existing description + new/existing metadata
+                const existingDesc = (existing as any).description || game.description;
+                const finalMechanics = backfillPayload.mechanics || (existing as any).mechanics || game.mechanics;
+                const finalCategories = backfillPayload.categories || (existing as any).categories || game.categories;
+                const finalDesigners = backfillPayload.designers || (existing as any).designers || game.designers;
+                const finalComplexity = backfillPayload.complexity || (existing as any).complexity || game.weight;
+                const finalBestPlayers = backfillPayload.best_players || (existing as any).best_players || game.bestPlayers;
+
+                const enrichedVectorText = `
+                    Title: ${game.name}
+                    Designers: ${(finalDesigners || []).join(', ')}
+                    Mechanics: ${(finalMechanics || []).join(', ')}
+                    Theme: ${(finalCategories || []).join(', ')}
+                    Complexity: ${finalComplexity ? finalComplexity.toFixed(1) : 'N/A'} / 5
+                    Best Players: ${finalBestPlayers || 'N/A'}
+                    Description: ${existingDesc}
+                `.trim();
+
+                const startEmbed = Date.now();
+                const newEmbedding = await generateEmbedding(enrichedVectorText);
+                if (newEmbedding) {
+                    backfillPayload.vector_text = JSON.stringify(newEmbedding);
+                    console.log(`   ║    ✅ Embedding regenerated in ${Date.now() - startEmbed}ms (${newEmbedding.length} dimensions)`);
+                } else {
+                    console.log(`   ║    ⚠️  Embedding generation failed`);
+                }
+            }
+
+            if (fieldsToUpdate.length > 0) {
+                console.log(`   ║ 📥 BACKFILLING ${fieldsToUpdate.length} missing fields: ${fieldsToUpdate.join(', ')}`);
+            } else {
+                console.log(`   ║ ✓ No missing fields to backfill`);
+            }
 
             const { error } = await (supabase.from('global_items') as any)
-                .update(updatePayload)
-                .eq('id', (existingBgg as any).id);
+                .update(backfillPayload)
+                .eq('id', (existing as any).id);
 
             if (error) {
                 console.log(`   ║ ❌ DB ERROR: ${error.message}`);
@@ -418,7 +521,7 @@ Description: ${game.description}
                 return false;
             }
         } else {
-            // Insert
+            // Insert new item
             const { error } = await supabase
                 .from('global_items')
                 .insert(payload as any);

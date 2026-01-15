@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AdminSystemConfig from './AdminSystemConfig';
-import EmailTemplates from './EmailTemplates';
-import { UserPlus, Settings2, Layout, Mail, Trash2, Copy, Loader2, Ticket } from 'lucide-react';
+import { UserPlus, Settings2, Layout, Trash2, Copy, Loader2, Ticket } from 'lucide-react';
 import FeaturedContent from './FeaturedContent';
 import { RegisteredUsersTable } from './RegisteredUsersTable';
 import { Badge } from '@/components/ui/badge';
@@ -147,10 +146,6 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                         <Layout size={16} />
                         Homepage
                     </TabsTrigger>
-                    <TabsTrigger value="templates" className="gap-2">
-                        <Mail size={16} />
-                        Templates
-                    </TabsTrigger>
                     <TabsTrigger value="system" className="gap-2">
                         <Settings2 size={16} />
                         System Config
@@ -160,11 +155,6 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
                 {/* HOMEPAGE TAB */}
                 <TabsContent value="homepage" className="space-y-4">
                     <FeaturedContent />
-                </TabsContent>
-
-                {/* TEMPLATES TAB */}
-                <TabsContent value="templates" className="space-y-4">
-                    <EmailTemplates />
                 </TabsContent>
 
                 {/* USERS TAB */}
