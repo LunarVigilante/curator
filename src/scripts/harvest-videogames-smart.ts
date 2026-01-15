@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
-import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter } from '@/lib/harvesters/shared';
+import { generateEmbedding, generateTags, ensureTags, sleep, aiLimiter } from '@/lib/harvesters/shared';
+import { generateStructuredDescription, combineDescription } from '@/lib/ai/structured-description';
 import { decrypt } from '@/lib/encryption';
 import pLimit from 'p-limit';
 
@@ -329,11 +330,10 @@ async function processTask(task: any) {
                 console.log(`   ║    ⚠️  Upload failed or no image`);
             }
 
-            // 3. AI ENRICHMENT
             console.log(`   ╟────────────────────────────────────────────────────────────────`);
-            console.log(`   ║ 🧠 GENERATING AI DESCRIPTION...`);
+            console.log(`   ║ 🧠 GENERATING STRUCTURED DESCRIPTION...`);
             // RICH CONTEXT: Pass full details to help AI distinguish between remakes
-            const richContext = `
+            const originalDescription = `
 Title: ${title} (${releaseYear || 'N/A'})
 Developer: ${developers.join(', ') || 'N/A'}
 Publisher: ${publishers.join(', ') || 'N/A'}
@@ -344,9 +344,15 @@ Overview: ${game.summary || game.storyline || 'N/A'}
             `.trim();
 
             const startDesc = Date.now();
-            const aiDesc = await aiLimiter(() => rewriteDescription(supabase, title, richContext, 'GAME'));
+            const description_parts = await aiLimiter(() => generateStructuredDescription(supabase, {
+                title,
+                originalDescription,
+                type: 'Video Game',
+                metadata: { genres, platforms: platforms.map((p: any) => p.name), developers }
+            }));
+            const aiDesc = combineDescription(description_parts);
             console.log(`   ║    ✅ Generated in ${Date.now() - startDesc}ms`);
-            console.log(`   ║    Result: ${aiDesc.slice(0, 80)}...`);
+            console.log(`   ║    Premise: ${(description_parts.premise || '').slice(0, 60)}...`);
 
             console.log(`   ╟────────────────────────────────────────────────────────────────`);
             console.log(`   ║ 🏷️  GENERATING TAGS...`);
@@ -382,6 +388,7 @@ Overview: ${game.summary || game.storyline || 'N/A'}
             const payload = {
                 title: title,
                 description: aiDesc,
+                description_parts,
                 category_type: 'VIDEO_GAME', // Normalized
 
                 release_year: releaseYear,
