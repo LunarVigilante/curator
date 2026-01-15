@@ -12,10 +12,15 @@ import pLimit from 'p-limit';
 const GOOGLE_BOOKS_API = 'https://www.googleapis.com/books/v1/volumes';
 const MAX_RESULTS = 40; // Google API Limit
 const SUBJECTS = [
-    'Science Fiction', 'Fantasy', 'Mystery', 'Thriller', 'Romance',
-    'History', 'Science', 'Philosophy', 'Business', 'Self-Help',
-    'Manga', 'Comics', 'Horror', 'Biography', 'Adventure',
-    'Psychology', 'Art', 'Cooking', 'Travel', 'Poetry'
+    // Fiction Genres
+    'Science Fiction', 'Fantasy', 'Mystery', 'Thriller', 'Romance', 'Horror',
+    'Adventure', 'Historical Fiction', 'Literary Fiction', 'Young Adult',
+    // Non-Fiction
+    'History', 'Science', 'Philosophy', 'Business', 'Self-Help', 'Biography',
+    'Psychology', 'Art', 'Cooking', 'Travel', 'Poetry', 'True Crime',
+    'Politics', 'Economics', 'Technology', 'Health', 'Religion', 'Memoir',
+    // Specialty
+    'Classics', 'Essays'
 ];
 const CONCURRENCY = 1;
 
@@ -50,23 +55,50 @@ function getCleanCoverUrl(url: string): string {
 }
 
 // ============================================================================
+// HELPER: PARSE DATE - Ensures proper YYYY-MM-DD format
+// ============================================================================
+function parsePublishedDate(dateStr: string | undefined): { year: number | null, fullDate: string | null } {
+    if (!dateStr) return { year: null, fullDate: null };
+
+    // Try to parse the date string
+    // Formats: "2013", "2013-05", "2013-05-15"
+    const parts = dateStr.split('-');
+
+    if (parts.length === 1 && parts[0].length === 4) {
+        // Just year: "2013" -> "2013-01-01"
+        const year = parseInt(parts[0]);
+        return { year, fullDate: `${parts[0]}-01-01` };
+    } else if (parts.length === 2) {
+        // Year and month: "2013-05" -> "2013-05-01"
+        const year = parseInt(parts[0]);
+        return { year, fullDate: `${parts[0]}-${parts[1]}-01` };
+    } else if (parts.length === 3) {
+        // Full date: "2013-05-15"
+        const year = parseInt(parts[0]);
+        return { year, fullDate: dateStr };
+    }
+
+    return { year: null, fullDate: null };
+}
+
+// ============================================================================
 // MAIN HARVESTER
 // ============================================================================
 async function harvestBooks() {
     console.log(`📚 STARTING BOOK HARVEST`);
-    console.log(`   Subjects: ${SUBJECTS.join(', ')}`);
+    console.log(`   Subjects: ${SUBJECTS.length} categories`);
 
     for (const subject of SUBJECTS) {
         console.log(`\n🔎 Harvesting Subject: ${subject}`);
 
         let startIndex = 0;
         let hasMore = true;
-        // Harvest top 120 books per subject (3 pages of 40)
-        const MAX_PER_SUBJECT = 120;
+        // Harvest top 200 books per subject (5 pages of 40)
+        const MAX_PER_SUBJECT = 200;
 
         while (hasMore && startIndex < MAX_PER_SUBJECT) {
             try {
-                const url = `${GOOGLE_BOOKS_API}?q=subject:${encodeURIComponent(subject)}&langRestrict=en&maxResults=${MAX_RESULTS}&startIndex=${startIndex}&printType=books`;
+                const url = `${GOOGLE_BOOKS_API}?q=subject:${encodeURIComponent(subject)}&langRestrict=en&maxResults=${MAX_RESULTS}&startIndex=${startIndex}&printType=books&orderBy=relevance`;
 
                 const res = await fetch(url);
 
@@ -149,7 +181,7 @@ async function processBook(item: any, harvestSubject: string) {
 
     // Process Description & Embeddings
     const cleanDesc = decodeHTMLEntities(info.description);
-    const year = info.publishedDate ? parseInt(info.publishedDate.substring(0, 4)) : null;
+    const { year, fullDate } = parsePublishedDate(info.publishedDate);
 
     // Tags
     // Combine explicit categories + author + subject
@@ -175,7 +207,7 @@ async function processBook(item: any, harvestSubject: string) {
         description: cleanDesc,
         image_url: hostedCoverUrl,
         release_year: year || undefined,
-        release_date: info.publishedDate,
+        release_date: fullDate || undefined, // Now properly formatted as YYYY-MM-DD
         genres: rawCategories.concat([harvestSubject]), // combine API categories + search subject
 
         external_ids: {

@@ -14,7 +14,7 @@ import {
     Film, Tv, Gamepad2, BookOpen, Music, Mic, Dice5,
     Trash2, Pencil, Sparkles, RefreshCw, ChevronLeft, ChevronRight,
     AlertTriangle, Image as ImageIcon, FileText, Search, ShieldAlert, LayoutGrid, X, Save,
-    Loader2, Wand2, Crop, Key, Settings, Tag
+    Loader2, Wand2, Crop, Key, Settings, Tag, MoreHorizontal, Flag
 } from 'lucide-react'
 import TagSelector from '@/components/tags/TagSelector'
 import ImageCropper from '@/components/ImageCropper'
@@ -23,9 +23,11 @@ import Image from 'next/image'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CATEGORY_LABELS, normalizeCategory, formatCategoryLabel, CATEGORY_TYPES } from '@/lib/constants'
 import ItemDetailView from '@/components/item-details/ItemDetailView'
 import { AdvancedFilterBar } from '@/components/admin/data-browser/AdvancedFilterBar'
+import ReportItemDialog from '@/components/dialogs/ReportItemDialog'
 
 // ============================================================================
 // TYPES
@@ -219,6 +221,8 @@ export default function DataBrowserPage() {
     const [editMode, setEditMode] = useState<'view' | 'edit'>('view')
 
     const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'single' | 'selected' | 'source'; source?: string; id?: string } | null>(null)
+    const [reportItem, setReportItem] = useState<GlobalItem | null>(null)
+    const [viewItem, setViewItem] = useState<GlobalItem | null>(null)  // Item details view
     const [maintenanceOpen, setMaintenanceOpen] = useState(false)
     const [steamGridKey, setSteamGridKey] = useState('')
     const [confirmText, setConfirmText] = useState('')
@@ -399,11 +403,13 @@ export default function DataBrowserPage() {
             query = query.contains('genres', [activeFilters.genre])
         }
         if (activeFilters.developer) {
-            const dev = activeFilters.developer.replace(/"/g, '\\"')
+            // Escape special characters for PostgREST query
+            const dev = activeFilters.developer.replace(/"/g, '\\"').replace(/,/g, '\\,')
             query = query.or(`studio.eq."${dev}",developers.cs.{"${dev}"}`)
         }
         if (activeFilters.production) {
-            const prod = activeFilters.production.replace(/"/g, '\\"')
+            // Escape special characters for PostgREST query
+            const prod = activeFilters.production.replace(/"/g, '\\"').replace(/,/g, '\\,')
             query = query.or(`production_companies.cs.{"${prod}"},networks.cs.{"${prod}"},publishers.cs.{"${prod}"}`)
         }
         if (activeFilters.platform) {
@@ -449,6 +455,8 @@ export default function DataBrowserPage() {
 
         if (error) {
             console.error('Error fetching items:', (error as any)?.message || error)
+            console.error('Active filters:', JSON.stringify(activeFilters, null, 2))
+            console.error('Search query:', searchQuery)
             setLoading(false)
             return
         }
@@ -525,13 +533,24 @@ export default function DataBrowserPage() {
                 newSet.add(id)
             }
         } else {
-            // Normal click: Select only this item (clear others)
-            newSet.clear()
-            newSet.add(id)
+            // Normal click: Toggle selection for this item
+            if (newSet.has(id)) {
+                // If already selected, deselect it
+                newSet.delete(id)
+            } else {
+                // Otherwise clear others and select this one
+                newSet.clear()
+                newSet.add(id)
+            }
         }
 
         lastClickedRef.current = id
         setSelectedIds(newSet)
+    }
+
+    // Double-click handler to open item details
+    const handleItemDoubleClick = (item: GlobalItem) => {
+        setViewItem(item)
     }
 
     // Clear selection handler
@@ -737,7 +756,8 @@ export default function DataBrowserPage() {
         setRegeneratingDescriptionIds(prev => new Set(prev).add(item.id))
 
         try {
-            const response = await fetch('/api/ai/regenerate-description', {
+            // Call the new enrich-metadata endpoint (fetches from category-specific providers)
+            const response = await fetch('/api/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })
@@ -745,15 +765,32 @@ export default function DataBrowserPage() {
 
             if (response.ok) {
                 const data = await response.json()
-                // Update local state immediately with new description
+                // Update local state with description AND all enriched fields (ratings, etc.)
                 setItems(prev => prev.map(i =>
                     i.id === item.id
-                        ? { ...i, description: data.description, description_parts: data.description_parts }
+                        ? {
+                            ...i,
+                            description: data.description,
+                            description_parts: data.description_parts,
+                            ...data.enrichedData // Merge all enriched fields (imdb_rating, rotten_tomatoes_rating, etc.)
+                        }
                         : i
                 ))
-                toast.success('Description regenerated')
+
+                // Toast with provider and OMDB info
+                if (data.enriched) {
+                    let message = `Enriched from ${data.provider}: ${data.fieldsUpdated.length} fields`
+                    if (data.omdbStatus === 'success' && data.omdbRatings?.length > 0) {
+                        message += ` (${data.omdbRatings.join(', ')})`
+                    } else if (data.omdbStatus === 'not_found') {
+                        message += ' (No OMDB ratings found)'
+                    }
+                    toast.success(message)
+                } else {
+                    toast.success('Description regenerated')
+                }
             } else {
-                toast.error('Failed to regenerate description')
+                toast.error('Failed to enrich metadata')
             }
         } catch (error) {
             console.error('Failed to regenerate:', error)
@@ -1188,6 +1225,7 @@ export default function DataBrowserPage() {
                                             <Card
                                                 key={item.id}
                                                 onClick={(e) => handleItemClick(item.id, e)}
+                                                onDoubleClick={() => handleItemDoubleClick(item)}
                                                 className={`select-none group bg-zinc-900/40 border-zinc-800/50 overflow-hidden cursor-pointer transition-all hover:border-zinc-600 hover:shadow-lg hover:shadow-cyan-900/10 ${selectedIds.has(item.id) ? 'ring-2 ring-cyan-500 border-transparent' : ''}`}
                                             >
                                                 <div className="relative aspect-[2/3] bg-zinc-900 overflow-hidden">
@@ -1211,95 +1249,126 @@ export default function DataBrowserPage() {
 
                                                     {/* Selection Indicator (checkmark when selected) */}
                                                     {selectedIds.has(item.id) && (
-                                                        <div className="absolute top-2 left-2 w-5 h-5 bg-cyan-500 rounded-full flex items-center justify-center">
+                                                        <div className="absolute top-2 left-2 w-5 h-5 bg-cyan-500 rounded-full flex items-center justify-center z-10">
                                                             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                                             </svg>
                                                         </div>
                                                     )}
 
-                                                    {/* Source Badge - shows warning if uncategorized */}
-                                                    {(!item.category_type || item.category_type === 'null' || item.category_type === 'NULL') ? (
-                                                        <Badge className="absolute top-2 right-2 text-amber-400 bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6">
-                                                            <AlertTriangle className="w-3.5 h-3.5" />
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge className={`absolute top-2 right-2 ${catInfo?.color || 'text-white'} bg-black/80 backdrop-blur-sm border-0 shadow-sm px-1.5 py-0.5 h-6`}>
-                                                            <CategoryIcon className="w-3.5 h-3.5" />
-                                                        </Badge>
-                                                    )}
+                                                    {/* Category Icon (always visible, top-right) */}
+                                                    <div className="absolute top-2 right-2 z-10 group-hover:opacity-0 transition-opacity">
+                                                        <div className="w-6 h-6 rounded-md bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                                                            <CategoryIcon className="w-3.5 h-3.5 text-white/80" />
+                                                        </div>
+                                                    </div>
 
-                                                    {/* Hover Actions */}
-                                                    <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
+                                                    {/* Top-Right Context Menu (appears on hover) */}
+                                                    <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button
+                                                                    size="icon"
+                                                                    variant="secondary"
+                                                                    className="h-7 w-7 rounded-full bg-black/60 hover:bg-black/80 text-white border-0 backdrop-blur-md"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <MoreHorizontal className="w-4 h-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800 min-w-[140px]">
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        setEditItem(item)
+                                                                        setEditCategoryType(item.category_type)
+                                                                        setEditTitle(item.title)
+                                                                        setEditDescription(item.description || '')
+                                                                        setEditImage(item.image_url || '')
+                                                                        setEditTags(parseCachedTags(item.cached_tags).map(t => t.id))
+                                                                        setEditMetadata(item.metadata ? JSON.stringify(item.metadata) : '')
+                                                                        setEditMode('edit')
+                                                                    }}
+                                                                    className="text-zinc-300 focus:bg-zinc-800 focus:text-white cursor-pointer"
+                                                                >
+                                                                    <Pencil className="w-3.5 h-3.5 mr-2" />
+                                                                    Edit
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleGenerateTagsForItem(item)
+                                                                    }}
+                                                                    disabled={regeneratingTagIds.has(item.id)}
+                                                                    className="text-zinc-300 focus:bg-zinc-800 focus:text-white cursor-pointer"
+                                                                >
+                                                                    <Tag className="w-3.5 h-3.5 mr-2" />
+                                                                    Generate Tags
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        console.log('Raw data:', item)
+                                                                        toast.info('Raw data logged to console')
+                                                                    }}
+                                                                    className="text-zinc-300 focus:bg-zinc-800 focus:text-white cursor-pointer"
+                                                                >
+                                                                    <FileText className="w-3.5 h-3.5 mr-2" />
+                                                                    Raw Data
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        setReportItem(item)
+                                                                    }}
+                                                                    className="text-amber-400 focus:bg-amber-950/50 focus:text-amber-300 cursor-pointer"
+                                                                >
+                                                                    <Flag className="w-3.5 h-3.5 mr-2" />
+                                                                    Flag Data
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuSeparator className="bg-zinc-800" />
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        setDeleteConfirm({ type: 'single', id: item.id })
+                                                                    }}
+                                                                    className="text-red-400 focus:bg-red-950/50 focus:text-red-300 cursor-pointer"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                                                    Delete
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </div>
+
+                                                    {/* Hero Action - Single Analyze Button */}
+                                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 backdrop-blur-[1px]">
                                                         <Button
-                                                            size="icon"
                                                             variant="secondary"
-                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                setEditItem(item)
-                                                                setEditCategoryType(item.category_type)
-                                                                setEditTitle(item.title)
-                                                                setEditDescription(item.description || '')
-                                                                setEditImage(item.image_url || '')
-                                                                setEditTags(parseCachedTags(item.cached_tags).map(t => t.id))
-                                                                setEditMetadata(item.metadata ? JSON.stringify(item.metadata) : '')
-                                                            }}
-                                                            title="Quick Edit"
-                                                        >
-                                                            <Pencil className="w-4 h-4" />
-                                                        </Button>
-                                                        <Button
-                                                            size="icon"
-                                                            variant="secondary"
-                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
+                                                            className="bg-cyan-600 hover:bg-cyan-500 text-white border-0 shadow-lg shadow-cyan-900/30 px-4 py-2 h-auto gap-2"
                                                             disabled={regeneratingDescriptionIds.has(item.id)}
                                                             onClick={(e) => {
                                                                 e.stopPropagation()
                                                                 handleRegenerate(item)
                                                             }}
-                                                            title="Regenerate Description"
                                                         >
                                                             {regeneratingDescriptionIds.has(item.id) ? (
                                                                 <RefreshCw className="w-4 h-4 animate-spin" />
                                                             ) : (
                                                                 <Sparkles className="w-4 h-4" />
                                                             )}
-                                                        </Button>
-                                                        <Button
-                                                            size="icon"
-                                                            variant="secondary"
-                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md"
-                                                            disabled={regeneratingTagIds.has(item.id)}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                handleGenerateTagsForItem(item)
-                                                            }}
-                                                            title="Generate Tags"
-                                                        >
-                                                            {regeneratingTagIds.has(item.id) ? (
-                                                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <Wand2 className="w-4 h-4" />
-                                                            )}
-                                                        </Button>
-                                                        <Button
-                                                            size="icon"
-                                                            variant="secondary"
-                                                            className="h-8 w-8 rounded-full bg-white/10 hover:bg-red-500/50 text-white border-0 backdrop-blur-md"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                setDeleteConfirm({ type: 'single', id: item.id })
-                                                            }}
-                                                            title="Delete Item"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
+                                                            <span className="text-sm font-medium">
+                                                                {regeneratingDescriptionIds.has(item.id) ? 'Analyzing...' : 'Analyze'}
+                                                            </span>
                                                         </Button>
                                                     </div>
 
-                                                    {/* Title Overlay */}
-                                                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                                                    {/* Title Overlay with Year */}
+                                                    <div className="absolute bottom-0 left-0 right-0 p-3 pointer-events-none">
                                                         <h4 className="font-medium text-sm text-white leading-tight line-clamp-2 drop-shadow-md">{item.title}</h4>
+                                                        {item.release_year && (
+                                                            <p className="text-xs text-zinc-400 mt-0.5">{item.release_year}</p>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -1777,6 +1846,38 @@ export default function DataBrowserPage() {
                         </DialogContent>
                     </Dialog>
                 </div>
+
+                {/* Report Dialog */}
+                {reportItem && (
+                    <ReportItemDialog
+                        globalItemId={reportItem.id}
+                        itemTitle={reportItem.title}
+                        open={!!reportItem}
+                        onOpenChange={(open) => !open && setReportItem(null)}
+                    />
+                )}
+
+                {/* Item Detail View */}
+                <ItemDetailView
+                    item={viewItem as any}
+                    isOpen={!!viewItem}
+                    onClose={() => setViewItem(null)}
+                    onEdit={(item: any) => {
+                        setViewItem(null)
+                        setEditItem(item)
+                        setEditCategoryType(item.category_type)
+                        setEditTitle(item.title)
+                        setEditDescription(item.description || '')
+                        setEditImage(item.image_url || '')
+                        setEditTags(parseCachedTags(item.cached_tags).map((t: any) => t.id))
+                        setEditMetadata(item.metadata ? JSON.stringify(item.metadata) : '')
+                        setEditMode('edit')
+                    }}
+                    onDelete={(id) => {
+                        setViewItem(null)
+                        setDeleteConfirm({ type: 'single', id })
+                    }}
+                />
             </div>
         </div>
     )

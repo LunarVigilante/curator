@@ -7,6 +7,7 @@ import { supabase, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
 import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users, Database } from "lucide-react";
+import NotificationBell from "@/components/ui/NotificationBell";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -95,103 +96,109 @@ export function Navbar() {
                     {isPending ? (
                         <div className="text-sm text-foreground/40">Loading...</div>
                     ) : session ? (
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    className="flex items-center gap-2 px-2 hover:bg-white/10"
+                        <>
+                            {/* Notification Bell for Admins */}
+                            {(userRole === 'ADMIN' || userRole === 'admin') && (
+                                <NotificationBell />
+                            )}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        className="flex items-center gap-2 px-2 hover:bg-white/10"
+                                    >
+                                        {userImage ? (
+                                            <Image
+                                                src={userImage}
+                                                alt="Avatar"
+                                                width={32}
+                                                height={32}
+                                                className="rounded-full border border-white/10 object-cover"
+                                            />
+                                        ) : (
+                                            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-zinc-800 text-zinc-400">
+                                                <User size={16} />
+                                            </div>
+                                        )}
+                                        <span className="text-sm text-muted-foreground hidden md:block max-w-[150px] truncate">
+                                            {session.user?.email}
+                                        </span>
+                                        <ChevronDown size={14} className="text-muted-foreground" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                    align="end"
+                                    className="w-56 bg-zinc-900 border-zinc-800"
                                 >
-                                    {userImage ? (
-                                        <Image
-                                            src={userImage}
-                                            alt="Avatar"
-                                            width={32}
-                                            height={32}
-                                            className="rounded-full border border-white/10 object-cover"
-                                        />
-                                    ) : (
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-zinc-800 text-zinc-400">
-                                            <User size={16} />
+                                    <DropdownMenuLabel className="font-normal">
+                                        <div className="flex flex-col space-y-1">
+                                            <p className="text-xs text-muted-foreground">Signed in as</p>
+                                            <p className="text-sm font-medium truncate">{session.user?.email}</p>
                                         </div>
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator className="bg-zinc-800" />
+
+                                    <DropdownMenuItem asChild>
+                                        <Link href="/bookmarks" className="flex items-center cursor-pointer">
+                                            <Bookmark className="mr-2 h-4 w-4" />
+                                            <span>Bookmarks</span>
+                                        </Link>
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuItem asChild>
+                                        <Link href="/liked" className="flex items-center cursor-pointer">
+                                            <Heart className="mr-2 h-4 w-4" />
+                                            <span>Liked</span>
+                                        </Link>
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuItem asChild>
+                                        <Link href="/following" className="flex items-center cursor-pointer">
+                                            <Users className="mr-2 h-4 w-4" />
+                                            <span>Following</span>
+                                        </Link>
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuItem asChild>
+                                        <Link href="/settings" className="flex items-center cursor-pointer">
+                                            <Settings className="mr-2 h-4 w-4" />
+                                            <span>Settings</span>
+                                        </Link>
+                                    </DropdownMenuItem>
+
+                                    {(userRole === 'ADMIN' || userRole === 'admin') && (
+                                        <>
+                                            <DropdownMenuSeparator className="bg-zinc-800" />
+                                            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+                                                Admin Tools
+                                            </DropdownMenuLabel>
+                                            <DropdownMenuItem asChild>
+                                                <Link href="/admin" className="flex items-center cursor-pointer">
+                                                    <Shield className="mr-2 h-4 w-4" />
+                                                    <span>Admin Dashboard</span>
+                                                </Link>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem asChild>
+                                                <Link href="/admin/data-browser" className="flex items-center cursor-pointer">
+                                                    <Database className="mr-2 h-4 w-4" />
+                                                    <span>Data Browser</span>
+                                                </Link>
+                                            </DropdownMenuItem>
+                                        </>
                                     )}
-                                    <span className="text-sm text-muted-foreground hidden md:block max-w-[150px] truncate">
-                                        {session.user?.email}
-                                    </span>
-                                    <ChevronDown size={14} className="text-muted-foreground" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                                align="end"
-                                className="w-56 bg-zinc-900 border-zinc-800"
-                            >
-                                <DropdownMenuLabel className="font-normal">
-                                    <div className="flex flex-col space-y-1">
-                                        <p className="text-xs text-muted-foreground">Signed in as</p>
-                                        <p className="text-sm font-medium truncate">{session.user?.email}</p>
-                                    </div>
-                                </DropdownMenuLabel>
-                                <DropdownMenuSeparator className="bg-zinc-800" />
 
-                                <DropdownMenuItem asChild>
-                                    <Link href="/bookmarks" className="flex items-center cursor-pointer">
-                                        <Bookmark className="mr-2 h-4 w-4" />
-                                        <span>Bookmarks</span>
-                                    </Link>
-                                </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="bg-zinc-800" />
 
-                                <DropdownMenuItem asChild>
-                                    <Link href="/liked" className="flex items-center cursor-pointer">
-                                        <Heart className="mr-2 h-4 w-4" />
-                                        <span>Liked</span>
-                                    </Link>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem asChild>
-                                    <Link href="/following" className="flex items-center cursor-pointer">
-                                        <Users className="mr-2 h-4 w-4" />
-                                        <span>Following</span>
-                                    </Link>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem asChild>
-                                    <Link href="/settings" className="flex items-center cursor-pointer">
-                                        <Settings className="mr-2 h-4 w-4" />
-                                        <span>Settings</span>
-                                    </Link>
-                                </DropdownMenuItem>
-
-                                {(userRole === 'ADMIN' || userRole === 'admin') && (
-                                    <>
-                                        <DropdownMenuSeparator className="bg-zinc-800" />
-                                        <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-                                            Admin Tools
-                                        </DropdownMenuLabel>
-                                        <DropdownMenuItem asChild>
-                                            <Link href="/admin" className="flex items-center cursor-pointer">
-                                                <Shield className="mr-2 h-4 w-4" />
-                                                <span>Admin Dashboard</span>
-                                            </Link>
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem asChild>
-                                            <Link href="/admin/data-browser" className="flex items-center cursor-pointer">
-                                                <Database className="mr-2 h-4 w-4" />
-                                                <span>Data Browser</span>
-                                            </Link>
-                                        </DropdownMenuItem>
-                                    </>
-                                )}
-
-                                <DropdownMenuSeparator className="bg-zinc-800" />
-
-                                <DropdownMenuItem
-                                    onClick={handleSignOut}
-                                    className="text-red-400 focus:text-red-400 focus:bg-red-950/50 cursor-pointer"
-                                >
-                                    <LogOut className="mr-2 h-4 w-4" />
-                                    <span>Sign Out</span>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                                    <DropdownMenuItem
+                                        onClick={handleSignOut}
+                                        className="text-red-400 focus:text-red-400 focus:bg-red-950/50 cursor-pointer"
+                                    >
+                                        <LogOut className="mr-2 h-4 w-4" />
+                                        <span>Sign Out</span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </>
                     ) : (
                         !isSetupPage && (
                             <Link href="/login">
