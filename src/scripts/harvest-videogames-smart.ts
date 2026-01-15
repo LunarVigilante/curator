@@ -260,6 +260,9 @@ async function processTask(task: any) {
         logo: transformIgdbImage(p.platform_logo?.url, 't_logo_med')
     })) || [];
 
+    // Extract platform names as simple string array for root column
+    const platformNames: string[] = game.platforms?.map((p: any) => p.name) || [];
+
     // Map website categories: 1=official, 13=steam, 17=twitch, etc.
     const WEBSITE_CATEGORY_MAP: Record<number, string> = {
         1: 'official', 3: 'wikipedia', 5: 'twitter', 6: 'twitch',
@@ -418,6 +421,7 @@ Overview: ${game.summary || game.storyline || 'N/A'}
 
                 cached_tags: validTags,
                 vector_text: JSON.stringify(embedding),
+                platforms: platformNames, // NEW: Root column text[]
                 last_metadata_update: new Date().toISOString()
             };
 
@@ -489,6 +493,7 @@ Overview: ${game.summary || game.storyline || 'N/A'}
                 backdrop_path: screenshots[0] || null,
                 // Update embedding
                 vector_text: embedding ? JSON.stringify(embedding) : undefined,
+                platforms: platformNames, // NEW: Root column text[]
 
                 last_metadata_update: new Date().toISOString()
             };

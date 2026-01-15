@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
 import { TheAudioDBService } from '@/lib/services/theaudiodb';
-import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter } from '@/lib/harvesters/shared';
+import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter, decodeHTMLEntities } from '@/lib/harvesters/shared';
 // @ts-ignore
 import pLimit from 'p-limit';
 
@@ -169,8 +169,8 @@ async function processFullHierarchy(albumId: string, year: number) {
     if (!album.artists || album.artists.length === 0) return;
 
     const artistSimple = album.artists[0]; // Primary artist
-    const artistName = artistSimple.name;
-    const albumTitle = album.name;
+    const artistName = decodeHTMLEntities(artistSimple.name);
+    const albumTitle = decodeHTMLEntities(album.name);
 
     // console.log(`      🎵 [${artistName}] ${albumTitle}`);
 
@@ -225,149 +225,143 @@ async function processFullHierarchy(albumId: string, year: number) {
                 if (error && error.code !== '23505') console.error(`❌ Error inserting artist ${artistName}:`, error);
             }
 
-            processedArtists.add(artistSimple.id);
             // console.log(`      👤 Saved Artist: ${artistName}`);
         }
+        processedArtists.add(artistSimple.id);
+    }
 
-        // ======================================================
-        // LEVEL 2: ALBUM (With AudioDB Cover)
-        // ======================================================
+    // ======================================================
+    // LEVEL 2: ALBUM (ALWAYS process - not inside artist check!)
+    // ======================================================
 
-        let coverUrl = album.images?.[0]?.url;
-        const hostedAlbumImg = await imageService.processAndUpload(coverUrl, 'music');
+    let coverUrl = album.images?.[0]?.url;
+    const hostedAlbumImg = await imageService.processAndUpload(coverUrl, 'music');
 
-        // AI Description for Album
-        // RICH CONTEXT for Album
-        const richContext = `
+    // AI Description for Album
+    // RICH CONTEXT for Album
+    const richContext = `
 Album: ${albumTitle} (${year})
 Artist: ${artistName}
 Type: ${album.album_type}
 Tracks: ${album.total_tracks}
 Genres: ${album.genres.join(', ') || 'N/A'}
-        `.trim();
+    `.trim();
 
-        const albumDesc = await aiLimiter(() => rewriteDescription(supabase, albumTitle, richContext, 'MUSIC_ALBUM'));
+    const albumDesc = await aiLimiter(() => rewriteDescription(supabase, albumTitle, richContext, 'MUSIC_ALBUM'));
 
-        const contextTags = `${album.genres.join(', ')} ${artistName}`;
-        const tags = await aiLimiter(() => generateTags(supabase, albumTitle, `${albumDesc} ${contextTags}`, 'MUSIC_ALBUM'));
-        const validTags = await ensureTags(supabase, tags);
+    const contextTags = `${album.genres.join(', ')} ${artistName}`;
+    const tags = await aiLimiter(() => generateTags(supabase, albumTitle, `${albumDesc} ${contextTags}`, 'MUSIC_ALBUM'));
+    const validTags = await ensureTags(supabase, tags);
 
-        const albumPayload = {
-            title: albumTitle,
-            category_type: 'MUSIC_ALBUM',
-            description: albumDesc,
+    const albumPayload = {
+        title: albumTitle,
+        category_type: 'MUSIC_ALBUM',
+        description: albumDesc,
+        image_url: hostedAlbumImg,
+        release_year: year,
+        release_date: album.release_date,
+        genres: album.genres.length ? album.genres : [],
+        album_type: album.album_type,
+        total_tracks: album.total_tracks,
+        label: album.label,
+        popularity: album.popularity,
+        upc: album.external_ids?.upc,
+        external_ids: { spotify: album.id },
+        metadata: { source: 'spotify_smart' },
+        cached_tags: validTags,
+        last_metadata_update: new Date().toISOString()
+    };
+
+    // Safe Upsert for Album
+    const { data: existingAlbum } = await supabase
+        .from('global_items')
+        .select('id, description_parts')
+        .contains('external_ids', { spotify: album.id })
+        .maybeSingle();
+
+    if (existingAlbum) {
+        // STRICT SAFETY: Never overwrite description/tags on update
+        const updatePayload = { ...albumPayload };
+        delete (updatePayload as any).description;
+        delete (updatePayload as any).image_url;
+        delete (updatePayload as any).cached_tags;
+
+        await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingAlbum as any).id);
+    } else {
+        const { error } = await (supabase.from('global_items') as any).insert(albumPayload);
+        if (error && error.code !== '23505') console.error(`❌ Error inserting album ${albumTitle}:`, error);
+    }
+
+    // ======================================================
+    // LEVEL 3: TRACKS (ALWAYS process - With Audio Features)
+    // ======================================================
+
+    const tracks = album.tracks?.items || [];
+    if (tracks.length === 0) return;
+
+    // Fetch Vibe Data for all tracks at once
+    const trackIds = tracks.map((t: any) => t.id);
+    const featuresMap = await spotify.getAudioFeatures(trackIds);
+
+    // Filter out existing tracks to avoid massive unnecessary reads/writes?
+    // Optimization: Just do the safe check logic
+
+    for (const track of tracks) {
+        const features = featuresMap[track.id];
+        const trackTitle = decodeHTMLEntities(track.name);
+
+        // Vibe String for Vector
+        const vibeStr = features ?
+            `Danceability: ${features.danceability}, Energy: ${features.energy}, Tempo: ${features.tempo} BPM, Valence: ${features.valence}`
+            : '';
+
+        const vectorText = `
+        Title: ${trackTitle}
+        Artist: ${artistName}
+        Album: ${albumTitle}
+        Vibe: ${vibeStr}
+    `.trim();
+
+        const embedding = await generateEmbedding(vectorText);
+
+        const trackPayload = {
+            title: trackTitle,
+            category_type: 'MUSIC_TRACK',
+            description: `Track ${track.track_number} on ${albumTitle}`,
             image_url: hostedAlbumImg,
-            release_year: year,
-            release_date: album.release_date,
-
-            // Extended Metadata
-            album_type: album.album_type,
-            total_tracks: album.total_tracks,
-            label: album.label,
-            popularity: album.popularity,
-            upc: album.external_ids?.upc,
-            genres: album.genres.length ? album.genres : [],
-
-            external_ids: { spotify: album.id },
+            duration_ms: track.duration_ms,
+            preview_url: track.preview_url,
+            isrc: track.external_ids?.isrc,
+            audio_features: features,
+            artist_names: track.artists.map((a: any) => decodeHTMLEntities(a.name)),
+            album_name: albumTitle,
+            track_number: track.track_number,
+            external_ids: { spotify: track.id },
             metadata: { source: 'spotify_smart' },
-            cached_tags: validTags,
+            vector_text: JSON.stringify(embedding),
             last_metadata_update: new Date().toISOString()
         };
 
-        // Safe Upsert for Album
-        const { data: existingAlbum } = await supabase
+        const { data: existingTrack } = await supabase
             .from('global_items')
             .select('id, description_parts')
-            .contains('external_ids', { spotify: album.id })
+            .contains('external_ids', { spotify: track.id })
             .maybeSingle();
 
-        if (existingAlbum) {
-            // STRICT SAFETY: Never overwrite description/tags on update
-            const updatePayload = { ...albumPayload };
+        if (existingTrack) {
+            // STRICT SAFETY: Never overwrite description on update
+            const updatePayload = { ...trackPayload };
             delete (updatePayload as any).description;
-            delete (updatePayload as any).image_url;
-            delete (updatePayload as any).cached_tags;
+            delete (updatePayload as any).vector_text;
 
-            await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingAlbum as any).id);
+            await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingTrack as any).id);
         } else {
-            await (supabase.from('global_items') as any).insert(albumPayload).catch(() => { });
+            const { error } = await (supabase.from('global_items') as any).insert(trackPayload);
+            if (error && error.code !== '23505') console.error(`❌ Error inserting track ${trackTitle}:`, error);
         }
-
-        // ======================================================
-        // LEVEL 3: TRACKS (With Audio Features)
-        // ======================================================
-
-        const tracks = album.tracks?.items || [];
-        if (tracks.length === 0) return;
-
-        // Fetch Vibe Data for all tracks at once
-        const trackIds = tracks.map((t: any) => t.id);
-        const featuresMap = await spotify.getAudioFeatures(trackIds);
-
-        // Filter out existing tracks to avoid massive unnecessary reads/writes?
-        // Optimization: Just do the safe check logic
-
-        for (const track of tracks) {
-            const features = featuresMap[track.id];
-
-            // Vibe String for Vector
-            const vibeStr = features ?
-                `Danceability: ${features.danceability}, Energy: ${features.energy}, Tempo: ${features.tempo} BPM, Valence: ${features.valence}`
-                : '';
-
-            const vectorText = `
-            Title: ${track.name}
-            Artist: ${artistName}
-            Album: ${albumTitle}
-            Vibe: ${vibeStr}
-        `.trim();
-
-            const embedding = await generateEmbedding(vectorText);
-
-            const trackPayload = {
-                title: track.name,
-                category_type: 'MUSIC_TRACK',
-                description: `Track ${track.track_number} on ${albumTitle}`,
-                image_url: hostedAlbumImg,
-
-                // Track Specifics
-                duration_ms: track.duration_ms,
-                preview_url: track.preview_url,
-                isrc: track.external_ids?.isrc,
-                audio_features: features,
-
-                // Linkage
-                artist_names: track.artists.map((a: any) => a.name),
-                album_name: albumTitle,
-
-                external_ids: { spotify: track.id },
-                metadata: { source: 'spotify_smart' },
-                vector_text: JSON.stringify(embedding),
-                last_metadata_update: new Date().toISOString()
-            };
-
-            const { data: existingTrack } = await supabase
-                .from('global_items')
-                .select('id, description_parts')
-                .contains('external_ids', { spotify: track.id })
-                .maybeSingle();
-
-            if (existingTrack) {
-                // STRICT SAFETY: Never overwrite description on update
-                const updatePayload = { ...trackPayload };
-                delete (updatePayload as any).description;
-                delete (updatePayload as any).vector_text;
-
-                await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingTrack as any).id);
-            } else {
-                await (supabase.from('global_items') as any).insert(trackPayload).catch(() => { });
-            }
-        }
-
-        // console.log(`      💿 Saved Album + ${tracks.length} Tracks.`);
     }
 
-
+    // console.log(`      💿 Saved Album + ${tracks.length} Tracks.`);
 }
 
 startHarvest().catch(console.error);

@@ -15,6 +15,8 @@ import {
     Trophy, Trash2, Pencil, Tag as TagIcon, ExternalLink,
     Users, Building, Clapperboard, Award, Activity, Calendar
 } from 'lucide-react'
+import { FilterPill } from '@/components/ui/FilterPill'
+import { PlatformBadgeList } from '@/components/ui/PlatformBadge'
 
 // ============================================================================
 // TYPES
@@ -102,7 +104,7 @@ interface GlobalItem {
     // Video Games
     themes: string[] | null
     game_modes: string[] | null
-    platforms: any[] | null
+    platforms: string[] | Array<{ name?: string }> | null  // string[] is new format, object[] is legacy
     keywords: string[] | null
     time_to_beat: { main?: number; completionist?: number } | null
     logo_path: string | null
@@ -700,6 +702,21 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                     </motion.div>
                                 )}
 
+                                {/* Platforms - Video Games Only */}
+                                {isVideoGame && item.platforms && Array.isArray(item.platforms) && item.platforms.length > 0 && (
+                                    <motion.div variants={itemVariants} className="space-y-2">
+                                        <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
+                                            <Gamepad2 className="w-3.5 h-3.5" /> Platforms
+                                        </h4>
+                                        <PlatformBadgeList
+                                            platforms={item.platforms as string[]}
+                                            category="games"
+                                            showIcons={true}
+                                            limit={10}
+                                        />
+                                    </motion.div>
+                                )}
+
                                 {/* Synopsis - Dynamic Fill: Grows to fill remaining space */}
                                 {item.description && (
                                     <motion.div
@@ -916,23 +933,15 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                     (() => {
                                         const ttb = item.time_to_beat as { main?: number; completionist?: number } | null
                                         const gameModes = item.game_modes as string[] | null
-                                        const platforms = item.platforms as Array<{ name?: string }> | string[] | null
 
                                         // Determine what data we have for each column
                                         const hasLengthOrMode = (ttb?.main) || (gameModes && gameModes.length > 0)
                                         const hasDeveloper = (item.developers && item.developers.length > 0) || (item.publishers && item.publishers.length > 0)
-                                        const hasGenreOrPlatform = (item.genres && item.genres.length > 0) || (platforms && platforms.length > 0)
+                                        const hasGenre = item.genres && item.genres.length > 0
                                         const hasScore = item.vote_average !== null && item.vote_average > 0
 
                                         // Only render grid if we have something
-                                        if (!hasLengthOrMode && !hasDeveloper && !hasGenreOrPlatform && !hasScore) return null
-
-                                        // Get platform name helper
-                                        const getPlatformName = () => {
-                                            if (!platforms || platforms.length === 0) return null
-                                            const first = platforms[0]
-                                            return typeof first === 'string' ? first : first?.name || null
-                                        }
+                                        if (!hasLengthOrMode && !hasDeveloper && !hasGenre && !hasScore) return null
 
                                         return (
                                             <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 py-6 border-t border-white/5 mt-2">
@@ -973,18 +982,16 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                                     </div>
                                                 )}
 
-                                                {/* Col 3: Genre / Platform */}
-                                                {hasGenreOrPlatform && (
+                                                {/* Col 3: Genre */}
+                                                {item.genres && item.genres.length > 0 && (
                                                     <div className="space-y-3">
                                                         <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
-                                                            <Gamepad2 className="w-3 h-3" /> Genre / Platform
+                                                            <Gamepad2 className="w-3 h-3" /> Genre
                                                         </h5>
                                                         <div className="space-y-1">
-                                                            {item.genres?.[0] && (
-                                                                <span className="text-white font-medium text-sm block">{item.genres[0]}</span>
-                                                            )}
-                                                            {getPlatformName() && (
-                                                                <span className="text-zinc-500 text-xs block">{getPlatformName()}</span>
+                                                            <span className="text-white font-medium text-sm block">{item.genres[0]}</span>
+                                                            {item.genres.length > 1 && (
+                                                                <span className="text-zinc-500 text-xs block">{item.genres.slice(1, 3).join(', ')}</span>
                                                             )}
                                                         </div>
                                                     </div>
