@@ -411,12 +411,49 @@ export async function captureSnapshot(
 
     const { count } = await countQuery
 
+    // Compute top genres from tags
+    let tagsQuery = (supabase.from('items') as any)
+        .select(`
+            items_to_tags (
+                tag:tags (
+                    name
+                )
+            )
+        `)
+        .eq('user_id', userId)
+        .not('tier', 'is', null)
+
+    if (categoryId) {
+        tagsQuery = tagsQuery.eq('category_id', categoryId)
+    }
+
+    const { data: itemsWithTags } = await tagsQuery
+
+    const genreCounts: Record<string, number> = {}
+
+    if (itemsWithTags) {
+        itemsWithTags.forEach((item: any) => {
+            const itemTags = item.items_to_tags || []
+            itemTags.forEach((entry: any) => {
+                const tagName = entry.tag?.name
+                if (tagName) {
+                    genreCounts[tagName] = (genreCounts[tagName] || 0) + 1
+                }
+            })
+        })
+    }
+
+    const topGenres = Object.entries(genreCounts)
+        .sort(([, countA], [, countB]) => countB - countA)
+        .slice(0, 5)
+        .map(([name]) => name)
+
     const snapshotMetrics: SnapshotMetrics = {
         niche_score: metrics[MetricTypes.NICHE_SCORE],
         diversity_score: metrics[MetricTypes.DIVERSITY_SCORE],
         alignment_global: metrics[MetricTypes.ALIGNMENT_GLOBAL],
         totalItems: count || 0,
-        topGenres: [], // TODO: compute from tags
+        topGenres: topGenres,
     }
 
     await (supabase.from('taste_snapshots') as any).insert({
