@@ -51,6 +51,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
 
     // Voyage AI (Embeddings)
     const [voyageApiKey, setVoyageApiKey] = useState(settings?.['voyage_api_key'] || '');
+    const [voyageModel, setVoyageModel] = useState(settings?.['voyage_model'] || 'voyage-3');
 
     // Media API Endpoints (Custom URLs)
     // Twitch / IGDB
@@ -238,6 +239,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 twitchClientSecret,
                 // Voyage AI
                 voyageApiKey,
+                voyageModel,
                 steamGridApiKey,
                 // Feature Flags
                 featureAiCritic: enableAiCritic ? 'true' : 'false',
@@ -257,42 +259,6 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
 
     return (
         <div className="space-y-8">
-            {/* Application Settings Section */}
-            <Card className="border-gray-800 bg-gray-900/50 backdrop-blur-sm">
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Database className="h-5 w-5 text-blue-500" />
-                        <CardTitle>Application Settings</CardTitle>
-                    </div>
-                    <CardDescription>
-                        General application properties for system-wide use.
-                    </CardDescription>
-                </CardHeader>
-                <form onSubmit={handleSaveConfig}>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="appUrl">Public App URL (for Email Links)</Label>
-                            <Input
-                                id="appUrl"
-                                value={appUrl}
-                                onChange={e => setAppUrl(e.target.value)}
-                                placeholder="e.g. https://curator.app"
-                                className="bg-zinc-900/50"
-                            />
-                            <p className="text-[10px] text-muted-foreground outline-none">
-                                This URL will be used to generate verification and reset links.
-                            </p>
-                        </div>
-                    </CardContent>
-                    <CardFooter className="pt-4 border-t border-white/5">
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Application Settings
-                        </Button>
-                    </CardFooter>
-                </form>
-            </Card>
-
             {/* LLM Provider Section */}
             <Card className="border-white/10 bg-black/20 backdrop-blur-sm">
                 <CardHeader>
@@ -447,26 +413,44 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                         <CardTitle>Voyage AI Embeddings</CardTitle>
                     </div>
                     <CardDescription>
-                        API key for generating vector embeddings used in taste compatibility and item search.
+                        API key and model for generating vector embeddings used in taste compatibility and item search.
                     </CardDescription>
                 </CardHeader>
                 <form onSubmit={handleSaveConfig}>
                     <CardContent className="space-y-4">
-                        <div className="grid gap-2">
-                            <Label>Voyage API Key</Label>
-                            <Input
-                                type="password"
-                                value={voyageApiKey}
-                                onChange={e => setVoyageApiKey(e.target.value)}
-                                placeholder="pa-..."
-                            />
-                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://dash.voyageai.com/" target="_blank" className="underline hover:text-white">dash.voyageai.com</a></p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid gap-2">
+                                <Label>Voyage API Key</Label>
+                                <Input
+                                    type="password"
+                                    value={voyageApiKey}
+                                    onChange={e => setVoyageApiKey(e.target.value)}
+                                    placeholder="pa-..."
+                                />
+                                <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://dash.voyageai.com/" target="_blank" className="underline hover:text-white">dash.voyageai.com</a></p>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Embedding Model</Label>
+                                <Select value={voyageModel} onValueChange={setVoyageModel}>
+                                    <SelectTrigger className="bg-zinc-900/50">
+                                        <SelectValue placeholder="Select model" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="voyage-4">voyage-4 (Latest)</SelectItem>
+                                        <SelectItem value="voyage-3">voyage-3</SelectItem>
+                                        <SelectItem value="voyage-3-lite">voyage-3-lite</SelectItem>
+                                        <SelectItem value="voyage-large-2">voyage-large-2</SelectItem>
+                                        <SelectItem value="voyage-code-2">voyage-code-2</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-muted-foreground">Model used for generating embeddings (voyage-4 recommended)</p>
+                            </div>
                         </div>
                     </CardContent>
                     <CardFooter className="pt-4">
                         <Button type="submit" disabled={isLoading}>
                             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Voyage API Key
+                            Save Voyage Configuration
                         </Button>
                     </CardFooter>
                 </form>
@@ -769,91 +753,6 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                         <Button type="submit" disabled={isLoading}>
                             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Save API Keys
-                        </Button>
-                    </CardFooter>
-                </form>
-            </Card>
-
-            {/* Email Infrastructure Section */}
-            <Card className="border-white/10 bg-black/20 backdrop-blur-sm">
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Mail className="h-5 w-5 text-blue-500" />
-                        <CardTitle>Email Infrastructure</CardTitle>
-                    </div>
-                    <CardDescription>
-                        Configure transactional email settings (Resend).
-                    </CardDescription>
-                </CardHeader>
-                <form onSubmit={handleSaveConfig}>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>Resend API Key</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('resend', resendKey)}
-                                    disabled={serviceStatuses.resend.status === 'loading' || !resendKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.resend.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.resend.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.resend.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test Resend
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={resendKey}
-                                onChange={e => { setResendKey(e.target.value); setServiceStatuses(prev => ({ ...prev, resend: { status: 'idle' } })); }}
-                                placeholder="re_..."
-                                className={serviceStatuses.resend.status === 'success' ? 'border-green-500/50' : serviceStatuses.resend.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.resend.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.resend.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://resend.com/api-keys" target="_blank" className="underline hover:text-white">resend.com</a></p>
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label>From Email Address</Label>
-                            <Input
-                                type="email"
-                                value={fromEmail}
-                                onChange={e => setFromEmail(e.target.value)}
-                                placeholder="noreply@yourdomain.com"
-                            />
-                            <p className="text-[10px] text-muted-foreground">The email address emails will be sent from (must be verified in Resend)</p>
-                        </div>
-
-                        {/* Test Email Section */}
-                        <div className="pt-4 border-t border-white/10">
-                            <Label className="mb-2 block">Send Test Email</Label>
-                            <div className="flex gap-2">
-                                <Input
-                                    type="email"
-                                    value={testEmailRecipient}
-                                    onChange={e => setTestEmailRecipient(e.target.value)}
-                                    placeholder="recipient@example.com"
-                                    className="flex-1"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={handleSendTestEmail}
-                                    disabled={isSendingTestEmail || !resendKey || !testEmailRecipient}
-                                    className="shrink-0"
-                                >
-                                    {isSendingTestEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send Test'}
-                                </Button>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground mt-1">Sends a test email to verify your Resend configuration</p>
-                        </div>
-                    </CardContent>
-                    <CardFooter className="pt-4">
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Email Configuration
                         </Button>
                     </CardFooter>
                 </form>
