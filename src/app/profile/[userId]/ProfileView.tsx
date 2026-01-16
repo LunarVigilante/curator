@@ -22,10 +22,21 @@ interface Collection {
     itemCount: number
 }
 
+interface Challenge {
+    status: 'ACTIVE' | 'COMPLETED';
+    categoryId: string;
+    progress: number;
+    category: {
+        name: string;
+        image: string | null;
+        items?: any[];
+    };
+}
+
 interface ProfileViewProps {
     profile: PublicProfile
     collections: Collection[]
-    challenges: any[] // TODO: Define strict type
+    challenges: Challenge[]
     isOwner: boolean
 }
 
