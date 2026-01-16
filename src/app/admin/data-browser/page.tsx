@@ -28,6 +28,7 @@ import { CATEGORY_LABELS, normalizeCategory, formatCategoryLabel, CATEGORY_TYPES
 import ItemDetailView from '@/components/item-details/ItemDetailView'
 import { AdvancedFilterBar } from '@/components/admin/data-browser/AdvancedFilterBar'
 import ReportItemDialog from '@/components/dialogs/ReportItemDialog'
+import pLimit from 'p-limit'
 
 // ============================================================================
 // TYPES
@@ -860,14 +861,20 @@ export default function DataBrowserPage() {
 
         const ids = Array.from(selectedIds)
         const total = ids.length
+        const limit = pLimit(5) // Concurrency of 5
 
         setBulkActionProgress({ current: 0, total, action: 'Regenerating descriptions' })
 
         let success = 0
-        for (let i = 0; i < ids.length; i++) {
-            const id = ids[i]
+        let completed = 0
+
+        const promises = ids.map(id => limit(async () => {
             const item = items.find(it => it.id === id)
-            if (!item) continue
+            if (!item) {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating descriptions' })
+                return
+            }
 
             try {
                 const response = await fetch('/api/ai/regenerate-description', {
@@ -878,10 +885,13 @@ export default function DataBrowserPage() {
                 if (response.ok) success++
             } catch (e) {
                 console.error('Bulk regen error for', item.title, e)
+            } finally {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating descriptions' })
             }
+        }))
 
-            setBulkActionProgress({ current: i + 1, total, action: 'Regenerating descriptions' })
-        }
+        await Promise.all(promises)
 
         setBulkActionProgress(null)
         setSelectedIds(new Set())
@@ -894,6 +904,7 @@ export default function DataBrowserPage() {
 
         const ids = Array.from(selectedIds)
         const total = ids.length
+        const limit = pLimit(5) // Concurrency of 5
 
         setBulkActionProgress({ current: 0, total, action: 'Regenerating tags' })
 
@@ -901,10 +912,15 @@ export default function DataBrowserPage() {
         const { createTagsBatch } = await import('@/lib/actions/tags')
 
         let success = 0
-        for (let i = 0; i < ids.length; i++) {
-            const id = ids[i]
+        let completed = 0
+
+        const promises = ids.map(id => limit(async () => {
             const item = items.find(it => it.id === id)
-            if (!item) continue
+            if (!item) {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating tags' })
+                return
+            }
 
             try {
                 const data = await generateTagsAction({
@@ -922,10 +938,13 @@ export default function DataBrowserPage() {
                 }
             } catch (e) {
                 console.error('Bulk tag error for', item.title, e)
+            } finally {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating tags' })
             }
+        }))
 
-            setBulkActionProgress({ current: i + 1, total, action: 'Regenerating tags' })
-        }
+        await Promise.all(promises)
 
         setBulkActionProgress(null)
         setSelectedIds(new Set())
