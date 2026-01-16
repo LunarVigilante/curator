@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isSafeUrl } from '@/lib/security';
 
 /**
  * Image Proxy API
@@ -17,12 +18,20 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    if (!isSafeUrl(imageUrl)) {
+        return NextResponse.json(
+            { error: 'Invalid or restricted URL' },
+            { status: 400 }
+        );
+    }
+
     try {
         const response = await fetch(imageUrl, {
             headers: {
                 'User-Agent': 'Curator/1.0',
                 'Accept': 'image/*'
-            }
+            },
+            redirect: 'error', // Prevent SSRF via redirects
         });
 
         if (!response.ok) {
