@@ -1,0 +1,3 @@
+## 2024-05-22 - ItemGrid Memoization and Image Optimization
+**Learning:** `ItemGrid` uses a responsive grid with `minmax` which causes cards to resize. By memoizing individual `ItemCard`s, we prevent re-rendering content when only the layout changes (e.g. `cardMinWidth` slider). Also, `next/image` requires careful `sizes` prop tuning to match CSS Grid layout to avoid downloading oversized images on mobile or undersized on desktop.
+**Action:** When optimizing grids, always extract the item component and memoize it. Ensure `sizes` prop reflects the actual rendered size at different breakpoints, especially for single-column mobile views.
