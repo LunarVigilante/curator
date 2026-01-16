@@ -5,6 +5,9 @@ import {
     detectImportSource
 } from '@/lib/types/import'
 import { LLMParserAdapter } from './adapters/LLMParserAdapter'
+import { SpotifyAdapter } from './adapters/SpotifyAdapter'
+import { LetterboxdAdapter } from './adapters/LetterboxdAdapter'
+import { ImdbAdapter } from './adapters/ImdbAdapter'
 
 /**
  * ImportRouter - Routes input to the appropriate parsing strategy
@@ -21,10 +24,9 @@ export class ImportRouter {
     constructor() {
         // Initialize adapters
         // Order matters: more specific handlers first
-        // TODO: Add URL-specific adapters
-        // this.strategies.push(new SpotifyAdapter())
-        // this.strategies.push(new LetterboxdAdapter())
-        // this.strategies.push(new ImdbAdapter())
+        this.strategies.push(new SpotifyAdapter())
+        this.strategies.push(new LetterboxdAdapter())
+        this.strategies.push(new ImdbAdapter())
 
         // LLM Parser is the fallback for unstructured text
         this.defaultStrategy = new LLMParserAdapter()
