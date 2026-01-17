@@ -450,13 +450,11 @@ export async function embedGlobalItemsBatch(
 
         const embeddings = await generateEmbeddingsBatch(texts, 'document');
 
-        for (let j = 0; j < batch.length; j++) {
+        const updatePromises = batch.map(async (item, j) => {
             const embedding = embeddings[j];
-            const item = batch[j];
 
             if (!embedding) {
-                failed++;
-                continue;
+                return false;
             }
 
             // Note: Using 'as any' because embedding column may not be in generated types yet
@@ -465,12 +463,18 @@ export async function embedGlobalItemsBatch(
                 .update({ embedding })
                 .eq('id', item.id);
 
-            if (error) {
-                failed++;
-            } else {
+            return !error;
+        });
+
+        const results = await Promise.all(updatePromises);
+
+        results.forEach((isSuccess) => {
+            if (isSuccess) {
                 success++;
+            } else {
+                failed++;
             }
-        }
+        });
 
         // Small delay between batches to avoid rate limits
         if (i + batchSize < items.length) {
