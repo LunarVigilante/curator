@@ -98,8 +98,10 @@ const CATEGORY_ICONS: Record<string, { icon: React.ElementType; color: string; l
     [CATEGORY_TYPES.BOARD_GAME]: { icon: Dice5, color: 'text-orange-400', label: 'Board Games' },
     [CATEGORY_TYPES.VIDEO_GAME]: { icon: Gamepad2, color: 'text-green-400', label: 'Video Games' },
     [CATEGORY_TYPES.BOOKS]: { icon: BookOpen, color: 'text-yellow-400', label: 'Books' },
+    'BOOK': { icon: BookOpen, color: 'text-yellow-400', label: 'Books' }, // Fallback
     [CATEGORY_TYPES.MUSIC_ARTIST]: { icon: Music, color: 'text-emerald-400', label: 'Artists' },
     [CATEGORY_TYPES.ALBUM]: { icon: Music, color: 'text-teal-400', label: 'Albums' },
+    'MUSIC_ALBUM': { icon: Music, color: 'text-teal-400', label: 'Albums' }, // Fallback for DB
     [CATEGORY_TYPES.MUSIC_TRACK]: { icon: Music, color: 'text-cyan-400', label: 'Tracks' },
     [CATEGORY_TYPES.PODCAST]: { icon: Mic, color: 'text-red-400', label: 'Podcasts' },
     [CATEGORY_TYPES.COMICS]: { icon: BookOpen, color: 'text-amber-400', label: 'Comics' },
@@ -176,6 +178,7 @@ export default function DataBrowserPage() {
     const [shortDesc, setShortDesc] = useState(false)
     const [uncategorized, setUncategorized] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
 
     // UI State
     const [tileSize, setTileSize] = useState(50) // 0-100 scale for slider
@@ -234,6 +237,7 @@ export default function DataBrowserPage() {
     // Per-item regeneration loading states
     const [regeneratingDescriptionIds, setRegeneratingDescriptionIds] = useState<Set<string>>(new Set())
     const [regeneratingTagIds, setRegeneratingTagIds] = useState<Set<string>>(new Set())
+    const [refreshingMetadataIds, setRefreshingMetadataIds] = useState<Set<string>>(new Set())
 
     const supabase = createClient()
 
@@ -357,17 +361,82 @@ export default function DataBrowserPage() {
             }
         }
 
-        // Base Query (normal path)
+        // =================================================================
+        // OPTIMIZED PATH: Use browse_items RPC for basic browsing
+        // This is MUCH faster for category/search because it:
+        // 1. Only returns columns needed for grid display
+        // 2. Truncates descriptions to 200 chars
+        // 3. Has a statement_timeout to prevent hanging
+        // =================================================================
+        const hasAdvancedFilters = missingImage || uncategorized || Object.keys(activeFilters).length > 0
+
+        if (!hasAdvancedFilters) {
+            try {
+                console.log('[DEBUG] Using browse_items RPC:', {
+                    p_category_types: selectedCategories.length > 0 ? selectedCategories : null,
+                    p_search: debouncedSearchQuery && debouncedSearchQuery.length >= 3 ? debouncedSearchQuery : null,
+                    p_page: page,
+                    p_page_size: pageSize,
+                    p_sort_field: sortField,
+                    p_sort_order: sortOrder
+                })
+
+                const { data, error } = await (supabase.rpc('browse_items', {
+                    p_category_types: selectedCategories.length > 0 ? selectedCategories : null,
+                    p_search: debouncedSearchQuery && debouncedSearchQuery.length >= 3 ? debouncedSearchQuery : null,
+                    p_page: page,
+                    p_page_size: pageSize,
+                    p_sort_field: sortField,
+                    p_sort_order: sortOrder
+                }) as any)
+
+                console.log('[DEBUG] RPC returned:', { error, dataLength: data?.length, firstItem: data?.[0]?.title })
+
+                if (error) {
+                    console.error('RPC error:', error)
+                    toast.error('Failed to load items: ' + (error?.message || 'Unknown error'))
+                    setItems([])
+                    setTotalPages(0)
+                    setTotalCount(0)
+                    setLoading(false)
+                    return
+                }
+
+                // Total count is included in each row
+                const totalCount = data?.[0]?.total_count || 0
+                setItems(data || [])
+                setTotalPages(Math.ceil(totalCount / pageSize))
+                setTotalCount(totalCount)
+                setLoading(false)
+                return
+            } catch (err: any) {
+                console.error('RPC exception:', err)
+                toast.error('Query failed: ' + (err?.message || 'Timeout'))
+                setItems([])
+                setTotalPages(0)
+                setTotalCount(0)
+                setLoading(false)
+                return
+            }
+        }
+
+        // =================================================================
+        // ADVANCED FILTERS PATH: Full query with all columns
+        // Used when quality filters or URL-based filters are active
+        // =================================================================
+        const SELECTED_COLUMNS = 'id,external_id,source,title,description,image_url,release_year,metadata,cached_tags,category_type,last_metadata_update,created_at,external_ids,cast,director,writer,studio,genres,content_rating,runtime,vote_average,trailer_url,tagline,episodes,season,source_material,romaji_title,original_creator,platforms,developers,publishers,playtime,metacritic,min_players,max_players,min_playtime,max_playtime,min_age,mechanics,categories,complexity,designers,artists,is_expansion,bgg_id,original_language,origin_countries,original_title,status,homepage,budget,revenue,production_companies,networks,number_of_seasons,number_of_episodes,keywords,watch_providers,backdrop_path,logo_path,studios,banner_url,imdb_rating,imdb_votes,rotten_tomatoes_rating,metacritic_rating,awards_text,box_office,time_to_beat,game_engines,websites,game_modes,perspectives,videos,screenshots,franchise,dlc_count,release_date,families,rank_overall,best_players,min_age_community,language_dependence,followers,album_type,label,total_tracks,upc,audio_features,isrc,duration_ms,album_name,artist_names,preview_url,volumes,chapters,format,staff,description_length,description_parts,anilist_score,vote_count,popularity,track_number,themes'
+
         let query = supabase
             .from('global_items')
-            .select('*', { count: 'exact' })
+            .select(SELECTED_COLUMNS, { count: 'estimated' })
             .order(sortField, { ascending: sortOrder === 'asc', nullsFirst: false })
             .range((page - 1) * pageSize, page * pageSize - 1)
 
         // Text Search - require 3+ chars to avoid expensive full-table scans
-        if (searchQuery && searchQuery.length >= 3) {
+        // Uses debouncedSearchQuery for performance (400ms delay on keystrokes)
+        if (debouncedSearchQuery && debouncedSearchQuery.length >= 3) {
             // Use simpler pattern matching for better performance
-            const cleanQuery = searchQuery.trim()
+            const cleanQuery = debouncedSearchQuery.trim()
             query = query.ilike('title', `%${cleanQuery}%`)
         }
 
@@ -451,26 +520,57 @@ export default function DataBrowserPage() {
             query = query.or(orConditions.join(','))
         }
 
-        const { data, count, error } = await query
+        try {
+            const { data, count, error } = await query
 
-        if (error) {
-            console.error('Error fetching items:', (error as any)?.message || error)
-            console.error('Active filters:', JSON.stringify(activeFilters, null, 2))
-            console.error('Search query:', searchQuery)
+            if (error) {
+                console.error('Error fetching items:', (error as any)?.message || error)
+                console.error('Active filters:', JSON.stringify(activeFilters, null, 2))
+                console.error('Search query:', debouncedSearchQuery)
+                toast.error('Failed to load items: ' + ((error as any)?.message || 'Unknown error'))
+                setItems([])
+                setTotalPages(0)
+                setTotalCount(0)
+                return
+            }
+
+            setItems(data || [])
+            setTotalPages(Math.ceil((count || 0) / pageSize))
+            setTotalCount(count || 0)
+        } catch (err: any) {
+            console.error('Exception fetching items:', err)
+            toast.error('Search failed: ' + (err?.message || 'Query timeout'))
+            setItems([])
+            setTotalPages(0)
+            setTotalCount(0)
+        } finally {
             setLoading(false)
-            return
         }
+    }, [supabase, page, debouncedSearchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize, activeFilters, sortField, sortOrder])
 
-        setItems(data || [])
-        setTotalPages(Math.ceil((count || 0) / pageSize))
-        setTotalCount(count || 0)
-        setLoading(false)
-    }, [supabase, page, searchQuery, missingImage, shortDesc, uncategorized, selectedCategories, pageSize, activeFilters, sortField, sortOrder])
-
+    // Load items first (fast), then stats in background
     useEffect(() => {
-        fetchStats()
         fetchItems()
-    }, [fetchStats, fetchItems])
+    }, [fetchItems])
+
+    // Reset page to 1 when search or category filters change (fixes search+filter combo bug)
+    useEffect(() => {
+        setPage(1)
+    }, [debouncedSearchQuery, selectedCategories, missingImage, shortDesc, uncategorized])
+
+    // Debounce search query - wait 400ms after user stops typing before triggering search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery)
+        }, 400)
+        return () => clearTimeout(timer)
+    }, [searchQuery])
+
+    // Defer stats loading - runs after items are displayed
+    useEffect(() => {
+        const timer = setTimeout(() => fetchStats(), 100)
+        return () => clearTimeout(timer)
+    }, [fetchStats])
 
     // Select visible items
     useEffect(() => {
@@ -756,41 +856,34 @@ export default function DataBrowserPage() {
         setRegeneratingDescriptionIds(prev => new Set(prev).add(item.id))
 
         try {
-            // Call the new enrich-metadata endpoint (fetches from category-specific providers)
+            // Call enrich-metadata with descriptionOnly=true (only regenerates description, skips metadata)
             const response = await fetch('/api/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })
+                body: JSON.stringify({
+                    itemId: item.id,
+                    title: item.title,
+                    type: item.category_type,
+                    descriptionOnly: true  // Only regenerate description, skip metadata fetch
+                })
             })
 
             if (response.ok) {
                 const data = await response.json()
-                // Update local state with description AND all enriched fields (ratings, etc.)
+                // Update local state with description only
                 setItems(prev => prev.map(i =>
                     i.id === item.id
                         ? {
                             ...i,
                             description: data.description,
-                            description_parts: data.description_parts,
-                            ...data.enrichedData // Merge all enriched fields (imdb_rating, rotten_tomatoes_rating, etc.)
+                            description_parts: data.description_parts
                         }
                         : i
                 ))
 
-                // Toast with provider and OMDB info
-                if (data.enriched) {
-                    let message = `Enriched from ${data.provider}: ${data.fieldsUpdated.length} fields`
-                    if (data.omdbStatus === 'success' && data.omdbRatings?.length > 0) {
-                        message += ` (${data.omdbRatings.join(', ')})`
-                    } else if (data.omdbStatus === 'not_found') {
-                        message += ' (No OMDB ratings found)'
-                    }
-                    toast.success(message)
-                } else {
-                    toast.success('Description regenerated')
-                }
+                toast.success('Description regenerated')
             } else {
-                toast.error('Failed to enrich metadata')
+                toast.error('Failed to regenerate description')
             }
         } catch (error) {
             console.error('Failed to regenerate:', error)
@@ -798,6 +891,58 @@ export default function DataBrowserPage() {
         } finally {
             // Remove from loading set
             setRegeneratingDescriptionIds(prev => {
+                const next = new Set(prev)
+                next.delete(item.id)
+                return next
+            })
+        }
+    }
+
+    // Force refresh all metadata from providers (OMDB, TMDB, etc.)
+    const handleRefreshMetadata = async (item: GlobalItem) => {
+        setRefreshingMetadataIds(prev => new Set(prev).add(item.id))
+
+        try {
+            const response = await fetch('/api/ai/enrich-metadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    itemId: item.id,
+                    title: item.title,
+                    type: item.category_type,
+                    force: true  // Force update all fields
+                })
+            })
+
+            if (response.ok) {
+                const data = await response.json()
+                // Update local state with all enriched fields
+                setItems(prev => prev.map(i =>
+                    i.id === item.id
+                        ? {
+                            ...i,
+                            description: data.description,
+                            description_parts: data.description_parts,
+                            ...data.enrichedData
+                        }
+                        : i
+                ))
+
+                if (data.omdbRatings?.length > 0) {
+                    toast.success(`Metadata refreshed: ${data.omdbRatings.join(', ')}`)
+                } else if (data.enriched) {
+                    toast.success(`Metadata refreshed: ${data.fieldsUpdated.length} fields updated`)
+                } else {
+                    toast.success('Metadata refreshed')
+                }
+            } else {
+                toast.error('Failed to refresh metadata')
+            }
+        } catch (error) {
+            console.error('Failed to refresh metadata:', error)
+            toast.error('Failed to refresh metadata')
+        } finally {
+            setRefreshingMetadataIds(prev => {
                 const next = new Set(prev)
                 next.delete(item.id)
                 return next
@@ -1063,7 +1208,7 @@ export default function DataBrowserPage() {
                                                 if (checked) setSelectedCategories([...selectedCategories, key])
                                                 else setSelectedCategories(selectedCategories.filter(s => s !== key))
                                             }}
-                                            className="data-[state=checked]:bg-zinc-700 data-[state=checked]:text-white border-zinc-600"
+                                            className="data-[state=checked]:bg-cyan-600 data-[state=checked]:border-cyan-600 border-zinc-600"
                                         />
                                         <Icon className={`w-4 h-4 ${color}`} />
                                         <span className="text-sm text-zinc-300">{label}</span>
@@ -1209,7 +1354,7 @@ export default function DataBrowserPage() {
 
                             {/* Items Grid */}
                             {loading ? (
-                                <div className="flex items-center justify-center h-64">
+                                <div className="flex items-center justify-center w-full h-64">
                                     <div className="flex flex-col items-center gap-2">
                                         <RefreshCw className="w-8 h-8 animate-spin text-cyan-500" />
                                         <p className="text-zinc-500 text-sm">Loading items...</p>
@@ -1294,6 +1439,18 @@ export default function DataBrowserPage() {
                                                                     <Pencil className="w-3.5 h-3.5 mr-2" />
                                                                     Edit
                                                                 </DropdownMenuItem>
+                                                                <DropdownMenuSeparator className="bg-zinc-800" />
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleRegenerate(item)
+                                                                    }}
+                                                                    disabled={regeneratingDescriptionIds.has(item.id)}
+                                                                    className="text-zinc-300 focus:bg-zinc-800 focus:text-white cursor-pointer"
+                                                                >
+                                                                    <Wand2 className={`w-3.5 h-3.5 mr-2 ${regeneratingDescriptionIds.has(item.id) ? 'animate-pulse' : ''}`} />
+                                                                    Regenerate Description
+                                                                </DropdownMenuItem>
                                                                 <DropdownMenuItem
                                                                     onClick={(e) => {
                                                                         e.stopPropagation()
@@ -1304,6 +1461,17 @@ export default function DataBrowserPage() {
                                                                 >
                                                                     <Tag className="w-3.5 h-3.5 mr-2" />
                                                                     Generate Tags
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleRefreshMetadata(item)
+                                                                    }}
+                                                                    disabled={refreshingMetadataIds.has(item.id)}
+                                                                    className="text-zinc-300 focus:bg-zinc-800 focus:text-white cursor-pointer"
+                                                                >
+                                                                    <RefreshCw className={`w-3.5 h-3.5 mr-2 ${refreshingMetadataIds.has(item.id) ? 'animate-spin' : ''}`} />
+                                                                    Refresh Metadata
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem
                                                                     onClick={(e) => {
@@ -1341,25 +1509,17 @@ export default function DataBrowserPage() {
                                                         </DropdownMenu>
                                                     </div>
 
-                                                    {/* Hero Action - Single Analyze Button */}
+                                                    {/* Hero Action - View Details Button */}
                                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 backdrop-blur-[1px]">
                                                         <Button
                                                             variant="secondary"
-                                                            className="bg-cyan-600 hover:bg-cyan-500 text-white border-0 shadow-lg shadow-cyan-900/30 px-4 py-2 h-auto gap-2"
-                                                            disabled={regeneratingDescriptionIds.has(item.id)}
+                                                            className="bg-cyan-600 hover:bg-cyan-500 text-white border-0 shadow-lg shadow-cyan-900/30 px-4 py-2 h-auto"
                                                             onClick={(e) => {
                                                                 e.stopPropagation()
-                                                                handleRegenerate(item)
+                                                                setViewItem(item)
                                                             }}
                                                         >
-                                                            {regeneratingDescriptionIds.has(item.id) ? (
-                                                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <Sparkles className="w-4 h-4" />
-                                                            )}
-                                                            <span className="text-sm font-medium">
-                                                                {regeneratingDescriptionIds.has(item.id) ? 'Analyzing...' : 'Analyze'}
-                                                            </span>
+                                                            <span className="text-sm font-medium">View Details</span>
                                                         </Button>
                                                     </div>
 
@@ -1862,6 +2022,7 @@ export default function DataBrowserPage() {
                     item={viewItem as any}
                     isOpen={!!viewItem}
                     onClose={() => setViewItem(null)}
+                    onItemChange={(item: any) => setViewItem(item)}
                     onEdit={(item: any) => {
                         setViewItem(null)
                         setEditItem(item)

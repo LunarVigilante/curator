@@ -83,6 +83,7 @@ const PROVIDER_CONFIGS: Record<string, { endpoint: string; defaultModel: string 
 
 /**
  * Call LLM with explicit configuration
+ * Includes retry logic with exponential backoff for timeouts and transient errors
  * @param options - LLM options including apiKey, provider, model, prompts
  */
 export async function callLLM(options: LLMOptions): Promise<string> {
@@ -159,42 +160,77 @@ export async function callLLM(options: LLMOptions): Promise<string> {
     // Add max_tokens to cap output and control costs
     requestBody.max_tokens = maxTokens
 
-    // Create abort controller for timeout
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    // Retry configuration
+    const MAX_RETRIES = 3
+    const BASE_DELAY_MS = 1000 // 1 second base delay for exponential backoff
 
-    try {
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(requestBody),
-            signal: controller.signal
-        })
+    let lastError: Error | null = null
 
-        if (!response.ok) {
-            const errorText = await response.text()
-            throw new Error(`LLM API Error: ${response.status} ${response.statusText} - ${errorText}`)
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        // Create abort controller for timeout
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            })
+
+            // Check for transient errors that warrant a retry
+            if (response.status >= 500 && attempt < MAX_RETRIES) {
+                const errorText = await response.text()
+                console.warn(`[LLM] Transient error (${response.status}), attempt ${attempt + 1}/${MAX_RETRIES + 1}: ${errorText}`)
+                lastError = new Error(`LLM API Error: ${response.status} ${response.statusText}`)
+                clearTimeout(timeoutId)
+                // Exponential backoff: 1s, 2s, 4s
+                await new Promise(resolve => setTimeout(resolve, BASE_DELAY_MS * Math.pow(2, attempt)))
+                continue
+            }
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                throw new Error(`LLM API Error: ${response.status} ${response.statusText} - ${errorText}`)
+            }
+
+            const data = await response.json()
+            let content = data.choices[0].message.content
+
+            // If JSON mode was requested, clean up any residual formatting
+            // (Some providers may still include code blocks even with response_format)
+            if (jsonMode) {
+                content = cleanLLMResponse(content)
+            }
+
+            return content
+        } catch (error: any) {
+            clearTimeout(timeoutId)
+
+            // Handle timeout - retry if we have attempts left
+            if (error.name === 'AbortError') {
+                console.warn(`[LLM] Timeout on attempt ${attempt + 1}/${MAX_RETRIES + 1}`)
+                lastError = new Error('LLM request timed out. Please try again.')
+
+                if (attempt < MAX_RETRIES) {
+                    // Exponential backoff: 1s, 2s, 4s
+                    await new Promise(resolve => setTimeout(resolve, BASE_DELAY_MS * Math.pow(2, attempt)))
+                    continue
+                }
+            } else {
+                // For non-timeout errors, throw immediately (auth errors, rate limits, etc.)
+                console.error('LLM Call Failed:', error)
+                throw error
+            }
+        } finally {
+            clearTimeout(timeoutId)
         }
-
-        const data = await response.json()
-        let content = data.choices[0].message.content
-
-        // If JSON mode was requested, clean up any residual formatting
-        // (Some providers may still include code blocks even with response_format)
-        if (jsonMode) {
-            content = cleanLLMResponse(content)
-        }
-
-        return content
-    } catch (error: any) {
-        if (error.name === 'AbortError') {
-            throw new Error('LLM request timed out. Please try again.')
-        }
-        console.error('LLM Call Failed:', error)
-        throw error
-    } finally {
-        clearTimeout(timeoutId)
     }
+
+    // If we exhausted all retries, throw the last error
+    console.error(`[LLM] All ${MAX_RETRIES + 1} attempts failed`)
+    throw lastError || new Error('LLM request failed after multiple retries')
 }
 
 /**
