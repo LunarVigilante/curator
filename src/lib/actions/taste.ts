@@ -122,6 +122,46 @@ function computeDiversityScore(distribution: TierDistribution): number {
 }
 
 /**
+ * Compute Consistency Score: How consistent/clustered are the user's ratings?
+ * Higher = ratings clustered around a mean (low variance), lower = ratings spread out (high variance)
+ */
+export function computeConsistencyScore(distribution: TierDistribution): number {
+    // Map tiers to numeric values
+    const tierValues: Record<keyof TierDistribution, number> = {
+        S: 6, A: 5, B: 4, C: 3, D: 2, F: 1
+    }
+
+    // Check if distribution has any data
+    const totalPercent = Object.values(distribution).reduce((sum, v) => sum + v, 0)
+    if (totalPercent < 0.1) return 0 // Empty or effectively empty
+
+    // Calculate Mean
+    let weightedSum = 0
+    for (const [tier, percent] of Object.entries(distribution)) {
+        weightedSum += (percent / 100) * tierValues[tier as keyof TierDistribution]
+    }
+    const mean = weightedSum // Since weights sum to 1 (100%)
+
+    // Calculate Variance
+    let variance = 0
+    for (const [tier, percent] of Object.entries(distribution)) {
+        const val = tierValues[tier as keyof TierDistribution]
+        variance += (percent / 100) * Math.pow(val - mean, 2)
+    }
+
+    const sd = Math.sqrt(variance)
+
+    // Max possible SD is with 50% S (6) and 50% F (1)
+    // Mean = 3.5, Variance = 6.25, SD = 2.5
+    const maxSd = 2.5
+
+    // Normalize: 0 SD = 100 Score, Max SD = 0 Score
+    const score = Math.max(0, 100 - (sd / maxSd * 100))
+
+    return Math.round(score)
+}
+
+/**
  * Compute all metrics for a user
  */
 export async function computeUserMetrics(
@@ -136,7 +176,7 @@ export async function computeUserMetrics(
         [MetricTypes.SNOB_SCORE]: 0, // Computed with comparison
         [MetricTypes.ALIGNMENT_GLOBAL]: 0, // Computed with cohort
         [MetricTypes.ALIGNMENT_EXPERTS]: 0, // Computed with cohort
-        [MetricTypes.CONSISTENCY_SCORE]: 0, // TODO: implement
+        [MetricTypes.CONSISTENCY_SCORE]: computeConsistencyScore(distribution),
     }
 
     return metrics
