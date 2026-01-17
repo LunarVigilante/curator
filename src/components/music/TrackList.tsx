@@ -157,6 +157,7 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
                                     size="icon"
                                     className="h-7 w-7 shrink-0 text-zinc-400 hover:text-white"
                                     onClick={() => handlePlayPause(track)}
+                                    aria-label={playingId === track.id ? `Pause ${track.title}` : `Play ${track.title}`}
                                 >
                                     {playingId === track.id ? (
                                         <Pause className="w-3.5 h-3.5 fill-current" />
