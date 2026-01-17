@@ -11,7 +11,7 @@ export class LetterboxdAdapter implements ImportStrategy {
 
     canHandle(input: string): boolean {
         return URL_PATTERNS.LETTERBOXD_LIST.test(input) ||
-               URL_PATTERNS.LETTERBOXD_WATCHLIST.test(input)
+            URL_PATTERNS.LETTERBOXD_WATCHLIST.test(input)
     }
 
     async parse(input: string): Promise<ParsedImport> {
@@ -29,12 +29,12 @@ export class LetterboxdAdapter implements ImportStrategy {
 
             if (pageCount === 0) {
                 collectionTitle = $('h1.title-1').text().trim() ||
-                                  $('meta[property="og:title"]').attr('content')?.replace(' • Letterboxd', '') ||
-                                  'Letterboxd List'
+                    $('meta[property="og:title"]').attr('content')?.replace(' • Letterboxd', '') ||
+                    'Letterboxd List'
 
                 collectionDescription = $('.list-description p').text().trim() ||
-                                        $('meta[property="og:description"]').attr('content') ||
-                                        ''
+                    $('meta[property="og:description"]').attr('content') ||
+                    ''
             }
 
             const pageItems = this.parsePage($)
@@ -76,12 +76,12 @@ export class LetterboxdAdapter implements ImportStrategy {
             }
         })
         if (!response.ok) {
-             throw new Error(`Failed to fetch Letterboxd list: ${response.status}`)
+            throw new Error(`Failed to fetch Letterboxd list: ${response.status}`)
         }
         return await response.text()
     }
 
-    private parsePage($: cheerio.CheerioAPI): ParsedImportItem[] {
+    private parsePage($: ReturnType<typeof cheerio.load>): ParsedImportItem[] {
         const items: ParsedImportItem[] = []
 
         $('.poster-list .posteritem').each((_, el) => {

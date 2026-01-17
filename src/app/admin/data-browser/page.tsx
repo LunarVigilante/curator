@@ -382,14 +382,14 @@ export default function DataBrowserPage() {
                     p_sort_order: sortOrder
                 })
 
-                const { data, error } = await (supabase.rpc('browse_items', {
+                const { data, error } = await ((supabase as any).rpc('browse_items', {
                     p_category_types: selectedCategories.length > 0 ? selectedCategories : null,
                     p_search: debouncedSearchQuery && debouncedSearchQuery.length >= 3 ? debouncedSearchQuery : null,
                     p_page: page,
                     p_page_size: pageSize,
                     p_sort_field: sortField,
                     p_sort_order: sortOrder
-                }) as any)
+                }))
 
                 console.log('[DEBUG] RPC returned:', { error, dataLength: data?.length, firstItem: data?.[0]?.title })
 
