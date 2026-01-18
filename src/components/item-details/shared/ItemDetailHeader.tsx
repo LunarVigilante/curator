@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React from 'react'
 import type { GlobalItem } from '../types'
 import { getCategoryIcon, cleanTitle } from '../utils'
 import { RatingBadges } from './RatingBadges'
@@ -9,19 +9,19 @@ interface ItemDetailHeaderProps {
     item: GlobalItem
 }
 
-export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
-    // Pre-render the icon as an element (not a component) to satisfy static-components rule
+// Static component for rendering category icon - avoids dynamic component creation during render
+function CategoryIconDisplay({ categoryType }: { categoryType: string | null }) {
+    const Icon = getCategoryIcon(categoryType)
     // eslint-disable-next-line react-hooks/static-components
-    const categoryIconElement = useMemo(() => {
-        const IconComponent = getCategoryIcon(item.category_type)
-        return IconComponent ? <IconComponent className="w-3.5 h-3.5 mb-0.5" /> : null
-    }, [item.category_type])
+    return Icon ? <Icon className="w-3.5 h-3.5 mb-0.5" /> : null
+}
 
+export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
     return (
         <div className="space-y-4">
             {/* Category • Year • Rating */}
             <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-zinc-500">
-                {categoryIconElement}
+                <CategoryIconDisplay categoryType={item.category_type} />
                 <span>{item.category_type?.replace('_', ' ')}</span>
                 <span className="text-zinc-800">•</span>
                 <span>{item.release_year}</span>

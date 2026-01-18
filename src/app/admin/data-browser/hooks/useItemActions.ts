@@ -199,7 +199,7 @@ export function useItemActions({ state, refreshItems, onItemsDeleted }: ItemActi
                 toast.success('Item updated')
             } else {
                 // Remove ID for creation to let DB generate it (if using UUID) or ensure it's provided
-                const { id, ...newItem } = item
+                const { id: _id, ...newItem } = item
                 const { error } = await (supabase
                     .from('global_items') as any)
                     .insert([newItem])

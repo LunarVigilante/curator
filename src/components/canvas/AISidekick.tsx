@@ -66,7 +66,7 @@ export function AISidekick({
             ].filter(s => s.itemIds.length > 1)
 
             setSuggestions(mockSuggestions)
-        } catch (e) {
+        } catch (_e) {
             setError('Failed to analyze items. Try again.')
         } finally {
             setIsAnalyzing(false)

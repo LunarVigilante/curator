@@ -314,7 +314,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
     const [reportOpen, setReportOpen] = useState(false)
     const [descriptionExpanded, setDescriptionExpanded] = useState(false)
     const [trackFeatures, setTrackFeatures] = useState<any[]>([])
-    const [isLoadingRelated, setIsLoadingRelated] = useState(false)
+    const [_isLoadingRelated, _setIsLoadingRelated] = useState(false)
 
     // Track Player State
     const [isPlaying, setIsPlaying] = useState(false)
@@ -337,7 +337,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
     const handleRelatedItemClick = async (itemId: string) => {
         if (!onItemChange) return
 
-        setIsLoadingRelated(true)
+        _setIsLoadingRelated(true)
         try {
             const { createBrowserClient } = await import('@supabase/ssr')
             const supabase = createBrowserClient(
@@ -362,7 +362,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
         } catch (err) {
             console.error('Error loading related item:', err)
         } finally {
-            setIsLoadingRelated(false)
+            _setIsLoadingRelated(false)
         }
     }
 
@@ -373,7 +373,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
     const isVideoGame = category === 'VIDEO_GAME'
     const isBook = category === 'BOOK'
     const isMusicAlbum = item.category_type === 'MUSIC_ALBUM'
-    const isMusicArtist = item.category_type === 'MUSIC_ARTIST'
+    const _isMusicArtist = item.category_type === 'MUSIC_ARTIST'
     const isMusicTrack = item.category_type === 'MUSIC_TRACK'
     const CategoryIconComponent = getCategoryIcon(item.category_type)
 
@@ -397,7 +397,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
     const writer = item.writer || metadata.writer
     const originalCreator = item.original_creator || metadata.original_creator
     const createdByList = metadata.created_by
-    const createdBy = Array.isArray(createdByList) ? createdByList : (typeof createdByList === 'string' ? [createdByList] : undefined)
+    const _createdBy = Array.isArray(createdByList) ? createdByList : (typeof createdByList === 'string' ? [createdByList] : undefined)
 
     const networks = item.networks || metadata.networks
     const numberOfSeasons = item.number_of_seasons || metadata.number_of_seasons || metadata.totalSeasons
@@ -1444,7 +1444,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                                     <Users className="w-3.5 h-3.5" /> {isAnime ? "Voice Cast" : "Cast"}
                                                 </h4>
                                                 <div className="flex flex-wrap gap-1.5">
-                                                    {cast.slice(0, 6).map((actor, idx) => {
+                                                    {cast.slice(0, 6).map((actor, _idx) => {
                                                         // Get character name from metadata.credits if available
                                                         const credits = (item.metadata as Record<string, any>)?.credits?.cast as Array<{ name?: string; character?: string }> | undefined
                                                         const characterInfo = credits?.find((c: any) => c.name === actor)
@@ -1844,7 +1844,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                         const isEnded = statusLower.includes('ended') || statusLower.includes('canceled')
                                         const isCanceled = statusLower.includes('canceled')
                                         const isMiniseries = metadata.type?.toLowerCase() === 'miniseries'
-                                        const isReturning = statusLower.includes('returning') || statusLower.includes('production')
+                                        const _isReturning = statusLower.includes('returning') || statusLower.includes('production')
                                         const sourceMaterial = metadata.source_material as string | undefined
 
                                         // Build air date range for TV - Fixed logic

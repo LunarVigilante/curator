@@ -9,7 +9,7 @@ import {
     NintendoSwitchIcon, NintendoIcon, WiiIcon,
     AndroidIcon, IOSIcon,
     SegaIcon, AtariIcon,
-    ArcadeIcon, VRIcon, GlobeIcon, GamepadIcon, MonitorIcon, SmartphoneIcon
+    ArcadeIcon, VRIcon, GlobeIcon, GamepadIcon, MonitorIcon
 } from '@/components/icons/PlatformIcons'
 
 // Icon component mapping by normalized platform name

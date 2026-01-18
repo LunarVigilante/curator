@@ -53,7 +53,7 @@ export default function ReportItemDialog({
             } else {
                 toast.error(result.error || 'Failed to submit report')
             }
-        } catch (error) {
+        } catch (_error) {
             toast.error('An unexpected error occurred')
         } finally {
             setIsSubmitting(false)

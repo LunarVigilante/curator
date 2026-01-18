@@ -1,7 +1,6 @@
 import {
     type ImportStrategy,
     type ParsedImport,
-    type ParsedImportItem,
     URL_PATTERNS
 } from '@/lib/types/import'
 

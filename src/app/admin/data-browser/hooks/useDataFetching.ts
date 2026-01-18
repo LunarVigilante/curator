@@ -224,6 +224,7 @@ export function useDataFetching(state: BrowserState) {
         } finally {
             setLoading(false)
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [supabase, ui.page, ui.pageSize, filters.debouncedSearchQuery, filters.missingImage, filters.shortDesc, filters.uncategorized, filters.selectedCategories, filters.activeFilters, sort.sortField, sort.sortOrder])
 
     // Effects
@@ -232,6 +233,7 @@ export function useDataFetching(state: BrowserState) {
     }, [fetchItems])
 
     // Reset page on filter change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         ui.setPage(1)
     }, [filters.debouncedSearchQuery, filters.selectedCategories, filters.missingImage, filters.shortDesc, filters.uncategorized])

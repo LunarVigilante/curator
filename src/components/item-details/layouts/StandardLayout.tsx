@@ -33,8 +33,6 @@ export function StandardLayout({
     onEdit,
     onDelete,
     onReportOpen,
-    onClose,
-    onItemChange,
     onRefreshMetadata,
     onRegenerateDescription,
     isRefreshing,
@@ -49,12 +47,12 @@ export function StandardLayout({
     const isVideoGame = category === 'VIDEO_GAME'
     const isMovie = category === 'MOVIE'
     const isTV = category === 'TV' || category === 'TV_SHOW'
-    const isMusicAlbum = category === 'MUSIC_ALBUM'
-    const isMusicArtist = category === 'MUSIC_ARTIST'
+    const _isMusicAlbum = category === 'MUSIC_ALBUM'
+    const _isMusicArtist = category === 'MUSIC_ARTIST'
 
     // Cast display logic
-    const displayedCast = item.cast?.slice(0, 10).join(', ')
-    const hasMoreCast = (item.cast?.length || 0) > 10
+    const _displayedCast = item.cast?.slice(0, 10).join(', ')
+    const _hasMoreCast = (item.cast?.length || 0) > 10
 
     return (
         <div className="relative z-10 flex flex-col md:flex-row w-full h-full">

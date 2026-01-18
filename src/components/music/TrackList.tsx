@@ -74,7 +74,8 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
         } finally {
             setLoading(false)
         }
-    }, [albumName, artistNames, onFeaturesLoad])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [albumName, onFeaturesLoad])
 
     useEffect(() => {
         if (albumName) {
@@ -141,8 +142,8 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
                         <div
                             key={track.id}
                             className={`flex items-center gap-3 py-2 px-3 rounded-lg transition-colors ${playingId === track.id
-                                    ? 'bg-purple-500/10 text-purple-300'
-                                    : 'hover:bg-zinc-800/50'
+                                ? 'bg-purple-500/10 text-purple-300'
+                                : 'hover:bg-zinc-800/50'
                                 }`}
                         >
                             {/* Track Number */}

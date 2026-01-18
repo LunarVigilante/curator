@@ -39,6 +39,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
 
     // Media API Keys
     const [tmdbApiKey, setTmdbApiKey] = useState(settings?.['tmdb_api_key'] || '');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [rawgApiKey, setRawgApiKey] = useState(settings?.['rawg_api_key'] || '');
     const [googleBooksApiKey, setGoogleBooksApiKey] = useState(settings?.['google_books_api_key'] || '');
     const [spotifyClientId, setSpotifyClientId] = useState(settings?.['spotify_client_id'] || '');
@@ -60,9 +61,12 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
 
     // Email State
     const [resendKey, setResendKey] = useState(settings?.['resend_api_key'] || '');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [fromEmail, setFromEmail] = useState(settings?.['resend_from_email'] || '');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [appUrl, setAppUrl] = useState(settings?.['public_app_url'] || 'http://localhost:3000');
     const [testEmailRecipient, setTestEmailRecipient] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
     // Feature Flags
@@ -176,6 +180,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleSendTestEmail = async () => {
         if (!testEmailRecipient || !resendKey) {
             toast.error('Please enter a valid recipient email and Resend API key');

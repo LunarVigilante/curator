@@ -117,7 +117,7 @@ export function InfiniteCanvas({
         [items, similarityThreshold]
     )
 
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+    const [nodes, _setNodes, onNodesChange] = useNodesState(initialNodes)
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
     const onConnect = useCallback(

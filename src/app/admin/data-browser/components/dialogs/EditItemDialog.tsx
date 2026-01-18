@@ -98,7 +98,7 @@ export function EditItemDialog({
         try {
             const { data } = await fetch(`/api/search/metadata?q=${encodeURIComponent(title)}&type=${categoryType || ''}`).then(r => r.json())
             setMediaResults(data || [])
-        } catch (e) {
+        } catch (_e) {
             toast.error('Search failed')
         }
     }
@@ -125,7 +125,7 @@ export function EditItemDialog({
             })
             const data = await response.json()
             if (data.description) setDescription(data.description)
-        } catch (e) {
+        } catch (_e) {
             toast.error('Failed to generate description')
         } finally {
             setIsGeneratingDescription(false)
@@ -149,7 +149,7 @@ export function EditItemDialog({
                 setTags(prev => Array.from(new Set([...prev, ...validTags.map(t => t.id)])))
                 toast.success(`Generated ${validTags.length} tags`)
             }
-        } catch (e) {
+        } catch (_e) {
             toast.error('Failed to generate tags')
         } finally {
             setIsGeneratingTags(false)

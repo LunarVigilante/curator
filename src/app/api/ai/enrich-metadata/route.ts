@@ -56,7 +56,7 @@ async function fetchOmdbData(imdbId: string) {
             writer: data.Writer && data.Writer !== 'N/A' ? data.Writer : null,
             box_office: data.BoxOffice && data.BoxOffice !== 'N/A' ? data.BoxOffice : null,
         }
-    } catch (e) {
+    } catch (_e) {
         return null
     }
 }
@@ -89,7 +89,7 @@ async function fetchOmdbDataByTitle(title: string, year: number) {
             writer: data.Writer && data.Writer !== 'N/A' ? data.Writer : null,
             box_office: data.BoxOffice && data.BoxOffice !== 'N/A' ? data.BoxOffice : null,
         }
-    } catch (e) {
+    } catch (_e) {
         return null
     }
 }
