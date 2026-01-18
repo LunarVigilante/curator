@@ -478,7 +478,6 @@ export async function getTournamentPool(categoryId: string, size: number = 20) {
     return await TournamentService.generateTournamentPool(userId, categoryId, size, true)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function submitMatchResult(_winnerId: string, _loserId: string) {
     const session = await getSession()
     if (!session) return

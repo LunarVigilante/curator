@@ -1,0 +1,31 @@
+
+D:\Antigravity\curator232423421\src\app\admin\data-browser\hooks\useDataFetching.ts
+  236:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  239:8  warning  React Hook useEffect has a missing dependency: 'ui'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\Antigravity\curator232423421\src\app\admin\reports\page.tsx
+  102:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  105:8  warning  React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\Antigravity\curator232423421\src\components\analysis\JustificationPanel.tsx
+  87:33  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+D:\Antigravity\curator232423421\src\components\canvas\ItemNode.tsx
+  56:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+D:\Antigravity\curator232423421\src\components\music\TrackList.tsx
+  39:48  warning  'artistNames' is defined but never used. Allowed unused args must match /^_/u                   @typescript-eslint/no-unused-vars
+  77:9   warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+D:\Antigravity\curator232423421\src\lib\actions\ai.ts
+  270:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-unused-vars')
+
+D:\Antigravity\curator232423421\src\lib\actions\items.ts
+  481:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-unused-vars')
+
+D:\Antigravity\curator232423421\src\lib\actions\profile.ts
+  146:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-unused-vars')
+
+Γ£û 11 problems (0 errors, 11 warnings)
+  0 errors and 6 warnings potentially fixable with the `--fix` option.
+

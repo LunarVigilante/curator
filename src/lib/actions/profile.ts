@@ -143,7 +143,6 @@ export async function requestEmailChange(newEmail: string): Promise<{ success: b
     return { success: true }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function confirmEmailChange(_code: string): Promise<{ success: boolean; error?: string }> {
     // Supabase handles email confirmation via magic links, not codes
     return { success: false, error: 'Email confirmation is handled via the link sent to your email' }

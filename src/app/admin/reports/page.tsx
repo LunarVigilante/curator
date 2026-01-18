@@ -99,9 +99,9 @@ export default function AdminReportsPage() {
 
     const supabase = createClient()
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         loadData()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab])
 
     const loadData = async () => {

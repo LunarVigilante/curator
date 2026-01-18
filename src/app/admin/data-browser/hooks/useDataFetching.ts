@@ -233,9 +233,9 @@ export function useDataFetching(state: BrowserState) {
     }, [fetchItems])
 
     // Reset page on filter change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         ui.setPage(1)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filters.debouncedSearchQuery, filters.selectedCategories, filters.missingImage, filters.shortDesc, filters.uncategorized])
 
     // Defer stats loading

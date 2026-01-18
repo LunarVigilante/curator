@@ -36,7 +36,7 @@ function formatDuration(ms: number | null): string {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
-export default function TrackList({ albumName, artistNames, onFeaturesLoad }: TrackListProps) {
+export default function TrackList({ albumName, artistNames: _artistNames, onFeaturesLoad }: TrackListProps) {
     const [tracks, setTracks] = useState<Track[]>([])
     const [loading, setLoading] = useState(true)
     const [playingId, setPlayingId] = useState<string | null>(null)
@@ -74,7 +74,6 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
         } finally {
             setLoading(false)
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [albumName, onFeaturesLoad])
 
     useEffect(() => {

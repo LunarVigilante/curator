@@ -53,6 +53,7 @@ function ItemNodeComponent({ data, selected }: NodeProps) {
             {/* Image */}
             <div className="relative w-full aspect-[3/4] bg-gray-900">
                 {image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                         src={image}
                         alt={title}
