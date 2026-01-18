@@ -84,6 +84,7 @@ export function JustificationPanel({
                     <CardHeader className="pb-3">
                         <div className="flex items-center gap-3">
                             {itemImage && (
+                                // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                     src={itemImage}
                                     alt={itemName}

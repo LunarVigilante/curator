@@ -6,6 +6,7 @@ import { generateEmbedding } from '@/lib/harvesters/shared'
 
 const OMDB_API_KEY = process.env.OMDB_API_KEY
 const OMDB_BASE_URL = 'https://www.omdbapi.com'
+const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY
 
 /**
  * Category-specific provider mapping
@@ -55,7 +56,7 @@ async function fetchOmdbData(imdbId: string) {
             writer: data.Writer && data.Writer !== 'N/A' ? data.Writer : null,
             box_office: data.BoxOffice && data.BoxOffice !== 'N/A' ? data.BoxOffice : null,
         }
-    } catch (e) {
+    } catch (_e) {
         return null
     }
 }
@@ -88,7 +89,7 @@ async function fetchOmdbDataByTitle(title: string, year: number) {
             writer: data.Writer && data.Writer !== 'N/A' ? data.Writer : null,
             box_office: data.BoxOffice && data.BoxOffice !== 'N/A' ? data.BoxOffice : null,
         }
-    } catch (e) {
+    } catch (_e) {
         return null
     }
 }
@@ -97,9 +98,26 @@ async function fetchOmdbDataByTitle(title: string, year: number) {
  * API endpoint to enrich item metadata from category-specific providers
  * Also regenerates description and embedding
  */
+/**
+ * Fetch TMDB details including credits and external IDs
+ */
+async function fetchTmdbDetails(id: string | number, type: string) {
+    if (!TMDB_API_KEY) return null
+    const endpoint = type === 'MOVIE' ? 'movie' : 'tv'
+    try {
+        const url = `https://api.themoviedb.org/3/${endpoint}/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords,external_ids`
+        const res = await fetch(url)
+        if (!res.ok) return null
+        return await res.json()
+    } catch (e) {
+        console.error('TMDB Fetch Error:', e)
+        return null
+    }
+}
+
 export async function POST(request: NextRequest) {
     try {
-        const { itemId, title, type } = await request.json()
+        const { itemId, title, type, force = false, descriptionOnly = false } = await request.json()
 
         if (!itemId || !title || !type) {
             return NextResponse.json(
@@ -128,28 +146,39 @@ export async function POST(request: NextRequest) {
         let enrichedData: Record<string, any> = {}
         let providerResult: any = null
 
-        // Import and call the appropriate search function based on category
-        try {
-            const { searchMediaAction } = await import('@/lib/actions/media')
-            const searchResult = await searchMediaAction(title, type, null, undefined)
+        // Skip metadata enrichment if descriptionOnly mode
+        if (!descriptionOnly) {
+            // Import and call the appropriate search function based on category
+            try {
+                const { searchMediaAction } = await import('@/lib/actions/media')
+                const searchResult = await searchMediaAction(title, type, null, undefined)
 
-            if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
-                // Find best match (usually first result)
-                providerResult = searchResult.data[0]
+                if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
+                    // Find best match (usually first result)
+                    providerResult = searchResult.data[0]
 
-                // Map provider-specific fields to our schema
-                enrichedData = mapProviderData(type, providerResult, existingItem)
+                    // Fetch full TMDB details for Movies/TV to get cast, crew, networks, etc.
+                    if (['MOVIE', 'TV', 'TV_SHOW'].includes(type) && providerResult.id) {
+                        const details = await fetchTmdbDetails(providerResult.id, type)
+                        if (details) {
+                            providerResult = { ...providerResult, ...details }
+                        }
+                    }
+
+                    // Map provider-specific fields to our schema (force=true overwrites existing)
+                    enrichedData = mapProviderData(type, providerResult, existingItem, force)
+                }
+            } catch (searchError) {
+                console.warn(`Provider search failed for ${type}:`, searchError)
+                // Continue with description regeneration even if provider search fails
             }
-        } catch (searchError) {
-            console.warn(`Provider search failed for ${type}:`, searchError)
-            // Continue with description regeneration even if provider search fails
         }
 
-        // For Movies and TV: Also fetch OMDB data for ratings
+        // For Movies and TV: Also fetch OMDB data for ratings (skip if descriptionOnly)
         let omdbStatus: 'success' | 'not_found' | 'skipped' | 'error' = 'skipped'
-        let omdbRatingsFound: string[] = []
+        const omdbRatingsFound: string[] = []
 
-        if (['MOVIE', 'TV', 'TV_SHOW'].includes(type)) {
+        if (!descriptionOnly && ['MOVIE', 'TV', 'TV_SHOW'].includes(type)) {
             let omdbData = null
             const imdbId = existingItem.external_ids?.imdb || providerResult?.imdb_id
 
@@ -170,37 +199,37 @@ export async function POST(request: NextRequest) {
                     omdbStatus = 'success'
                     console.log(`[OMDB] ✅ Data found:`)
 
-                    // Map OMDB data (only update if missing)
-                    if (omdbData.imdb_rating && !existingItem.imdb_rating) {
+                    // Map OMDB data (force=true: always update, force=false: only update if missing)
+                    if (omdbData.imdb_rating && (force || !existingItem.imdb_rating)) {
                         enrichedData.imdb_rating = omdbData.imdb_rating
                         omdbRatingsFound.push(`IMDB: ${omdbData.imdb_rating}`)
                     }
-                    if (omdbData.imdb_votes && !existingItem.imdb_votes) {
+                    if (omdbData.imdb_votes && (force || !existingItem.imdb_votes)) {
                         enrichedData.imdb_votes = omdbData.imdb_votes
                     }
-                    if (omdbData.rotten_tomatoes_rating && !existingItem.rotten_tomatoes_rating) {
+                    if (omdbData.rotten_tomatoes_rating && (force || !existingItem.rotten_tomatoes_rating)) {
                         enrichedData.rotten_tomatoes_rating = omdbData.rotten_tomatoes_rating
                         omdbRatingsFound.push(`RT: ${omdbData.rotten_tomatoes_rating}%`)
                     }
-                    if (omdbData.metacritic_rating && !existingItem.metacritic_rating) {
+                    if (omdbData.metacritic_rating && (force || !existingItem.metacritic_rating)) {
                         enrichedData.metacritic_rating = omdbData.metacritic_rating
                         omdbRatingsFound.push(`MC: ${omdbData.metacritic_rating}`)
                     }
-                    if (omdbData.awards && !existingItem.awards_text) {
+                    if (omdbData.awards && (force || !existingItem.awards_text)) {
                         enrichedData.awards_text = omdbData.awards
                         omdbRatingsFound.push('Awards')
                     }
-                    if (omdbData.rated && !existingItem.content_rating) {
+                    if (omdbData.rated && (force || !existingItem.content_rating)) {
                         enrichedData.content_rating = omdbData.rated
                     }
-                    if (omdbData.writer && !existingItem.writer) {
+                    if (omdbData.writer && (force || !existingItem.writer)) {
                         enrichedData.writer = omdbData.writer
                     }
-                    if (omdbData.box_office && !existingItem.box_office) {
+                    if (omdbData.box_office && (force || !existingItem.box_office)) {
                         enrichedData.box_office = omdbData.box_office
                     }
 
-                    console.log(`[OMDB]    Ratings: ${omdbRatingsFound.length > 0 ? omdbRatingsFound.join(' | ') : 'None new (already populated)'}`)
+                    console.log(`[OMDB]    Ratings: ${omdbRatingsFound.length > 0 ? omdbRatingsFound.join(' | ') : 'None new (already populated)'}${force ? ' [FORCED]' : ''}`)
                 } else {
                     omdbStatus = 'not_found'
                     console.log(`[OMDB] ⚠️ No data found for "${title}"`)
@@ -280,80 +309,102 @@ export async function POST(request: NextRequest) {
 
 /**
  * Map provider-specific data to our unified schema
+ * @param force If true, overwrite existing values; if false, only update empty/null fields
  */
-function mapProviderData(type: string, providerData: any, existingItem: any): Record<string, any> {
+function mapProviderData(type: string, providerData: any, existingItem: any, force: boolean = false): Record<string, any> {
     const enriched: Record<string, any> = {}
 
-    // Only update fields that are currently empty/null
-    const updateIfMissing = (field: string, value: any) => {
-        if (value !== undefined && value !== null && value !== '' &&
-            (existingItem[field] === null || existingItem[field] === undefined || existingItem[field] === '')) {
-            enriched[field] = value
+    // Update field based on force flag
+    const updateField = (field: string, value: any) => {
+        if (value !== undefined && value !== null && value !== '') {
+            // If force mode, always update; otherwise only update if missing
+            if (force || existingItem[field] === null || existingItem[field] === undefined || existingItem[field] === '') {
+                enriched[field] = value
+            }
         }
     }
 
     // Common fields
-    updateIfMissing('image_url', providerData.imageUrl || providerData.poster_path)
-    updateIfMissing('release_year', providerData.year || providerData.releaseYear)
+    updateField('image_url', providerData.imageUrl || providerData.poster_path)
+    updateField('release_year', providerData.year || providerData.releaseYear)
 
     // Category-specific mappings
+    const metadataUpdates: Record<string, any> = {}
+
     switch (type) {
         case 'MOVIE':
         case 'TV':
         case 'TV_SHOW':
-            updateIfMissing('backdrop_path', providerData.backdrop_path)
-            updateIfMissing('vote_average', providerData.vote_average)
-            updateIfMissing('genres', providerData.genres)
-            updateIfMissing('runtime', providerData.runtime)
-            updateIfMissing('director', providerData.director)
-            updateIfMissing('tagline', providerData.tagline)
+            updateField('backdrop_path', providerData.backdrop_path)
+            updateField('vote_average', providerData.vote_average)
+            updateField('genres', providerData.genres)
+            updateField('runtime', providerData.runtime || (providerData.episode_run_time && providerData.episode_run_time[0]))
+            updateField('director', providerData.director)
+            updateField('tagline', providerData.tagline)
+
+            // Extended Metadata
+            if (providerData.credits?.cast) {
+                updateField('cast', providerData.credits.cast.slice(0, 20).map((c: any) => c.name))
+                // Also store cast objects in metadata for character mapping
+                metadataUpdates.credits = { cast: providerData.credits.cast.slice(0, 20) }
+            }
+            if (providerData.networks) metadataUpdates.networks = providerData.networks.map((n: any) => n.name)
+            if (providerData.created_by) metadataUpdates.created_by = providerData.created_by.map((c: any) => c.name)
+            if (providerData.status) enriched.status = providerData.status
+            if (providerData.number_of_seasons) enriched.number_of_seasons = providerData.number_of_seasons
+            if (providerData.number_of_episodes) enriched.number_of_episodes = providerData.number_of_episodes
+            if (providerData.first_air_date) metadataUpdates.first_air_date = providerData.first_air_date
+            if (providerData.last_air_date) metadataUpdates.last_air_date = providerData.last_air_date
             break
 
         case 'ANIME':
-            updateIfMissing('romaji_title', providerData.romaji_title)
-            updateIfMissing('anilist_score', providerData.score)
-            updateIfMissing('status', providerData.status)
-            updateIfMissing('genres', providerData.genres)
-            updateIfMissing('studios', providerData.studios)
+            updateField('romaji_title', providerData.romaji_title)
+            updateField('anilist_score', providerData.score)
+            updateField('status', providerData.status)
+            updateField('genres', providerData.genres)
+            updateField('studios', providerData.studios)
             break
 
         case 'VIDEO_GAME':
-            updateIfMissing('platforms', providerData.platforms)
-            updateIfMissing('developers', providerData.developers)
-            updateIfMissing('publishers', providerData.publishers)
-            updateIfMissing('genres', providerData.genres)
-            updateIfMissing('vote_average', providerData.rating)
+            updateField('platforms', providerData.platforms)
+            updateField('developers', providerData.developers)
+            updateField('publishers', providerData.publishers)
+            updateField('genres', providerData.genres)
+            updateField('vote_average', providerData.rating)
             break
 
         case 'BOARD_GAME':
-            updateIfMissing('designers', providerData.designers)
-            updateIfMissing('publishers', providerData.publishers)
-            updateIfMissing('min_players', providerData.minPlayers)
-            updateIfMissing('max_players', providerData.maxPlayers)
-            updateIfMissing('complexity', providerData.complexity)
-            updateIfMissing('vote_average', providerData.rating)
+            updateField('designers', providerData.designers)
+            updateField('publishers', providerData.publishers)
+            updateField('min_players', providerData.minPlayers)
+            updateField('max_players', providerData.maxPlayers)
+            updateField('complexity', providerData.complexity)
+            updateField('vote_average', providerData.rating)
             break
 
         case 'MUSIC_ALBUM':
         case 'MUSIC_TRACK':
         case 'MUSIC_ARTIST':
-            updateIfMissing('artist_names', providerData.artists || providerData.artistNames)
-            updateIfMissing('label', providerData.label)
-            updateIfMissing('popularity', providerData.popularity)
-            updateIfMissing('spotify_url', providerData.spotify_url || providerData.external_urls?.spotify)
-            updateIfMissing('preview_url', providerData.preview_url)
+            updateField('artist_names', providerData.artists || providerData.artistNames)
+            updateField('label', providerData.label)
+            updateField('popularity', providerData.popularity)
+            updateField('spotify_url', providerData.spotify_url || providerData.external_urls?.spotify)
+            updateField('preview_url', providerData.preview_url)
             break
 
         case 'BOOK':
-            updateIfMissing('author', providerData.authors?.[0])
-            updateIfMissing('publisher', providerData.publisher)
-            updateIfMissing('isbn', providerData.isbn)
-            updateIfMissing('page_count', providerData.pageCount)
+            updateField('author', providerData.authors?.[0])
+            updateField('publisher', providerData.publisher)
+            updateField('isbn', providerData.isbn)
+            updateField('page_count', providerData.pageCount)
             break
     }
 
-    // Store external ID in metadata
-    if (providerData.id && !existingItem.external_ids?.[type.toLowerCase()]) {
+    // Merge metadata
+    enriched.metadata = { ...(enriched.metadata as object), ...metadataUpdates }
+
+    // Store external ID in metadata (force updates existing, otherwise only if missing)
+    if (providerData.id && (force || !existingItem.external_ids?.[type.toLowerCase()])) {
         enriched.external_ids = {
             ...existingItem.external_ids,
             [type.toLowerCase()]: providerData.id

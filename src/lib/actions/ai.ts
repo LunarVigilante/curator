@@ -267,7 +267,6 @@ export async function generateTags(title: string, description: string, type: str
 }
 
 // Stub for legacy import (TODO: implement properly if needed)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function suggestMetadataSchema(_categoryName: string, _categoryDescription?: string): Promise<{ name: string; type: 'text' | 'number' | 'date' | 'url'; required?: boolean }[]> {
     // Returns empty array - feature not yet implemented
     return []

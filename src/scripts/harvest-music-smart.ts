@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
 import { TheAudioDBService } from '@/lib/services/theaudiodb';
+import { generateEmbeddingsBatch } from '@/lib/services/search';
 import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter, decodeHTMLEntities } from '@/lib/harvesters/shared';
 // @ts-ignore
 import pLimit from 'p-limit';
@@ -306,6 +307,10 @@ Genres: ${album.genres.join(', ') || 'N/A'}
     // Filter out existing tracks to avoid massive unnecessary reads/writes?
     // Optimization: Just do the safe check logic
 
+    // 1. Prepare all texts
+    const trackPayloads: any[] = [];
+    const vectorTexts: string[] = [];
+
     for (const track of tracks) {
         const features = featuresMap[track.id];
         const trackTitle = decodeHTMLEntities(track.name);
@@ -322,9 +327,26 @@ Genres: ${album.genres.join(', ') || 'N/A'}
         Vibe: ${vibeStr}
     `.trim();
 
-        const embedding = await generateEmbedding(vectorText);
+        vectorTexts.push(vectorText);
 
-        const trackPayload = {
+        trackPayloads.push({
+            track,
+            trackTitle,
+            features,
+            vectorText
+        });
+    }
+
+    // 2. Generate embeddings in batch
+    const embeddings = await generateEmbeddingsBatch(vectorTexts);
+
+    // 3. Process DB operations in parallel
+    const trackLimit = pLimit(10); // Concurrent DB ops limit
+    await Promise.all(trackPayloads.map((payload, i) => trackLimit(async () => {
+        const { track, trackTitle, features } = payload;
+        const embedding = embeddings[i];
+
+        const trackData = {
             title: trackTitle,
             category_type: 'MUSIC_TRACK',
             description: `Track ${track.track_number} on ${albumTitle}`,
@@ -350,16 +372,16 @@ Genres: ${album.genres.join(', ') || 'N/A'}
 
         if (existingTrack) {
             // STRICT SAFETY: Never overwrite description on update
-            const updatePayload = { ...trackPayload };
+            const updatePayload = { ...trackData };
             delete (updatePayload as any).description;
             delete (updatePayload as any).vector_text;
 
             await (supabase.from('global_items') as any).update(updatePayload).eq('id', (existingTrack as any).id);
         } else {
-            const { error } = await (supabase.from('global_items') as any).insert(trackPayload);
+            const { error } = await (supabase.from('global_items') as any).insert(trackData);
             if (error && error.code !== '23505') console.error(`❌ Error inserting track ${trackTitle}:`, error);
         }
-    }
+    })));
 
     // console.log(`      💿 Saved Album + ${tracks.length} Tracks.`);
 }

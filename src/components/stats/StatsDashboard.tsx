@@ -106,6 +106,7 @@ export default function StatsDashboard({ serverStats, categoryId, itemCount, onC
                     size="icon"
                     onClick={onClose}
                     className="absolute top-6 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-50"
+                    aria-label="Close statistics"
                 >
                     <X className="h-5 w-5" />
                 </Button>

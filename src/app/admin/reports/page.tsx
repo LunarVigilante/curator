@@ -101,6 +101,7 @@ export default function AdminReportsPage() {
 
     useEffect(() => {
         loadData()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab])
 
     const loadData = async () => {
@@ -112,7 +113,7 @@ export default function AdminReportsPage() {
             ])
             setReports(reportsData.reports)
             setStats(statsData)
-        } catch (error) {
+        } catch (_error) {
             toast.error('Failed to load reports')
         } finally {
             setLoading(false)
@@ -170,7 +171,7 @@ export default function AdminReportsPage() {
             } else {
                 toast.error(result.error || 'Failed to dismiss report')
             }
-        } catch (error) {
+        } catch (_error) {
             toast.error('An unexpected error occurred')
         } finally {
             setIsResolving(false)

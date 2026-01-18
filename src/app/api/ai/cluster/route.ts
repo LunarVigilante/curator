@@ -27,25 +27,32 @@ export async function POST(request: Request) {
             )
         }
 
-        // For each item, find similar items
+        // For each item, find similar items in parallel
         const similarityMap = new Map<string, Map<string, number>>()
+        const itemsToProcess = itemIds.slice(0, 10) // Limit to prevent rate limiting
 
-        for (const itemId of itemIds.slice(0, 10)) { // Limit to prevent rate limiting
-            try {
-                const similar = await findSimilarItems(itemId, { limit: 20 })
-                const itemSimilarities = new Map<string, number>()
+        const promises = itemsToProcess.map(itemId => findSimilarItems(itemId, { limit: 20 }))
+        const results = await Promise.allSettled(promises)
 
-                for (const s of similar) {
-                    if (itemIds.includes(s.id)) {
-                        itemSimilarities.set(s.id, s.score)
-                    }
-                }
+        results.forEach((result, index) => {
+            const itemId = itemsToProcess[index]
 
-                similarityMap.set(itemId, itemSimilarities)
-            } catch (e) {
-                console.error(`Failed to get similar items for ${itemId}:`, e)
+            if (result.status === 'rejected') {
+                console.error(`Failed to get similar items for ${itemId}:`, result.reason)
+                return
             }
-        }
+
+            const similar = result.value
+            const itemSimilarities = new Map<string, number>()
+
+            for (const s of similar) {
+                if (itemIds.includes(s.id)) {
+                    itemSimilarities.set(s.id, s.score)
+                }
+            }
+
+            similarityMap.set(itemId, itemSimilarities)
+        })
 
         // Simple clustering: group items by similarity
         const clusters: ClusterResult[] = []

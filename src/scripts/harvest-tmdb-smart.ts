@@ -172,6 +172,9 @@ function extractMetadata(details: any) {
     const crew = details.credits?.crew || [];
     const director = crew.find((c: any) => c.job === 'Director')?.name || null;
 
+    // TV Shows: Extract created_by (showrunners)
+    const createdBy = details.created_by?.map((c: any) => c.name) || [];
+
     // Default TMDB Writers (Fallback)
     const writers = crew.filter((c: any) => ['Screenplay', 'Writer', 'Story'].includes(c.job)).map((c: any) => c.name);
     const tmdbWriter = [...new Set(writers)].slice(0, 3).join(', ') || null;
@@ -247,6 +250,14 @@ function extractMetadata(details: any) {
             twitter: socials.twitter_id,
         },
         watch_providers: watchProviders,
+        // Extended metadata for TV shows (accessed via item.metadata in UI)
+        metadata: {
+            created_by: createdBy,
+            episode_run_time: details.episode_run_time || [],
+            type: details.type || null, // e.g., "Miniseries", "Documentary"
+            first_air_date: details.first_air_date || null,
+            last_air_date: details.last_air_date || null,
+        },
     };
 }
 
@@ -552,6 +563,7 @@ Overview: ${meta.overview || 'N/A'}
             watch_providers: meta.watch_providers,
             backdrop_path: meta.backdrop_path,
             logo_path: meta.logo_path,
+            metadata: meta.metadata, // TV-specific: created_by, episode_run_time, type, dates
             last_metadata_update: new Date().toISOString(),
         };
 

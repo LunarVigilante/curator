@@ -1,0 +1,76 @@
+
+D:\Antigravity\curator232423421\src\app\admin\data-browser\components\dialogs\EditItemDialog.tsx
+  101:18  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+  128:18  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+  152:18  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\app\admin\data-browser\hooks\useDataFetching.ts
+  227:8  warning  React Hook useCallback has a missing dependency: 'ui'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  237:8  warning  React Hook useEffect has a missing dependency: 'ui'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+
+D:\Antigravity\curator232423421\src\app\admin\data-browser\hooks\useItemActions.ts
+  202:25  warning  'id' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\app\admin\reports\page.tsx
+  104:8   warning  React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  115:18  warning  'error' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  173:18  warning  'error' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\app\api\ai\enrich-metadata\route.ts
+  59:14  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+  92:14  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\admin\AdminSystemConfig.tsx
+   42:12  warning  'rawgApiKey' is assigned a value but never used           @typescript-eslint/no-unused-vars
+   63:12  warning  'fromEmail' is assigned a value but never used            @typescript-eslint/no-unused-vars
+   64:12  warning  'appUrl' is assigned a value but never used               @typescript-eslint/no-unused-vars
+   66:12  warning  'isSendingTestEmail' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  179:11  warning  'handleSendTestEmail' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\analysis\JustificationPanel.tsx
+  87:33  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+D:\Antigravity\curator232423421\src\components\canvas\AISidekick.tsx
+  69:18  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\canvas\InfiniteCanvas.tsx
+  120:19  warning  'setNodes' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\canvas\ItemNode.tsx
+  56:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+D:\Antigravity\curator232423421\src\components\dialogs\ReportItemDialog.tsx
+  56:18  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\item-details\ItemDetailView.tsx
+   317:12  warning  'isLoadingRelated' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   376:11  warning  'isMusicArtist' is assigned a value but never used     @typescript-eslint/no-unused-vars
+   400:11  warning  'createdBy' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  1447:83  warning  'idx' is defined but never used                        @typescript-eslint/no-unused-vars
+  1847:47  warning  'isReturning' is assigned a value but never used       @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\item-details\layouts\StandardLayout.tsx
+  36:5   warning  'onClose' is defined but never used                 @typescript-eslint/no-unused-vars
+  37:5   warning  'onItemChange' is defined but never used            @typescript-eslint/no-unused-vars
+  52:11  warning  'isMusicAlbum' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  53:11  warning  'isMusicArtist' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  56:11  warning  'displayedCast' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  57:11  warning  'hasMoreCast' is assigned a value but never used    @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\music\TrackList.tsx
+  77:8  warning  React Hook useCallback has an unnecessary dependency: 'artistNames'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\Antigravity\curator232423421\src\components\music\VibeMeter.tsx
+  4:10  warning  'Progress' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\components\ui\PlatformBadge.tsx
+  12:62  warning  'SmartphoneIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\lib\services\import\adapters\SpotifyAdapter.ts
+  4:10  warning  'ParsedImportItem' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity\curator232423421\src\lib\utils\layout.ts
+  56:11  warning  'containerRatio' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+Γ£û 37 problems (0 errors, 37 warnings)
+

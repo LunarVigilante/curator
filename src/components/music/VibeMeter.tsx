@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Progress } from '@/components/ui/progress'
 
 interface AudioFeatures {
     danceability?: number

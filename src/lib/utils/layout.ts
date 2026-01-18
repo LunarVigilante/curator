@@ -53,7 +53,7 @@ export function calculateOptimalLayout(
     }
 
     // Calculate aspect ratio of container
-    const containerRatio = containerWidth / containerHeight
+    const _containerRatio = containerWidth / containerHeight
 
     // Try to find a layout that fills the container nicely
     let bestLayout: LayoutConfig | null = null

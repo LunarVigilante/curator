@@ -100,6 +100,7 @@ export async function updateSystemConfig(data: {
     featureRecommendations?: string
     featureChallenges?: string
     voyageApiKey?: string
+    voyageModel?: string
     steamGridApiKey?: string
 
     omdbApiKey?: string
@@ -144,6 +145,7 @@ export async function updateSystemConfig(data: {
 
     // Voyage AI (Embeddings)
     if (data.voyageApiKey) await upsertSetting('voyage_api_key', data.voyageApiKey, 'EMBEDDINGS', true)
+    if (data.voyageModel) await upsertSetting('voyage_model', data.voyageModel, 'EMBEDDINGS', false)
 
     // SteamGridDB
     if (data.steamGridApiKey) await upsertSetting('STEAMGRIDDB_API_KEY', data.steamGridApiKey, 'MEDIA', true)

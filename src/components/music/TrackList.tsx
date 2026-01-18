@@ -36,7 +36,7 @@ function formatDuration(ms: number | null): string {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
-export default function TrackList({ albumName, artistNames, onFeaturesLoad }: TrackListProps) {
+export default function TrackList({ albumName, artistNames: _artistNames, onFeaturesLoad }: TrackListProps) {
     const [tracks, setTracks] = useState<Track[]>([])
     const [loading, setLoading] = useState(true)
     const [playingId, setPlayingId] = useState<string | null>(null)
@@ -74,7 +74,7 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
         } finally {
             setLoading(false)
         }
-    }, [albumName, artistNames, onFeaturesLoad])
+    }, [albumName, onFeaturesLoad])
 
     useEffect(() => {
         if (albumName) {
@@ -141,8 +141,8 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
                         <div
                             key={track.id}
                             className={`flex items-center gap-3 py-2 px-3 rounded-lg transition-colors ${playingId === track.id
-                                    ? 'bg-purple-500/10 text-purple-300'
-                                    : 'hover:bg-zinc-800/50'
+                                ? 'bg-purple-500/10 text-purple-300'
+                                : 'hover:bg-zinc-800/50'
                                 }`}
                         >
                             {/* Track Number */}
@@ -157,6 +157,7 @@ export default function TrackList({ albumName, artistNames, onFeaturesLoad }: Tr
                                     size="icon"
                                     className="h-7 w-7 shrink-0 text-zinc-400 hover:text-white"
                                     onClick={() => handlePlayPause(track)}
+                                    aria-label={playingId === track.id ? `Pause ${track.title}` : `Play ${track.title}`}
                                 >
                                     {playingId === track.id ? (
                                         <Pause className="w-3.5 h-3.5 fill-current" />

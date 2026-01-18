@@ -25,6 +25,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
     [CATEGORY_TYPES.ANIME]: 'Anime',
     [CATEGORY_TYPES.MUSIC_ARTIST]: 'Artists',
     [CATEGORY_TYPES.ALBUM]: 'Albums',
+    'MUSIC_ALBUM': 'Albums', // Fallback for DB
     [CATEGORY_TYPES.MUSIC_TRACK]: 'Tracks',
     'MUSIC': 'Artists',
     [CATEGORY_TYPES.PODCAST]: 'Podcasts',
