@@ -3,12 +3,9 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import type { Database } from '@/lib/types/database'
 
-// Simple cache to avoid DB check on every request
-let setupCheckCache: { isRequired: boolean | null; checkedAt: number } = {
-    isRequired: null,
-    checkedAt: 0,
-}
-const CACHE_TTL = 60000 // 1 minute
+// Cookie name for setup check cache (persists across hot-reloads)
+const SETUP_VERIFIED_COOKIE = 'curator_setup_verified'
+const SETUP_COOKIE_MAX_AGE = 86400 // 24 hours in seconds
 
 export default async function middleware(request: NextRequest) {
     let response = NextResponse.next({ request })
@@ -51,24 +48,36 @@ export default async function middleware(request: NextRequest) {
     const isStaticAsset = pathname.startsWith('/_next') || pathname.startsWith('/images') || pathname.includes('.')
 
     if (!isSetupRoute && !isStaticAsset) {
-        const now = Date.now()
-        if (setupCheckCache.isRequired === null || now - setupCheckCache.checkedAt > CACHE_TTL) {
+        // Check cookie first - if verified, skip the API call entirely
+        const setupVerifiedCookie = request.cookies.get(SETUP_VERIFIED_COOKIE)
+
+        if (!setupVerifiedCookie) {
+            // No cookie - need to check if setup is required
             try {
                 const checkUrl = new URL('/api/setup/check', request.url)
                 const checkResponse = await fetch(checkUrl, {
                     headers: { 'x-middleware-check': 'true' },
                 })
                 const data = await checkResponse.json()
-                setupCheckCache = { isRequired: data.setupRequired, checkedAt: now }
+
+                if (data.setupRequired) {
+                    return NextResponse.redirect(new URL('/setup', request.url))
+                }
+
+                // Setup not required - set cookie to skip future checks
+                response.cookies.set(SETUP_VERIFIED_COOKIE, 'true', {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax',
+                    maxAge: SETUP_COOKIE_MAX_AGE,
+                    path: '/'
+                })
             } catch (error) {
                 // If check fails, assume setup not required
                 console.error('Setup check failed:', error)
             }
         }
-
-        if (setupCheckCache.isRequired) {
-            return NextResponse.redirect(new URL('/setup', request.url))
-        }
+        // If cookie exists, skip the check entirely - setup was already verified
     }
 
     // 1. Check for Login/Register routes -> Redirect to home if logged in
