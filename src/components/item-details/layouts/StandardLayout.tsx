@@ -3,16 +3,11 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import { Users } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { cn } from '@/lib/utils'
 import type { GlobalItem } from '../types'
-import { getCategoryIcon, normalizeCategory } from '../utils'
+import { normalizeCategory } from '../utils'
 import { ItemDetailSidebar, ItemDetailHeader, AwardsBanner, CastRow } from '../shared'
 import { AnimeFooter, BoardGameFooter, VideoGameFooter, MovieTvFooter } from '../footers'
-import TrackList from '@/components/music/TrackList'
-import { RelatedItemsRow } from '@/components/item-details/RelatedItemsRow'
 
 interface StandardLayoutProps {
     item: GlobalItem

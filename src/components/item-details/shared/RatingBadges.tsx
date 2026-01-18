@@ -1,6 +1,6 @@
 'use client'
 
-import { Star, Trophy, Music } from 'lucide-react'
+import { Trophy } from 'lucide-react'
 import type { GlobalItem } from '../types'
 import { normalizeCategory } from '../utils'
 

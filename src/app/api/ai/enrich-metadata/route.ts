@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
 
         // For Movies and TV: Also fetch OMDB data for ratings (skip if descriptionOnly)
         let omdbStatus: 'success' | 'not_found' | 'skipped' | 'error' = 'skipped'
-        let omdbRatingsFound: string[] = []
+        const omdbRatingsFound: string[] = []
 
         if (!descriptionOnly && ['MOVIE', 'TV', 'TV_SHOW'].includes(type)) {
             let omdbData = null

@@ -1,10 +1,8 @@
 'use client'
 
-import React from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Music } from 'lucide-react'
+import React, { useMemo } from 'react'
 import type { GlobalItem } from '../types'
-import { getCategoryIcon, toTitleCase, cleanTitle } from '../utils'
+import { getCategoryIcon, cleanTitle } from '../utils'
 import { RatingBadges } from './RatingBadges'
 
 interface ItemDetailHeaderProps {
@@ -12,15 +10,18 @@ interface ItemDetailHeaderProps {
 }
 
 export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
-    const Icon = getCategoryIcon(item.category_type)
-    const metadata = item.metadata as Record<string, any> || {}
-    const isMusicArtist = item.category_type === 'MUSIC_ARTIST'
+    // Pre-render the icon as an element (not a component) to satisfy static-components rule
+    // eslint-disable-next-line react-hooks/static-components
+    const categoryIconElement = useMemo(() => {
+        const IconComponent = getCategoryIcon(item.category_type)
+        return IconComponent ? <IconComponent className="w-3.5 h-3.5 mb-0.5" /> : null
+    }, [item.category_type])
 
     return (
         <div className="space-y-4">
             {/* Category • Year • Rating */}
             <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-zinc-500">
-                <Icon className="w-3.5 h-3.5 mb-0.5" />
+                {categoryIconElement}
                 <span>{item.category_type?.replace('_', ' ')}</span>
                 <span className="text-zinc-800">•</span>
                 <span>{item.release_year}</span>

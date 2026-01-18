@@ -15,7 +15,7 @@ export interface GlobalItemData {
     categoryType?: string | null
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export interface GlobalItemRow {
     id: string
     external_id: string | null
@@ -56,7 +56,7 @@ export function extractCachedTags(metadata: string | null): { tags: string[], pa
 export async function findGlobalItemByExternalId(externalId: string): Promise<GlobalItemRow | null> {
     const supabase = await createClient()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data } = await (supabase.from('global_items') as any)
         .select('*')
         .eq('external_id', externalId)
@@ -71,7 +71,7 @@ export async function findGlobalItemByExternalId(externalId: string): Promise<Gl
 export async function findGlobalItemByTitleAndImage(title: string, imageUrl: string | null): Promise<GlobalItemRow | null> {
     const supabase = await createClient()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data } = await (supabase.from('global_items') as any)
         .select('*')
         .eq('title', title)
@@ -138,7 +138,7 @@ export function computeGlobalItemUpdates(
 export async function updateGlobalItem(id: string, updates: Record<string, unknown>): Promise<GlobalItemRow> {
     const supabase = await createClient()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data, error } = await (supabase.from('global_items') as any)
         .update(updates)
         .eq('id', id)
@@ -159,7 +159,7 @@ export async function createGlobalItem(
 ): Promise<GlobalItemRow> {
     const supabase = await createClient()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data: newItem, error } = await (supabase.from('global_items') as any)
         .insert({
             external_id: data.externalId,

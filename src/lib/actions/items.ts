@@ -12,7 +12,7 @@ import { searchMediaAction } from './media'
 import { getCategory } from './categories'
 import { transformItem, transformItems } from '@/lib/utils/transformItem'
 import { upsertGlobalItem } from '@/lib/utils/globalItems'
-import { requireAuth, requireOwnership, requireResource } from '@/lib/utils/errors'
+
 
 export async function getItems(
     query?: string,

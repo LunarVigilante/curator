@@ -26,7 +26,7 @@ export async function getStatsAnalytics(categoryId?: string): Promise<StatsData>
     }
 
     // Call the RPC function for efficient database-side computation
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data, error } = await (supabase as any).rpc('get_user_stats_analytics', {
         p_user_id: userId,
         p_category_id: categoryId || null

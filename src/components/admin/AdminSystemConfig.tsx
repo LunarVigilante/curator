@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Zap, Database, Mail, Brain, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Loader2, Zap, Database, Brain, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
 import { updateSystemConfig, getSystemConfig, testLLMConnectionAction, testServiceConnection } from '@/lib/actions/admin';
 import { useEffect } from 'react';
 

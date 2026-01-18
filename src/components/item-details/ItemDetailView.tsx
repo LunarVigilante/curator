@@ -18,14 +18,13 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import {
     Star, Play, Pause, Music, X,
-    Tv, Film, Sparkles, Gamepad2, Dice5, BookOpen, Headphones,
+    Tv, Film, Sparkles, Gamepad2, Dice5, BookOpen,
     Trophy, Trash2, Pencil, Tag as TagIcon, ExternalLink,
-    Users, Building, Clapperboard, Award, Activity, Calendar, Flag, ChevronDown, ChevronUp, MoreHorizontal
+    Users, Building, Clapperboard, Activity, Calendar, Flag, ChevronDown, ChevronUp, MoreHorizontal
 } from 'lucide-react'
-import { FilterPill } from '@/components/ui/FilterPill'
 import { PlatformBadgeList } from '@/components/ui/PlatformBadge'
 import ReportItemDialog from '@/components/dialogs/ReportItemDialog'
 import TrackList from '@/components/music/TrackList'

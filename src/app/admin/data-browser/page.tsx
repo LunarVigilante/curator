@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 import Image from 'next/image'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CATEGORY_LABELS, normalizeCategory, formatCategoryLabel, CATEGORY_TYPES } from '@/lib/constants'
 import ItemDetailView from '@/components/item-details/ItemDetailView'
