@@ -132,6 +132,8 @@ export default function NotificationBell() {
                     variant="ghost"
                     size="icon"
                     className="relative h-9 w-9 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800"
+                    aria-label="View notifications"
+                    title="View notifications"
                 >
                     <Bell className="h-5 w-5" />
                     {/* Unread Badge */}
