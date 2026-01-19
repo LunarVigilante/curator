@@ -1,6 +1,10 @@
 'use client'
 
 import React, { useState, useTransition } from 'react'
+// ⚡ Bolt: `React.memo` is used here to prevent the component from re-rendering
+// if its props have not changed. This is a significant performance optimization
+// for the browse page, where many cards are rendered and the parent component
+// (`BrowseClient`) may re-render frequently due to state changes (e.g., view mode).
 import { Card } from "@/components/ui/card"
 import { Lock, ThumbsUp, Bookmark } from 'lucide-react'
 import { cn } from "@/lib/utils"
@@ -30,14 +34,14 @@ interface CollectionCardProps {
     tags?: { id: string; tag: string; isAdminOnly: boolean }[]
 }
 
-export function CollectionCard({
+export const CollectionCard = React.memo(({
     category,
     viewMode = 'standard',
     initialLiked = false,
     initialSaved = false,
     initialLikeCount = 0,
     tags = []
-}: CollectionCardProps) {
+}: CollectionCardProps) => {
     // State for optimistic UI
     const [isLiked, setIsLiked] = useState(initialLiked)
     const [isSaved, setIsSaved] = useState(initialSaved)
@@ -256,4 +260,6 @@ export function CollectionCard({
             )}
         </Card>
     )
-}
+})
+
+CollectionCard.displayName = 'CollectionCard'

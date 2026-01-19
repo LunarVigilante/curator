@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Lock, Search, ChevronLeft, ChevronRight, LayoutGrid, LayoutList, Grip, Settings2 } from 'lucide-react'
@@ -88,10 +88,15 @@ export function BrowseClient({
 
     const categoriesList = ['All', 'Movies', 'TV Shows', 'Anime', 'Video Games', 'Books', 'Music', 'Audiobooks', 'Podcasts', 'Board Games', 'Comics']
 
-    // Filter categories based on admin toggle
-    const filteredCategories = isAdmin && !showPrivate
-        ? categories.filter(c => c.isPublic)
-        : categories
+    // ⚡ Bolt: `useMemo` is used to prevent re-filtering the categories on every render,
+    // which could happen when component state changes (e.g., changing the view mode).
+    // This is a minor optimization but good practice.
+    const filteredCategories = useMemo(() => {
+        if (isAdmin && !showPrivate) {
+            return categories.filter(c => c.isPublic)
+        }
+        return categories
+    }, [categories, isAdmin, showPrivate])
 
     return (
         <div className="space-y-6">
