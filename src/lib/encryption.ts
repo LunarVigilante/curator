@@ -65,8 +65,10 @@ export function decrypt(encrypted: string): string {
         decrypted += decipher.final('utf8');
 
         return decrypted;
-    } catch (error) {
-        console.error('Decryption failed:', error);
+    } catch (_error) {
+        // Sentinel 🛡️: Log a generic error to avoid leaking sensitive information.
+        // The original error is not logged to prevent exposing stack traces or other internal details.
+        console.error('Decryption failed. Potential data tampering or incorrect key.');
         // Return original string if decryption fails (might be plain text)
         return encrypted;
     }

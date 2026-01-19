@@ -1,6 +1,4 @@
-## 2025-02-18 - SSRF in Image Proxy
-**Vulnerability:** The `src/app/api/image-proxy/route.ts` endpoint accepts an arbitrary `url` query parameter and fetches it using the server-side `fetch` API without validation. This allows an attacker to make the server send requests to internal services (localhost), private IP ranges, or cloud metadata services (e.g., AWS 169.254.169.254), leading to potential information disclosure or internal network scanning.
-
-**Learning:** When implementing proxy endpoints in Next.js (or any backend), trust no input. The `fetch` API will happily access local or private network resources if directed to do so. Simple URL parsing is not enough if DNS resolution points to a private IP (DNS Rebinding), but basic hostname/IP blocking provides a significant layer of defense.
-
-**Prevention:** Always validate the target URL against a strict allowlist (if possible) or a comprehensive blocklist. Ensure the protocol is HTTP/HTTPS. Block access to `localhost`, `127.0.0.1`, `0.0.0.0`, `[::]`, and link-local addresses like `169.254.169.254`.
+## 2024-07-22 - Sensitive Data Exposure in Decryption Error Logging
+**Vulnerability:** The decryption function in `src/lib/encryption.ts` was logging the full error object to the console upon a decryption failure.
+**Learning:** This exposed sensitive stack trace information and cryptographic details, violating the 'fail securely' principle. Production logs could capture this, providing attackers with internal system details.
+**Prevention:** Error handlers for cryptographic functions must always log generic, uninformative messages to the public log stream. Detailed errors should only be available in a secure, audited debugging environment.
