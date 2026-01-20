@@ -104,7 +104,10 @@ export async function signOut() {
 }
 
 /**
- * Get the current user ID (for backwards compatibility)
+ * Get the current user ID for actions that usually support both authenticated and anonymous users.
+ * 
+ * @returns The user ID if authenticated, or undefined if not.
+ * @see getSession for full authentication with profile data
  */
 export async function getGuestUserId() {
     const supabase = await createClient()

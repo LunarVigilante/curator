@@ -1,12 +1,3 @@
-/**
- * Supabase Database Types
- * 
- * This is a placeholder file. For full type safety, generate types from Supabase:
- * npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/lib/types/database.ts
- * 
- * Or use the Supabase Dashboard: Settings > API > Generate Types
- */
-
 export type Json =
     | string
     | number
@@ -16,471 +7,706 @@ export type Json =
     | Json[]
 
 export type Database = {
+    // Allows to automatically instantiate createClient with right options
+    // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+    __InternalSupabase: {
+        PostgrestVersion: "14.1"
+    }
     public: {
         Tables: {
-            profiles: {
+            activities: {
                 Row: {
+                    created_at: string | null
+                    data: Json
                     id: string
-                    email: string
-                    name: string | null
-                    display_name: string | null
-                    image: string | null
-                    bio: string | null
-                    cover_image: string | null
-                    is_public: boolean
-                    profile_views: number
-                    preferences: Json | null
-                    role: 'USER' | 'ADMIN' | 'MODERATOR'
-                    is_locked_out: boolean
-                    created_at: string
-                    updated_at: string
+                    type: string
+                    user_id: string
                 }
                 Insert: {
-                    id: string
-                    email: string
-                    name?: string | null
-                    display_name?: string | null
-                    image?: string | null
-                    bio?: string | null
-                    cover_image?: string | null
-                    is_public?: boolean
-                    profile_views?: number
-                    preferences?: Json | null
-                    role?: 'USER' | 'ADMIN' | 'MODERATOR'
-                    is_locked_out?: boolean
-                    created_at?: string
-                    updated_at?: string
+                    created_at?: string | null
+                    data: Json
+                    id?: string
+                    type: string
+                    user_id: string
                 }
                 Update: {
+                    created_at?: string | null
+                    data?: Json
                     id?: string
-                    email?: string
-                    name?: string | null
-                    display_name?: string | null
-                    image?: string | null
-                    bio?: string | null
-                    cover_image?: string | null
-                    is_public?: boolean
-                    profile_views?: number
-                    preferences?: Json | null
-                    role?: 'USER' | 'ADMIN' | 'MODERATOR'
-                    is_locked_out?: boolean
-                    created_at?: string
-                    updated_at?: string
+                    type?: string
+                    user_id?: string
                 }
+                Relationships: [
+                    {
+                        foreignKeyName: "activities_user_id_fkey"
+                        columns: ["user_id"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                ]
             }
             categories: {
                 Row: {
-                    id: string
-                    name: string
-                    description: string | null
-                    image: string | null
-                    color: string | null
-                    emoji: string | null
-                    sort_order: number
-                    metadata: Json | null
-                    is_template: boolean
-                    is_challenge: boolean
-                    is_public: boolean
-                    is_featured: boolean
-                    cached_analysis: Json | null
                     analysis_hash: string | null
+                    cached_analysis: Json | null
+                    color: string | null
+                    created_at: string | null
+                    description: string | null
+                    emoji: string | null
+                    id: string
+                    image: string | null
+                    is_challenge: boolean | null
+                    is_featured: boolean | null
+                    is_public: boolean | null
+                    is_template: boolean | null
+                    metadata: Json | null
+                    name: string
+                    sort_order: number | null
                     user_id: string | null
-                    created_at: string
                 }
                 Insert: {
-                    id?: string
-                    name: string
-                    description?: string | null
-                    image?: string | null
-                    color?: string | null
-                    emoji?: string | null
-                    sort_order?: number
-                    metadata?: Json | null
-                    is_template?: boolean
-                    is_challenge?: boolean
-                    is_public?: boolean
-                    is_featured?: boolean
-                    cached_analysis?: Json | null
                     analysis_hash?: string | null
+                    cached_analysis?: Json | null
+                    color?: string | null
+                    created_at?: string | null
+                    description?: string | null
+                    emoji?: string | null
+                    id?: string
+                    image?: string | null
+                    is_challenge?: boolean | null
+                    is_featured?: boolean | null
+                    is_public?: boolean | null
+                    is_template?: boolean | null
+                    metadata?: Json | null
+                    name: string
+                    sort_order?: number | null
                     user_id?: string | null
-                    created_at?: string
                 }
                 Update: {
-                    id?: string
-                    name?: string
-                    description?: string | null
-                    image?: string | null
-                    color?: string | null
-                    emoji?: string | null
-                    sort_order?: number
-                    metadata?: Json | null
-                    is_template?: boolean
-                    is_challenge?: boolean
-                    is_public?: boolean
-                    is_featured?: boolean
-                    cached_analysis?: Json | null
                     analysis_hash?: string | null
+                    cached_analysis?: Json | null
+                    color?: string | null
+                    created_at?: string | null
+                    description?: string | null
+                    emoji?: string | null
+                    id?: string
+                    image?: string | null
+                    is_challenge?: boolean | null
+                    is_featured?: boolean | null
+                    is_public?: boolean | null
+                    is_template?: boolean | null
+                    metadata?: Json | null
+                    name?: string
+                    sort_order?: number | null
                     user_id?: string | null
-                    created_at?: string
                 }
+                Relationships: [
+                    {
+                        foreignKeyName: "categories_user_id_fkey"
+                        columns: ["user_id"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                ]
             }
             global_items: {
                 Row: {
-                    id: string
-                    external_id: string | null
-                    external_ids: Json | null
-                    source: string | null
-                    title: string
-                    description: string | null
-                    image_url: string | null
-                    release_year: number | null
-                    metadata: Json | null
-                    cached_tags: Json | null
-                    category_type: string | null
-                    vector_text: string | null
-                    original_language: string | null
-                    origin_countries: string[] | null
-                    last_metadata_update: string | null
-
-                    // Board Games
-                    min_players: number | null
-                    max_players: number | null
-                    min_playtime: number | null
-                    max_playtime: number | null
-                    min_age: number | null
-                    mechanics: string[] | null
-                    categories: string[] | null
-                    complexity: number | null
-                    designers: string[] | null
+                    anilist_id: number | null
+                    anilist_score: number | null
                     artists: string[] | null
-                    publishers: string[] | null
-                    is_expansion: boolean | null
-                    bgg_id: number | null
-
+                    awards_text: string | null
+                    best_players: string | null
+                    bgatlas_id: string | null
+                    budget: number | null
+                    cast: string[] | null
+                    categories: string[] | null
+                    category_type: string
+                    complexity: number | null
+                    context_metadata: Json | null
                     created_at: string
-                }
-                Insert: {
-                    id?: string
-                    external_id?: string | null
-                    external_ids?: Json | null
-                    source?: string | null
-                    title: string
-                    description?: string | null
-                    image_url?: string | null
-                    release_year?: number | null
-                    metadata?: Json | null
-                    cached_tags?: Json | null
-                    category_type?: string | null
-                    vector_text?: string | null
-                    original_language?: string | null
-                    origin_countries?: string[] | null
-                    last_metadata_update?: string | null
-
-                    // Board Games
-                    min_players?: number | null
-                    max_players?: number | null
-                    min_playtime?: number | null
-                    max_playtime?: number | null
-                    min_age?: number | null
-                    mechanics?: string[] | null
-                    categories?: string[] | null
-                    complexity?: number | null
-                    designers?: string[] | null
-                    artists?: string[] | null
-                    publishers?: string[] | null
-                    is_expansion?: boolean | null
-                    bgg_id?: number | null
-
-                    created_at?: string
-                }
-                Update: {
-                    id?: string
-                    external_id?: string | null
-                    external_ids?: Json | null
-                    source?: string | null
-                    title?: string
-                    description?: string | null
-                    image_url?: string | null
-                    release_year?: number | null
-                    metadata?: Json | null
-                    cached_tags?: Json | null
-                    category_type?: string | null
-                    vector_text?: string | null
-                    original_language?: string | null
-                    origin_countries?: string[] | null
-                    last_metadata_update?: string | null
-
-                    // Board Games
-                    min_players?: number | null
-                    max_players?: number | null
-                    min_playtime?: number | null
-                    max_playtime?: number | null
-                    min_age?: number | null
-                    mechanics?: string[] | null
-                    categories?: string[] | null
-                    complexity?: number | null
-                    designers?: string[] | null
-                    artists?: string[] | null
-                    publishers?: string[] | null
-                    is_expansion?: boolean | null
-                    bgg_id?: number | null
-
-                    created_at?: string
-                }
-            }
-            items: {
-                Row: {
-                    id: string
-                    name: string | null
                     description: string | null
-                    image: string | null
-                    metadata: Json | null
-                    status: 'ACTIVE' | 'IGNORED' | 'WISHLIST' | 'SEEN'
-                    tier: string | null
-                    rank: number | null
-                    notes: string | null
-                    elo_score: number
-                    global_item_id: string | null
-                    user_id: string | null
-                    category_id: string | null
-                    created_at: string
-                    updated_at: string
-                }
-                Insert: {
-                    id?: string
-                    name?: string | null
-                    description?: string | null
-                    image?: string | null
-                    metadata?: Json | null
-                    status?: 'ACTIVE' | 'IGNORED' | 'WISHLIST' | 'SEEN'
-                    tier?: string | null
-                    rank?: number | null
-                    notes?: string | null
-                    elo_score?: number
-                    global_item_id?: string | null
-                    user_id?: string | null
-                    category_id?: string | null
-                    created_at?: string
-                    updated_at?: string
-                }
-                Update: {
-                    id?: string
-                    name?: string | null
-                    description?: string | null
-                    image?: string | null
-                    metadata?: Json | null
-                    status?: 'ACTIVE' | 'IGNORED' | 'WISHLIST' | 'SEEN'
-                    tier?: string | null
-                    rank?: number | null
-                    notes?: string | null
-                    elo_score?: number
-                    global_item_id?: string | null
-                    user_id?: string | null
-                    category_id?: string | null
-                    created_at?: string
-                    updated_at?: string
-                }
-            }
-            ratings: {
-                Row: {
+                    description_parts: Json | null
+                    designers: string[] | null
+                    developers: string[] | null
+                    director: string | null
+                    duration_ms: number | null
+                    episodes: number | null
+                    external_ids: Json | null
+                    families: string[] | null
+                    game_modes: string[] | null
+                    genres: string[] | null
                     id: string
-                    value: number
-                    tier: string | null
-                    custom_rank: string | null
-                    type: 'NUMERICAL' | 'TIER' | 'HYBRID'
-                    item_id: string
-                    user_id: string
-                    created_at: string
-                }
-                Insert: {
-                    id?: string
-                    value: number
-                    tier?: string | null
-                    custom_rank?: string | null
-                    type: 'NUMERICAL' | 'TIER' | 'HYBRID'
-                    item_id: string
-                    user_id: string
-                    created_at?: string
-                }
-                Update: {
-                    id?: string
-                    value?: number
-                    tier?: string | null
-                    custom_rank?: string | null
-                    type?: 'NUMERICAL' | 'TIER' | 'HYBRID'
-                    item_id?: string
-                    user_id?: string
-                    created_at?: string
-                }
-            }
-            system_settings: {
-                Row: {
-                    key: string
-                    value: string
-                    category: string
-                    is_secret: boolean
+                    igdb_id: string | null
+                    image_url: string | null
+                    imdb_id: string | null
+                    imdb_rating: string | null
+                    keywords: string[] | null
+                    label: string | null
+                    max_age: number | null
+                    max_players: number | null
+                    max_playtime: number | null
+                    mechanics: string[] | null
+                    metacritic_rating: number | null
+                    metadata: Json | null
+                    min_age: number | null
+                    min_age_community: number | null
+                    min_players: number | null
+                    min_playtime: number | null
+                    original_countries: string[] | null
+                    original_creator: string | null
+                    original_language: string | null
+                    original_title: string | null
+                    platforms: Json | null
+                    popularity: number | null
+                    poster_path: string | null
+                    publishers: string[] | null
+                    rank_overall: number | null
+                    release_date: string | null
+                    release_year: number | null
+                    revenue: number | null
+                    romaji_title: string | null
+                    rotten_tomatoes_rating: string | null
+                    runtime: number | null
+                    season: string | null
+                    source_material: string | null
+                    spotify_id: string | null
+                    spotify_url: string | null
+                    status: string | null
+                    studio: string | null
+                    tagline: string | null
+                    themes: string[] | null
+                    time_to_beat: Json | null
+                    title: string
+                    tmdb_id: number | null
+                    total_tracks: number | null
+                    trailer_url: string | null
+                    tvdb_id: number | null
                     updated_at: string
+                    url: string | null
+                    vote_average: number | null
+                    vote_count: number | null
+                    year_published: number | null
                 }
                 Insert: {
-                    key: string
-                    value: string
-                    category: string
-                    is_secret?: boolean
+                    anilist_id?: number | null
+                    anilist_score?: number | null
+                    artists?: string[] | null
+                    awards_text?: string | null
+                    best_players?: string | null
+                    bgatlas_id?: string | null
+                    budget?: number | null
+                    cast?: string[] | null
+                    categories?: string[] | null
+                    category_type: string
+                    complexity?: number | null
+                    context_metadata?: Json | null
+                    created_at?: string
+                    description?: string | null
+                    description_parts?: Json | null
+                    designers?: string[] | null
+                    developers?: string[] | null
+                    director?: string | null
+                    duration_ms?: number | null
+                    episodes?: number | null
+                    external_ids?: Json | null
+                    families?: string[] | null
+                    game_modes?: string[] | null
+                    genres?: string[] | null
+                    id?: string
+                    igdb_id?: string | null
+                    image_url?: string | null
+                    imdb_id?: string | null
+                    imdb_rating?: string | null
+                    keywords?: string[] | null
+                    label?: string | null
+                    max_age?: number | null
+                    max_players?: number | null
+                    max_playtime?: number | null
+                    mechanics?: string[] | null
+                    metacritic_rating?: number | null
+                    metadata?: Json | null
+                    min_age?: number | null
+                    min_age_community?: number | null
+                    min_players?: number | null
+                    min_playtime?: number | null
+                    original_countries?: string[] | null
+                    original_creator?: string | null
+                    original_language?: string | null
+                    original_title?: string | null
+                    platforms?: Json | null
+                    popularity?: number | null
+                    poster_path?: string | null
+                    publishers?: string[] | null
+                    rank_overall?: number | null
+                    release_date?: string | null
+                    release_year?: number | null
+                    revenue?: number | null
+                    romaji_title?: string | null
+                    rotten_tomatoes_rating?: string | null
+                    runtime?: number | null
+                    season?: string | null
+                    source_material?: string | null
+                    spotify_id?: string | null
+                    spotify_url?: string | null
+                    status?: string | null
+                    studio?: string | null
+                    tagline?: string | null
+                    themes?: string[] | null
+                    time_to_beat?: Json | null
+                    title: string
+                    tmdb_id?: number | null
+                    total_tracks?: number | null
+                    trailer_url?: string | null
+                    tvdb_id?: number | null
                     updated_at?: string
+                    url?: string | null
+                    vote_average?: number | null
+                    vote_count?: number | null
+                    year_published?: number | null
                 }
                 Update: {
-                    key?: string
-                    value?: string
-                    category?: string
-                    is_secret?: boolean
+                    anilist_id?: number | null
+                    anilist_score?: number | null
+                    artists?: string[] | null
+                    awards_text?: string | null
+                    best_players?: string | null
+                    bgatlas_id?: string | null
+                    budget?: number | null
+                    cast?: string[] | null
+                    categories?: string[] | null
+                    category_type?: string
+                    complexity?: number | null
+                    context_metadata?: Json | null
+                    created_at?: string
+                    description?: string | null
+                    description_parts?: Json | null
+                    designers?: string[] | null
+                    developers?: string[] | null
+                    director?: string | null
+                    duration_ms?: number | null
+                    episodes?: number | null
+                    external_ids?: Json | null
+                    families?: string[] | null
+                    game_modes?: string[] | null
+                    genres?: string[] | null
+                    id?: string
+                    igdb_id?: string | null
+                    image_url?: string | null
+                    imdb_id?: string | null
+                    imdb_rating?: string | null
+                    keywords?: string[] | null
+                    label?: string | null
+                    max_age?: number | null
+                    max_players?: number | null
+                    max_playtime?: number | null
+                    mechanics?: string[] | null
+                    metacritic_rating?: number | null
+                    metadata?: Json | null
+                    min_age?: number | null
+                    min_age_community?: number | null
+                    min_players?: number | null
+                    min_playtime?: number | null
+                    original_countries?: string[] | null
+                    original_creator?: string | null
+                    original_language?: string | null
+                    original_title?: string | null
+                    platforms?: Json | null
+                    popularity?: number | null
+                    poster_path?: string | null
+                    publishers?: string[] | null
+                    rank_overall?: number | null
+                    release_date?: string | null
+                    release_year?: number | null
+                    revenue?: number | null
+                    romaji_title?: string | null
+                    rotten_tomatoes_rating?: string | null
+                    runtime?: number | null
+                    season?: string | null
+                    source_material?: string | null
+                    spotify_id?: string | null
+                    spotify_url?: string | null
+                    status?: string | null
+                    studio?: string | null
+                    tagline?: string | null
+                    themes?: string[] | null
+                    time_to_beat?: Json | null
+                    title?: string
+                    tmdb_id?: number | null
+                    total_tracks?: number | null
+                    trailer_url?: string | null
+                    tvdb_id?: number | null
                     updated_at?: string
+                    url?: string | null
+                    vote_average?: number | null
+                    vote_count?: number | null
+                    year_published?: number | null
                 }
+                Relationships: []
             }
             invites: {
                 Row: {
-                    id: string
                     code: string
-                    is_used: boolean
                     created_at: string
+                    id: string
+                    is_active: boolean
+                    is_used: boolean
+                    max_uses: number
+                    use_count: number
                     used_at: string | null
-                    created_by: string
                     used_by: string | null
                 }
                 Insert: {
-                    id?: string
                     code: string
-                    is_used?: boolean
                     created_at?: string
+                    id?: string
+                    is_active?: boolean
+                    is_used?: boolean
+                    max_uses?: number
+                    use_count?: number
                     used_at?: string | null
-                    created_by: string
                     used_by?: string | null
                 }
                 Update: {
-                    id?: string
                     code?: string
-                    is_used?: boolean
                     created_at?: string
+                    id?: string
+                    is_active?: boolean
+                    is_used?: boolean
+                    max_uses?: number
+                    use_count?: number
                     used_at?: string | null
-                    created_by?: string
                     used_by?: string | null
                 }
+                Relationships: [
+                    {
+                        foreignKeyName: "invites_used_by_fkey"
+                        columns: ["used_by"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                ]
             }
-            collection_tags: {
+            items: {
                 Row: {
-                    id: string
-                    tag: string
-                    is_admin_only: boolean
-                    category_id: string
-                    added_by: string | null
+                    cached_tags: Json | null
+                    category_id: string | null
+                    category_type: string | null
+                    column_values: Json | null
                     created_at: string
-                }
-                Insert: {
-                    id?: string
-                    tag: string
-                    is_admin_only?: boolean
-                    category_id: string
-                    added_by?: string | null
-                    created_at?: string
-                }
-                Update: {
-                    id?: string
-                    tag?: string
-                    is_admin_only?: boolean
-                    category_id?: string
-                    added_by?: string | null
-                    created_at?: string
-                }
-            },
-            tags: {
-                Row: {
+                    creator_id: string | null
+                    description: string | null
+                    global_item_id: string | null
                     id: string
+                    image: string | null
+                    metadata: Json | null
                     name: string
-                },
+                    notes: string | null
+                    rank: number | null
+                    tier: string | null
+                    updated_at: string
+                    url: string | null
+                    user_id: string
+                }
                 Insert: {
+                    cached_tags?: Json | null
+                    category_id?: string | null
+                    category_type?: string | null
+                    column_values?: Json | null
+                    created_at?: string
+                    creator_id?: string | null
+                    description?: string | null
+                    global_item_id?: string | null
                     id?: string
+                    image?: string | null
+                    metadata?: Json | null
                     name: string
-                },
+                    notes?: string | null
+                    rank?: number | null
+                    tier?: string | null
+                    updated_at?: string
+                    url?: string | null
+                    user_id: string
+                }
                 Update: {
+                    cached_tags?: Json | null
+                    category_id?: string | null
+                    category_type?: string | null
+                    column_values?: Json | null
+                    created_at?: string
+                    creator_id?: string | null
+                    description?: string | null
+                    global_item_id?: string | null
                     id?: string
+                    image?: string | null
+                    metadata?: Json | null
                     name?: string
-                }
-            },
-            activities: {
-                Row: {
-                    id: string
-                    user_id: string
-                    type: string
-                    data: Json
-                    created_at: string
-                }
-                Insert: {
-                    id?: string
-                    user_id: string
-                    type: string
-                    data: Json
-                    created_at?: string
-                }
-                Update: {
-                    id?: string
+                    notes?: string | null
+                    rank?: number | null
+                    tier?: string | null
+                    updated_at?: string
+                    url?: string | null
                     user_id?: string
-                    type?: string
-                    data?: Json
-                    created_at?: string
                 }
-            },
-            email_templates: {
+                Relationships: [
+                    {
+                        foreignKeyName: "items_category_id_fkey"
+                        columns: ["category_id"]
+                        isOneToOne: false
+                        referencedRelation: "categories"
+                        referencedColumns: ["id"]
+                    },
+                    {
+                        foreignKeyName: "items_global_item_id_fkey"
+                        columns: ["global_item_id"]
+                        isOneToOne: false
+                        referencedRelation: "global_items"
+                        referencedColumns: ["id"]
+                    },
+                    {
+                        foreignKeyName: "items_user_id_fkey"
+                        columns: ["user_id"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                ]
+            }
+            profiles: {
                 Row: {
-                    id: string
-                    name: string
-                    subject: string
-                    body_html: string
-                    variables: Json
+                    avatar_url: string | null
+                    bio: string | null
                     created_at: string
-                    last_updated: string
+                    display_name: string | null
+                    email: string | null
+                    id: string
+                    name: string | null
+                    role: Database["public"]["Enums"]["user_role"]
+                    theme: string | null
+                    updated_at: string
                 }
                 Insert: {
-                    id?: string
-                    name: string
-                    subject: string
-                    body_html: string
-                    variables: Json
+                    avatar_url?: string | null
+                    bio?: string | null
                     created_at?: string
-                    last_updated?: string
+                    display_name?: string | null
+                    email?: string | null
+                    id: string
+                    name?: string | null
+                    role?: Database["public"]["Enums"]["user_role"]
+                    theme?: string | null
+                    updated_at?: string
                 }
                 Update: {
-                    id?: string
-                    name?: string
-                    subject?: string
-                    body_html?: string
-                    variables?: Json
+                    avatar_url?: string | null
+                    bio?: string | null
                     created_at?: string
-                    last_updated?: string
+                    display_name?: string | null
+                    email?: string | null
+                    id?: string
+                    name?: string | null
+                    role?: Database["public"]["Enums"]["user_role"]
+                    theme?: string | null
+                    updated_at?: string
                 }
+                Relationships: []
             }
-        },
+            reports: {
+                Row: {
+                    category_type: string | null
+                    created_at: string
+                    details: string | null
+                    global_item_id: string
+                    id: string
+                    reason: Database["public"]["Enums"]["report_reason"]
+                    resolved_at: string | null
+                    resolved_by: string | null
+                    status: Database["public"]["Enums"]["report_status"]
+                    user_id: string
+                }
+                Insert: {
+                    category_type?: string | null
+                    created_at?: string
+                    details?: string | null
+                    global_item_id: string
+                    id?: string
+                    reason: Database["public"]["Enums"]["report_reason"]
+                    resolved_at?: string | null
+                    resolved_by?: string | null
+                    status?: Database["public"]["Enums"]["report_status"]
+                    user_id: string
+                }
+                Update: {
+                    category_type?: string | null
+                    created_at?: string
+                    details?: string | null
+                    global_item_id?: string
+                    id?: string
+                    reason?: Database["public"]["Enums"]["report_reason"]
+                    resolved_at?: string | null
+                    resolved_by?: string | null
+                    status?: Database["public"]["Enums"]["report_status"]
+                    user_id?: string
+                }
+                Relationships: [
+                    {
+                        foreignKeyName: "reports_global_item_id_fkey"
+                        columns: ["global_item_id"]
+                        isOneToOne: false
+                        referencedRelation: "global_items"
+                        referencedColumns: ["id"]
+                    },
+                    {
+                        foreignKeyName: "reports_resolved_by_fkey"
+                        columns: ["resolved_by"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                    {
+                        foreignKeyName: "reports_user_id_fkey"
+                        columns: ["user_id"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                ]
+            }
+        }
         Views: {
             [_ in never]: never
         }
         Functions: {
-            [_ in never]: never
+            get_user_stats_analytics: {
+                Args: {
+                    target_user_id: string
+                }
+                Returns: {
+                    total_items: number
+                    total_categories: number
+                    items_by_category: Json
+                    items_by_month: Json
+                    tier_distribution: Json
+                    top_tags: Json
+                    status_distribution: Json
+                }[]
+            }
         }
         Enums: {
-            user_role: 'USER' | 'ADMIN' | 'MODERATOR'
-            item_status: 'ACTIVE' | 'IGNORED' | 'WISHLIST' | 'SEEN'
-            rating_type: 'NUMERICAL' | 'TIER' | 'HYBRID'
+            item_status: "ACTIVE" | "IGNORED" | "WISHLIST" | "SEEN"
+            notification_type:
+            | "admin_report_alert"
+            | "user_follow"
+            | "item_update"
+            | "report_resolved"
+            rank_sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE"
+            rank_type: "RANKED" | "UTILITY"
+            rating_type: "NUMERICAL" | "TIER" | "HYBRID"
+            report_reason: "inaccurate_data" | "duplicate" | "inappropriate" | "other"
+            report_status: "pending" | "resolved" | "dismissed"
+            user_role: "USER" | "ADMIN" | "MODERATOR"
+        }
+        CompositeTypes: {
+            [_ in never]: never
         }
     }
 }
 
-// Helper types
-export type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row']
-export type InsertTables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Insert']
-export type UpdateTables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Update']
+type PublicSchema = Database[Extract<keyof Database, "public">]
 
-// Shorthand types
-export type Profile = Tables<'profiles'>
-export type Category = Tables<'categories'>
-export type GlobalItem = Tables<'global_items'>
-export type Item = Tables<'items'>
-export type Rating = Tables<'ratings'>
-export type SystemSetting = Tables<'system_settings'>
+export type Tables<
+    PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+    TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+    ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+            Row: infer R
+        }
+    ? R
+    : never
+    : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+            Row: infer R
+        }
+    ? R
+    : never
+    : never
+
+export type TablesInsert<
+    PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+    TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+    ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+        Insert: infer I
+    }
+    ? I
+    : never
+    : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+        Insert: infer I
+    }
+    ? I
+    : never
+    : never
+
+export type TablesUpdate<
+    PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+    TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+    ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+        Update: infer U
+    }
+    ? U
+    : never
+    : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+        Update: infer U
+    }
+    ? U
+    : never
+    : never
+
+export type Enums<
+    PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+    EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+    : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+    PublicCompositeTypeNameOrOptions extends
+    | keyof PublicSchema["CompositeTypes"]
+    | { schema: keyof Database },
+    CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+        schema: keyof Database
+    }
+    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+    ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+    : PublicCompositeTypeNameOrOptions extends keyof PublicSchema["CompositeTypes"]
+    ? PublicSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never

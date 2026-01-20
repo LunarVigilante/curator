@@ -15,8 +15,10 @@ export interface AuthSession {
 }
 
 /**
- * Get the current authenticated user and their profile
- * Use this in Server Components and Server Actions
+ * Get the current authenticated user and their profile.
+ * Use this for actions requiring full authentication (admin, social features, sensitive data).
+ * 
+ * @returns The session object with user and profile, or null if not authenticated.
  */
 export async function getSession(): Promise<AuthSession | null> {
     const supabase = await createClient()
