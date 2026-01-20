@@ -831,7 +831,7 @@ export default function DataBrowserPage() {
         // Resolve tags to objects for cache
         let resolvedTags: { id: string; name: string }[] = []
         if (editTags.length > 0) {
-            const { data } = await supabase.from('tags').select('id, name').in('id', editTags)
+            const { data } = await (supabase.from('tags') as any).select('id, name').in('id', editTags)
             resolvedTags = data || []
         }
 

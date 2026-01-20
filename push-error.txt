@@ -1,8 +1,0 @@
-remote: error: GH013: Repository rule violations found for refs/heads/main.        
-remote: Review all repository rules at https://github.com/LunarVigilante/curator/rules?ref=refs%2Fheads%2Fmain        
-remote: 
-remote: - Changes must be made through a pull request.        
-remote: 
-To https://github.com/LunarVigilante/curator
- ! [remote rejected] main -> main (push declined due to repository rule violations)
-error: failed to push some refs to 'https://github.com/LunarVigilante/curator'
