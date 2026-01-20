@@ -78,7 +78,7 @@ export function EditItemDialog({
         // Resolve tags to objects for cache
         let resolvedTags: { id: string; name: string }[] = []
         if (tags.length > 0) {
-            const { data } = await (supabase.from('tags') as any).select('id, name').in('id', tags)
+            const { data } = await (supabase as any).from('tags').select('id, name').in('id', tags)
             resolvedTags = data || []
         }
 

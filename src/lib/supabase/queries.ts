@@ -13,5 +13,7 @@ export const createTypedQuery = (client: SupabaseClient) => {
         reports: () => typedClient.from('reports'),
         invites: () => typedClient.from('invites'),
         activities: () => typedClient.from('activities'),
+        // 'tags' table exists but is not in generated types yet - use untyped query
+        tags: () => (client as any).from('tags'),
     }
 }

@@ -246,8 +246,8 @@ export default function DataBrowserPage() {
     useEffect(() => {
         if (maintenanceOpen) {
             const fetchConfig = async () => {
-                const { data } = await (supabase
-                    .from('system_settings') as any)
+                const { data } = await (supabase as any)
+                    .from('system_settings')
                     .select('value')
                     .eq('key', 'STEAMGRIDDB_API_KEY')
                     .single()
@@ -260,14 +260,14 @@ export default function DataBrowserPage() {
     const handleSaveConfig = async () => {
         setActionLoading(true)
         try {
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('system_settings')
                 .upsert({
                     key: 'STEAMGRIDDB_API_KEY',
                     value: steamGridKey,
                     category: 'integrations',
                     is_secret: true
-                } as any)
+                })
 
             if (error) throw error
             toast.success('Configuration saved')
@@ -290,7 +290,7 @@ export default function DataBrowserPage() {
             .select('*', { count: 'exact', head: true })
 
         // Fetch category breakdown (Security Definer RPC - reliable)
-        const { data: catStats } = await (supabase.rpc('get_category_stats') as any)
+        const { data: catStats } = await (supabase as any).rpc('get_category_stats')
 
         // Group by normalized category to merge variations
         const byCategory: Record<string, number> = {}
@@ -831,7 +831,7 @@ export default function DataBrowserPage() {
         // Resolve tags to objects for cache
         let resolvedTags: { id: string; name: string }[] = []
         if (editTags.length > 0) {
-            const { data } = await (supabase.from('tags') as any).select('id, name').in('id', editTags)
+            const { data } = await (supabase as any).from('tags').select('id, name').in('id', editTags)
             resolvedTags = data || []
         }
 
