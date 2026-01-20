@@ -200,12 +200,12 @@ Output:
 // ============================================================================
 
 export const URL_PATTERNS = {
-    SPOTIFY_PLAYLIST: /spotify\.com\/playlist\//i,
-    LETTERBOXD_LIST: /letterboxd\.com\/(.*?)\/list\//i,
-    LETTERBOXD_WATCHLIST: /letterboxd\.com\/(.*?)\/watchlist/i,
-    IMDB_LIST: /imdb\.com\/list\//i,
-    ANILIST: /anilist\.co\/(user\/.*?\/(animelist|mangalist)|.*?\/list)/i,
-    GOODREADS_SHELF: /goodreads\.com\/(.*?)\/(shelf|list)/i,
+    SPOTIFY_PLAYLIST: /^https?:\/\/(?:www\.|open\.)?spotify\.com\/playlist\//i,
+    LETTERBOXD_LIST: /^https?:\/\/(?:www\.)?letterboxd\.com\/(.*?)\/list\//i,
+    LETTERBOXD_WATCHLIST: /^https?:\/\/(?:www\.)?letterboxd\.com\/(.*?)\/watchlist/i,
+    IMDB_LIST: /^https?:\/\/(?:www\.|m\.)?imdb\.com\/list\//i,
+    ANILIST: /^https?:\/\/(?:www\.)?anilist\.co\/(user\/.*?\/(animelist|mangalist)|.*?\/list)/i,
+    GOODREADS_SHELF: /^https?:\/\/(?:www\.)?goodreads\.com\/(.*?)\/(shelf|list)/i,
 } as const
 
 // ============================================================================
