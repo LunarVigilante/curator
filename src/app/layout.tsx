@@ -6,6 +6,7 @@ import "./globals.css";
 import { AntigravityBackground } from "@/components/ui/AntigravityBackground";
 import { Navbar } from "@/components/layout/Navbar";
 import { PasswordResetGuard } from "@/components/auth/PasswordResetGuard";
+import { GlobalNoiseFilter } from "@/components/ui/GlobalNoiseFilter";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,6 +40,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          <GlobalNoiseFilter />
           <PasswordResetGuard />
 
           {/* 1. Global Background (The Base) */}

@@ -20,11 +20,7 @@ export default function ItemPlaceholder({
         >
             {/* Noise texture overlay */}
             <svg className="absolute inset-0 w-full h-full opacity-10 mix-blend-overlay pointer-events-none">
-                <filter id={`noise-${name.replace(/\s/g, '')}`}>
-                    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch" />
-                    <feColorMatrix type="saturate" values="0" />
-                </filter>
-                <rect width="100%" height="100%" filter={`url(#noise-${name.replace(/\s/g, '')})`} />
+                <rect width="100%" height="100%" filter="url(#global-noise-filter)" />
             </svg>
 
             {/* Icon placeholder */}
