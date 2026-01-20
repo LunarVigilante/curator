@@ -26,9 +26,9 @@ export interface GlobalItem {
     studio: string | null
     networks: string[] | null
     status: string | null
-    trailer_url: string | null
-    spotify_url: string | null
-    url: string | null
+    trailer_url?: string | null
+    spotify_url?: string | null
+    url?: string | null
     number_of_seasons: number | null
     number_of_episodes: number | null
     episodes: number | null

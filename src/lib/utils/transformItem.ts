@@ -11,15 +11,24 @@ export interface Tag {
     name: string
 }
 
-// Type for rating rows
-export type Rating = Tables<'ratings'>
+// Type for rating rows (ratings table not in generated types, using inline definition)
+export interface Rating {
+    id: string
+    user_id: string
+    item_id: string
+    value: number | null
+    tier: string | null
+    created_at: string
+    updated_at: string
+}
 
 // Type for raw item row from Supabase with joins
 export interface RawItemRow extends Tables<'items'> {
-    global_item?: Tables<'global_items'> | null
+    global_item?: (Tables<'global_items'> & { cached_tags?: unknown }) | null
     tags?: Array<{ tag: Tag | null }> | null
     ratings?: Rating[] | null
     category?: Tables<'categories'> & { custom_ranks?: unknown[] } | null
+    elo_score?: number
 }
 
 // Type for transformed item returned to UI

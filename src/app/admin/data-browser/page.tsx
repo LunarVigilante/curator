@@ -48,39 +48,39 @@ interface GlobalItem {
     cached_tags: { id: string, name: string }[] | null
     genres: string[] | null
 
-    // Extended fields for ItemDetailView
-    status: string | null
-    number_of_seasons: number | null
-    number_of_episodes: number | null
-    director: string | null
-    writer: string | null
-    studio: string | null
-    production_companies: string[] | null
-    networks: string[] | null
-    cast: string[] | null
-    budget: number | null
-    box_office: number | null
-    revenue: number | null
-    vote_average: number | null
-    trailer_url: string | null
-    spotify_url: string | null
-    imdb_rating: string | null
-    rotten_tomatoes_rating: string | null
-    metacritic_rating: string | null
-    runtime: number | null
-    original_language: string | null
-    content_rating: string | null
-    tagline: string | null
-    awards_text: string | null
-    developers: string[] | null
-    publishers: string[] | null
-    url: string | null
-    romaji_title: string | null
-    season: string | null
-    source_material: string | null
-    original_creator: string | null
-    original_title: string | null
-    anilist_score: number | null
+    // Extended fields for ItemDetailView (optional - not always returned)
+    status?: string | null
+    number_of_seasons?: number | null
+    number_of_episodes?: number | null
+    director?: string | null
+    writer?: string | null
+    studio?: string | null
+    production_companies?: string[] | null
+    networks?: string[] | null
+    cast?: string[] | null
+    budget?: number | null
+    box_office?: number | null
+    revenue?: number | null
+    vote_average?: number | null
+    trailer_url?: string | null
+    spotify_url?: string | null
+    imdb_rating?: string | null
+    rotten_tomatoes_rating?: string | null
+    metacritic_rating?: string | null
+    runtime?: number | null
+    original_language?: string | null
+    content_rating?: string | null
+    tagline?: string | null
+    awards_text?: string | null
+    developers?: string[] | null
+    publishers?: string[] | null
+    url?: string | null
+    romaji_title?: string | null
+    season?: string | null
+    source_material?: string | null
+    original_creator?: string | null
+    original_title?: string | null
+    anilist_score?: number | null
 }
 
 interface Stats {

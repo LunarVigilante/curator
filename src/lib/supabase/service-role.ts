@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/types/database'
 
 /**
  * Service Role Client - Bypasses Row Level Security
@@ -14,7 +13,7 @@ export function createServiceRoleClient() {
         throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
     }
 
-    return createClient<Database>(supabaseUrl, serviceRoleKey, {
+    return createClient(supabaseUrl, serviceRoleKey, {
         auth: {
             autoRefreshToken: false,
             persistSession: false
