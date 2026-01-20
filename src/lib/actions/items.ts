@@ -3,7 +3,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { downloadImageFromUrl } from './upload'
-import { getGuestUserId } from '@/lib/actions/auth'
 import { parseItemMetadata } from '@/lib/types/metadata'
 import { z } from 'zod'
 import { zfd } from 'zod-form-data'
@@ -20,7 +19,8 @@ export async function getItems(
     limit: number = 12,
     categoryId?: string
 ) {
-    const userId = await getGuestUserId()
+    const session = await getSession()
+    const userId = session?.user?.id
     const supabase = await createClient()
     const offset = (page - 1) * limit
 
@@ -66,7 +66,8 @@ export async function getItems(
 }
 
 export async function getItem(id: string) {
-    const userId = await getGuestUserId()
+    const session = await getSession()
+    const userId = session?.user?.id
     const supabase = await createClient()
 
     const { data: item, error } = await (supabase.from('items') as any)
@@ -112,7 +113,9 @@ const updateItemSchema = z.object({
 
 export async function createItemInternal(input: z.input<typeof createItemSchema>) {
     const data = createItemSchema.parse(input)
-    const userId = await getGuestUserId()
+    const session = await getSession()
+    if (!session) throw new Error('Unauthorized: Not authenticated')
+    const userId = session.user.id
     const supabase = await createClient()
     const { name, description, categoryId, tags: tagIds, metadata } = data
     let image = data.image
@@ -214,8 +217,9 @@ export async function createItem(formData: FormData) {
 }
 
 export async function updateItemInternal(id: string, input: z.input<typeof updateItemSchema>) {
-    const userId = await getGuestUserId()
-    if (!userId) throw new Error('Unauthorized: Not authenticated')
+    const session = await getSession()
+    if (!session) throw new Error('Unauthorized: Not authenticated')
+    const userId = session.user.id
 
     const data = updateItemSchema.parse(input)
     const supabase = await createClient()
@@ -378,8 +382,9 @@ export async function applyItemEnhancement(itemId: string, enhancement: { sugges
 }
 
 export async function deleteItem(id: string, categoryId?: string) {
-    const userId = await getGuestUserId()
-    if (!userId) throw new Error('Unauthorized: Not authenticated')
+    const session = await getSession()
+    if (!session) throw new Error('Unauthorized: Not authenticated')
+    const userId = session.user.id
 
     const supabase = await createClient()
 
@@ -422,7 +427,9 @@ export async function updateItemScores(updates: { id: string, elo: number }[]) {
 }
 
 export async function addChallengerItem(challenger: ChallengerItem, categoryId: string, initialElo: number) {
-    const userId = await getGuestUserId()
+    const session = await getSession()
+    if (!session) throw new Error('Unauthorized: Not authenticated')
+    const userId = session.user.id
     const supabase = await createClient()
 
     const globalItem = await upsertGlobalItem({
@@ -449,8 +456,9 @@ export async function addChallengerItem(challenger: ChallengerItem, categoryId: 
 }
 
 export async function ignoreItem(itemId: string) {
-    const userId = await getGuestUserId()
-    if (!userId) return
+    const session = await getSession()
+    if (!session) return
+    const userId = session.user.id
 
     const supabase = await createClient()
 
@@ -473,8 +481,9 @@ import { TournamentService } from '@/lib/services/TournamentService'
 import { logActivity } from '@/lib/actions/activity'
 
 export async function getTournamentPool(categoryId: string, size: number = 20) {
-    const userId = await getGuestUserId()
-    if (!userId) return []
+    const session = await getSession()
+    if (!session) return []
+    const userId = session.user.id
     return await TournamentService.generateTournamentPool(userId, categoryId, size, true)
 }
 
