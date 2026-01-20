@@ -28,7 +28,7 @@ export async function getItems(
     let queryBuilder = (supabase.from('items') as any)
         .select(`
             *,
-            global_item:global_items(*),
+            global_item:global_items(id, title, description, image_url, category_type, metadata, cached_tags),
             tags:items_to_tags(tag:tags(*)),
             ratings(*)
         `, { count: 'exact' })
@@ -72,7 +72,7 @@ export async function getItem(id: string) {
     const { data: item, error } = await (supabase.from('items') as any)
         .select(`
             *,
-            global_item:global_items(*),
+            global_item:global_items(id, title, description, image_url, category_type, metadata, cached_tags),
             tags:items_to_tags(tag:tags(*)),
             ratings(*),
             category:categories(*, custom_ranks:custom_ranks(*))
