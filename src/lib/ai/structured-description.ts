@@ -127,7 +127,7 @@ async function generatePart(
             endpoint: config.endpoint,
             userPrompt: prompt.user,
             systemPrompt: prompt.system,
-            maxTokens: 300
+            maxTokens: 800
         });
 
         return response.trim();

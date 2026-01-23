@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createTypedQuery } from '@/lib/supabase/queries'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
@@ -42,8 +43,10 @@ export async function register(prevState: any, formData: FormData) {
     }
 
     try {
+        const q = createTypedQuery(supabase)
+
         // 1. Validate Invite - check use_count < max_uses
-        const { data: invite, error: inviteError } = await (supabase.from('invites') as any)
+        const { data: invite, error: inviteError } = await q.invites()
             .select('*')
             .eq('code', inviteCode)
             .single()
@@ -76,7 +79,7 @@ export async function register(prevState: any, formData: FormData) {
 
         // 3. Consume Invite - increment use_count and set is_used if exhausted
         const newUseCount = useCount + 1
-        await (supabase.from('invites') as any)
+        await q.invites()
             .update({
                 use_count: newUseCount,
                 is_used: newUseCount >= maxUses,
@@ -104,10 +107,23 @@ export async function signOut() {
 }
 
 /**
- * Get the current user ID for actions that usually support both authenticated and anonymous users.
+ * Get the current user ID for actions that support both authenticated and anonymous users.
+ * 
+ * **Use this for lightweight ownership/filtering operations:**
+ * - Fetching user's own items, categories, or ratings
+ * - Ownership verification before mutations (`deleteItem`, `updateItem`)
+ * - Features supporting guest/anonymous access
+ * - Performance-critical paths where full profile data is not needed
  * 
  * @returns The user ID if authenticated, or undefined if not.
- * @see getSession for full authentication with profile data
+ * @see getSession in `@/lib/auth` for full authentication with profile data
+ * 
+ * @example
+ * const userId = await getGuestUserId()
+ * if (!userId) throw new Error('Unauthorized')
+ * 
+ * // Ownership check
+ * if (item.user_id !== userId) throw new Error('You do not own this item')
  */
 export async function getGuestUserId() {
     const supabase = await createClient()
@@ -167,6 +183,7 @@ export async function resetPassword(formData: FormData) {
  */
 export async function updateProfile(formData: FormData) {
     const supabase = await createClient()
+    const q = createTypedQuery(supabase)
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -177,7 +194,7 @@ export async function updateProfile(formData: FormData) {
     const displayName = formData.get('displayName') as string
     const bio = formData.get('bio') as string
 
-    const { error } = await (supabase.from('profiles') as any)
+    const { error } = await q.profiles()
         .update({
             name,
             display_name: displayName,

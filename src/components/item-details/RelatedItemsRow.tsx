@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { createBrowserClient } from '@supabase/ssr'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Film, Sparkles } from 'lucide-react'
 
@@ -46,10 +45,9 @@ export function RelatedItemsRow({
             setError(null)
 
             try {
-                const supabase = createBrowserClient(
-                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-                )
+                // Use the standard client that has correct env vars
+                const { createClient } = await import('@/lib/supabase/client')
+                const supabase = createClient()
 
                 const { data, error: rpcError } = await supabase.rpc('find_similar_items', {
                     source_item_id: sourceItemId,
@@ -74,6 +72,8 @@ export function RelatedItemsRow({
 
         if (sourceItemId) {
             fetchRelatedItems()
+        } else {
+            setLoading(false)
         }
     }, [sourceItemId, fetchLimit, categoryFilter])
 
@@ -107,9 +107,9 @@ export function RelatedItemsRow({
     // Compact variant: Vertical list with small horizontal cards (for sidebar)
     if (variant === 'compact') {
         return (
-            <div className={`space-y-3 ${className}`}>
-                <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3" /> Similar
+            <div className={`pt-6 border-t border-white/5 ${className}`}>
+                <h5 className="text-[10px] uppercase tracking-widest text-zinc-500 font-black mb-4 flex items-center gap-2">
+                    <Sparkles className="w-3 h-3" /> Similar Items
                 </h5>
 
                 {loading && items.length === 0 ? (
@@ -141,7 +141,7 @@ export function RelatedItemsRow({
                                                 alt={item.title}
                                                 fill
                                                 className="object-cover"
-                                                unoptimized
+                                                sizes="40px"
                                             />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center">
@@ -177,7 +177,7 @@ export function RelatedItemsRow({
                             return (
                                 <Link
                                     key={item.id}
-                                    href={`/search?id=${item.id}`}
+                                    href={`/admin/data-browser?id=${item.id}`}
                                     className="flex gap-2.5 items-center group cursor-pointer p-1.5 -mx-1.5 rounded-lg hover:bg-white/5 transition-colors"
                                 >
                                     {content}
@@ -235,7 +235,7 @@ export function RelatedItemsRow({
                                             alt={item.title}
                                             fill
                                             className="object-cover group-hover:scale-105 transition-transform duration-300"
-                                            unoptimized
+                                            sizes="96px"
                                         />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center">

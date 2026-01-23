@@ -5,6 +5,12 @@ export interface GlobalItem {
     id: string
     title: string
     description: string | null
+    description_parts: {
+        premise?: string
+        themes?: string
+        tone?: string
+        style?: string
+    } | null
     image_url: string | null
     backdrop_path: string | null
     category_type: string | null

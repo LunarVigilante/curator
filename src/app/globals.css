@@ -187,3 +187,113 @@
     linear-gradient(#1e1e1e, #1e1e1e) padding-box,
     linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0.02) 100%) border-box;
 }
+
+/* Driver.js Tour Popover - Premium Dark Theme */
+.curator-tour-popover {
+  background-color: #09090b !important;
+  /* zinc-950 */
+  border: 1px solid #27272a !important;
+  /* zinc-800 - visible border */
+  border-radius: 0.75rem !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9) !important;
+}
+
+.curator-tour-popover .driver-popover-title {
+  color: #fafafa !important;
+  /* zinc-50 */
+  font-weight: 600 !important;
+  font-size: 1.125rem !important;
+}
+
+.curator-tour-popover .driver-popover-description {
+  color: #a1a1aa !important;
+  /* zinc-400 - muted */
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+}
+
+.curator-tour-popover .driver-popover-arrow-side-left,
+.curator-tour-popover .driver-popover-arrow-side-right,
+.curator-tour-popover .driver-popover-arrow-side-top,
+.curator-tour-popover .driver-popover-arrow-side-bottom {
+  border-color: #09090b !important;
+  /* zinc-950 - match popover bg */
+}
+
+/* Close button (top right X) - ghost style */
+.curator-tour-popover .driver-popover-close-btn {
+  position: absolute !important;
+  top: 0.75rem !important;
+  right: 0.75rem !important;
+  padding: 0.25rem !important;
+  background-color: transparent !important;
+  color: #71717a !important;
+  /* zinc-500 */
+  border: none !important;
+  border-radius: 9999px !important;
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0.875rem !important;
+  line-height: 1 !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.curator-tour-popover .driver-popover-close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+/* Primary button (Next, Get Started) - punchy and small */
+.curator-tour-popover .driver-popover-next-btn {
+  background-color: #ffffff !important;
+  color: #09090b !important;
+  /* zinc-950 */
+  border: none !important;
+  border-radius: 0.375rem !important;
+  padding: 0.375rem 1rem !important;
+  /* py-1.5 px-4 */
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+  transition: background-color 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.curator-tour-popover .driver-popover-next-btn:hover {
+  background-color: #e4e4e7 !important;
+  /* zinc-200 */
+}
+
+/* Secondary button (Back) - clean ghost style */
+.curator-tour-popover .driver-popover-prev-btn {
+  background-color: transparent !important;
+  color: #71717a !important;
+  /* zinc-500 */
+  border: none !important;
+  padding: 0.375rem 1rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  text-shadow: none !important;
+  transition: color 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.curator-tour-popover .driver-popover-prev-btn:hover {
+  color: #ffffff !important;
+}
+
+/* Progress indicator */
+.curator-tour-popover .driver-popover-progress-text {
+  color: #52525b !important;
+  /* zinc-600 */
+  font-size: 0.75rem !important;
+}
+
+/* Footer area */
+.curator-tour-popover .driver-popover-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+  margin-top: 1rem !important;
+  padding-top: 0.75rem !important;
+}

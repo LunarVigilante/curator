@@ -6,12 +6,22 @@ import Link from 'next/link'
 import {
     Pencil, Flag, Trash2, ExternalLink, Tag as TagIcon,
     Gamepad2, Film, Music, Globe, Box, Play, Sparkles,
-    RefreshCw, Wand2
+    RefreshCw, Wand2, MoreHorizontal, Settings2, Clapperboard
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { PlatformBadgeList } from '@/components/ui/PlatformBadge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { useUser } from '@/hooks/useUser'
 import type { GlobalItem } from '../types'
 import { normalizeCategory } from '../utils'
 import { RelatedItemsRow } from '@/components/item-details/RelatedItemsRow'
@@ -25,6 +35,7 @@ interface ItemDetailSidebarProps {
     onRegenerateDescription?: () => void
     isRefreshing?: boolean
     isRegenerating?: boolean
+    onSimilarItemClick?: (itemId: string) => void
 }
 
 export function ItemDetailSidebar({
@@ -35,15 +46,19 @@ export function ItemDetailSidebar({
     onRefreshMetadata,
     onRegenerateDescription,
     isRefreshing,
-    isRegenerating
+    isRegenerating,
+    onSimilarItemClick
 }: ItemDetailSidebarProps) {
+    const { isAdmin } = useUser()
     const category = normalizeCategory(item.category_type)
     const isMusicArtist = category === 'MUSIC_ARTIST'
     const isVideoGame = category === 'VIDEO_GAME'
+    const isMovie = category === 'MOVIE'
+    const isTV = category === 'TV' || category === 'TV_SHOW'
     const metadata = item.metadata as Record<string, any> || {}
 
     return (
-        <div className="w-full md:w-[400px] flex-shrink-0 flex flex-col gap-6 md:sticky md:top-0">
+        <div className="w-full md:w-[400px] flex-shrink-0 flex flex-col gap-6 md:sticky md:top-0 max-h-[85vh] overflow-hidden">
             {/* Main Poster/Image with Dashed Border */}
             <div className="relative p-1.5 border border-dashed border-zinc-800 rounded-2xl group">
                 <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl shadow-black/80 ring-1 ring-white/10">
@@ -73,69 +88,81 @@ export function ItemDetailSidebar({
                 </Button>
             )}
 
-            {/* Action Buttons */}
+            {/* Report Issue Button - Available to all users */}
+            <Button
+                variant="outline"
+                onClick={onReportOpen}
+                className="w-full border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-amber-400"
+            >
+                <Flag className="w-4 h-4 mr-2" />
+                Report Issue
+            </Button>
+
+            {/* External Links - More provider links */}
             <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" className="flex-1 text-zinc-400 border-zinc-700 hover:bg-zinc-800" onClick={() => onEdit(item)}>
-                    <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
-                </Button>
-
-                {/* Magic Actions */}
-                {onRefreshMetadata && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-zinc-400 border-zinc-700 hover:bg-zinc-800"
-                        onClick={onRefreshMetadata}
-                        disabled={isRefreshing}
-                    >
-                        <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", isRefreshing && "animate-spin")} />
-                        {isRefreshing ? 'Refreshing...' : 'Refresh'}
-                    </Button>
-                )}
-                {onRegenerateDescription && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-zinc-400 border-zinc-700 hover:bg-zinc-800"
-                        onClick={onRegenerateDescription}
-                        disabled={isRegenerating}
-                    >
-                        <Wand2 className={cn("w-3.5 h-3.5 mr-1.5", isRegenerating && "animate-pulse")} />
-                        {isRegenerating ? 'Magic...' : 'Regen'}
-                    </Button>
-                )}
-
-                <Button variant="outline" size="sm" className="flex-1 text-zinc-400 border-zinc-700 hover:bg-zinc-800" onClick={onReportOpen}>
-                    <Flag className="w-3.5 h-3.5 mr-1.5" /> Report
-                </Button>
-                <Button variant="outline" size="sm" className="text-red-400 border-zinc-700 hover:bg-red-500/10" onClick={() => onDelete(item.id)}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                </Button>
-            </div>
-
-            {/* External Links */}
-            <div className="flex flex-wrap gap-2">
-                {item.imdb_rating && (
+                {/* IMDb Link */}
+                {item.external_ids?.imdb && (
                     <Button asChild variant="outline" size="sm" className="bg-[#F5C518]/10 text-[#F5C518] border-[#F5C518]/20 hover:bg-[#F5C518]/20 h-8">
-                        <Link href={`https://www.imdb.com/title/${item.external_ids?.imdb}`} target="_blank">
+                        <Link href={`https://www.imdb.com/title/${item.external_ids.imdb}`} target="_blank">
                             <Film className="w-3 h-3 mr-1.5" /> IMDb
                         </Link>
                     </Button>
                 )}
+
+                {/* TMDB Link */}
+                {item.external_ids?.tmdb && (isMovie || isTV) && (
+                    <Button asChild variant="outline" size="sm" className="bg-[#01b4e4]/10 text-[#01b4e4] border-[#01b4e4]/20 hover:bg-[#01b4e4]/20 h-8">
+                        <Link href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.external_ids.tmdb}`} target="_blank">
+                            <Clapperboard className="w-3 h-3 mr-1.5" /> TMDB
+                        </Link>
+                    </Button>
+                )}
+
+                {/* Rotten Tomatoes Link (constructed from title) */}
+                {item.rotten_tomatoes_rating && (isMovie || isTV) && (
+                    <Button asChild variant="outline" size="sm" className="bg-[#FA320A]/10 text-[#FA320A] border-[#FA320A]/20 hover:bg-[#FA320A]/20 h-8">
+                        <Link href={`https://www.rottentomatoes.com/search?search=${encodeURIComponent(item.title)}`} target="_blank">
+                            🍅 RT
+                        </Link>
+                    </Button>
+                )}
+
+                {/* BGG Link */}
                 {category === 'BOARD_GAME' && item.external_ids?.bgg && (
                     <Button asChild variant="outline" size="sm" className="bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20 h-8">
-                        <Link href={`https://boardgamegeek.com/boardgame/${item.external_ids?.bgg}`} target="_blank">
+                        <Link href={`https://boardgamegeek.com/boardgame/${item.external_ids.bgg}`} target="_blank">
                             <ExternalLink className="w-3 h-3 mr-1.5" /> BGG
                         </Link>
                     </Button>
                 )}
+
+                {/* Spotify Link */}
                 {item.external_ids?.spotify && (
                     <Button asChild variant="outline" size="sm" className="bg-[#1DB954]/10 text-[#1DB954] border-[#1DB954]/20 hover:bg-[#1DB954]/20 h-8">
-                        <Link href={`https://open.spotify.com/${isMusicArtist ? 'artist' : 'album'}/${item.external_ids?.spotify}`} target="_blank">
+                        <Link href={`https://open.spotify.com/${isMusicArtist ? 'artist' : 'album'}/${item.external_ids.spotify}`} target="_blank">
                             <Music className="w-3 h-3 mr-1.5" /> Spotify
                         </Link>
                     </Button>
                 )}
+
+                {/* AniList Link */}
+                {item.external_ids?.anilist && (
+                    <Button asChild variant="outline" size="sm" className="bg-[#02A9FF]/10 text-[#02A9FF] border-[#02A9FF]/20 hover:bg-[#02A9FF]/20 h-8">
+                        <Link href={`https://anilist.co/anime/${item.external_ids.anilist}`} target="_blank">
+                            <Sparkles className="w-3 h-3 mr-1.5" /> AniList
+                        </Link>
+                    </Button>
+                )}
+
+                {/* IGDB Link */}
+                {item.external_ids?.igdb && isVideoGame && (
+                    <Button asChild variant="outline" size="sm" className="bg-[#9147FF]/10 text-[#9147FF] border-[#9147FF]/20 hover:bg-[#9147FF]/20 h-8">
+                        <Link href={`https://www.igdb.com/games/${item.external_ids.igdb}`} target="_blank">
+                            <Gamepad2 className="w-3 h-3 mr-1.5" /> IGDB
+                        </Link>
+                    </Button>
+                )}
+
                 {/* Generic Website Link */}
                 {metadata?.homepage && (
                     <Button asChild variant="outline" size="sm" className="text-zinc-400 border-zinc-800 h-8">
@@ -156,7 +183,23 @@ export function ItemDetailSidebar({
                 </div>
             )}
 
-            {/* Tags (Cached Tags) */}
+            {/* Genres (moved ABOVE Tags as requested) */}
+            {item.genres && item.genres.length > 0 && !isMusicArtist && (
+                <div className="space-y-3">
+                    <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
+                        <TagIcon className="w-3 h-3" /> Genres
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                        {item.genres.map((genre) => (
+                            <Badge key={genre} variant="outline" className="text-zinc-400 border-zinc-800 bg-zinc-900/50">
+                                {genre}
+                            </Badge>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Tags (Cached Tags - now below Genres) */}
             {item.cached_tags && item.cached_tags.length > 0 && (
                 <div className="space-y-3">
                     <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
@@ -175,34 +218,16 @@ export function ItemDetailSidebar({
                 </div>
             )}
 
-            {/* Genres (Secondary Tag Cloud) */}
-            {item.genres && item.genres.length > 0 && !isMusicArtist && (
-                <div className="space-y-3">
-                    <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
-                        <TagIcon className="w-3 h-3" /> Genres
-                    </h4>
-                    <div className="flex flex-wrap gap-1.5">
-                        {item.genres.map((genre) => (
-                            <Badge key={genre} variant="outline" className="text-zinc-400 border-zinc-800 bg-zinc-900/50">
-                                {genre}
-                            </Badge>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Related Items (Vertical Sidebar List) */}
-            <div className="pt-6 border-t border-white/5">
-                <h4 className="text-[10px] uppercase tracking-widest text-zinc-500 font-black mb-4 flex items-center gap-2">
-                    <Sparkles className="w-3 h-3" /> Similar Items
-                </h4>
-                <div className="space-y-4">
-                    {/* RelatedItemsRow already renders a row, we might need a RelatedItemsSidebar component 
-                        or just pass a 'vertical' prop to RelatedItemsRow if it supports it.
-                        Assuming for now it's a row, but visually contained in the side column.
-                    */}
-                    <RelatedItemsRow sourceItemId={item.id} variant="compact" />
-                </div>
+            {/* Related Items (Scrollable Vertical List) */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+                <ScrollArea className="h-[280px]">
+                    {/* RelatedItemsRow handles its own header and visibility */}
+                    <RelatedItemsRow
+                        sourceItemId={item.id}
+                        variant="compact"
+                        onItemClick={onSimilarItemClick}
+                    />
+                </ScrollArea>
             </div>
         </div>
     )

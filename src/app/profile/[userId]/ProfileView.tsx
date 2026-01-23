@@ -98,37 +98,44 @@ export function ProfileView({ profile, collections, challenges = [], isOwner }: 
                         <TabsContent value="collections">
                             <Card className="bg-zinc-900/50 border-white/10 p-6 backdrop-blur-sm">
                                 <h2 className="text-lg font-semibold text-zinc-100 mb-4">Public Collections</h2>
-                                {collections.length > 0 ? (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {collections.map((collection) => (
-                                            <Link key={collection.id} href={`/categories/${collection.id}`}>
-                                                <div className="group relative rounded-lg overflow-hidden border border-white/10 bg-zinc-800/50 hover:border-white/20 transition-all cursor-pointer">
-                                                    <div className="aspect-video relative bg-gradient-to-br from-purple-600/20 to-blue-600/20">
-                                                        {collection.image && (
-                                                            <Image
-                                                                src={collection.image}
-                                                                alt={collection.name}
-                                                                fill
-                                                                className="object-cover group-hover:scale-105 transition-transform duration-300"
-                                                            />
-                                                        )}
-                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                                {(() => {
+                                    // Filter out empty collections when viewing someone else's profile
+                                    const displayCollections = isOwner
+                                        ? collections
+                                        : collections.filter(c => c.itemCount > 0)
+
+                                    return displayCollections.length > 0 ? (
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                            {displayCollections.map((collection) => (
+                                                <Link key={collection.id} href={`/categories/${collection.id}`}>
+                                                    <div className="group relative rounded-lg overflow-hidden border border-white/10 bg-zinc-800/50 hover:border-white/20 transition-all cursor-pointer">
+                                                        <div className="aspect-video relative bg-gradient-to-br from-purple-600/20 to-blue-600/20">
+                                                            {collection.image && (
+                                                                <Image
+                                                                    src={collection.image}
+                                                                    alt={collection.name}
+                                                                    fill
+                                                                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                                                                />
+                                                            )}
+                                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                                                        </div>
+                                                        <div className="absolute bottom-0 left-0 right-0 p-2">
+                                                            <h3 className="font-semibold text-white text-xs truncate">{collection.name}</h3>
+                                                            <p className="text-[10px] text-zinc-400">
+                                                                {collection.itemCount} item{collection.itemCount !== 1 ? 's' : ''}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <div className="absolute bottom-0 left-0 right-0 p-3">
-                                                        <h3 className="font-semibold text-white text-sm truncate">{collection.name}</h3>
-                                                        <p className="text-xs text-zinc-400">
-                                                            {collection.itemCount} item{collection.itemCount !== 1 ? 's' : ''}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </Link>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-zinc-500 text-sm italic">
-                                        No public collections yet
-                                    </p>
-                                )}
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-zinc-500 text-sm italic">
+                                            {isOwner ? 'No public collections yet' : 'No public collections with items yet'}
+                                        </p>
+                                    )
+                                })()}
                             </Card>
                         </TabsContent>
 

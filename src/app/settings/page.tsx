@@ -14,7 +14,7 @@ export default async function SettingsPage() {
         id: session.user.id,
         name: session.profile?.name || session.user.email || 'User',
         email: session.user.email || '',
-        image: session.profile?.avatar_url,
+        image: session.profile?.image,
         bio: session.profile?.bio,
         preferences: session.user.user_metadata?.preferences
     };

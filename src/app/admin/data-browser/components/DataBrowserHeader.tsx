@@ -16,6 +16,9 @@ interface DataBrowserHeaderProps {
     activeFilters: Record<string, string>
     onRemoveFilter: (key: string) => void
     onClearFilters: () => void
+    // Filtered view counts
+    totalCount?: number
+    itemsOnPage?: number
 }
 
 export function DataBrowserHeader({
@@ -24,7 +27,9 @@ export function DataBrowserHeader({
     stats,
     activeFilters,
     onRemoveFilter,
-    onClearFilters
+    onClearFilters,
+    totalCount,
+    itemsOnPage
 }: DataBrowserHeaderProps) {
     const hasActiveFilters = Object.keys(activeFilters).length > 0
 
@@ -53,8 +58,13 @@ export function DataBrowserHeader({
             {/* Stats Bar */}
             <div className="bg-zinc-900/30 border border-zinc-800 rounded-lg p-4 mb-6 backdrop-blur-md">
                 <div className="flex flex-wrap gap-6 items-center">
-                    <div className="text-lg font-semibold">
-                        Total Items: <span className="text-cyan-400">{stats.total.toLocaleString()}</span>
+                    {/* Total Count (Filtered or Global) */}
+                    <div className="text-lg font-semibold flex items-baseline">
+                        <span className="text-zinc-500 mr-2 text-sm uppercase tracking-wider font-medium">Showing</span>
+                        <span className="text-cyan-400">
+                            {(totalCount !== undefined ? totalCount : stats.total).toLocaleString()}
+                        </span>
+                        <span className="text-zinc-500 ml-2 text-sm uppercase tracking-wider font-medium">Items</span>
                     </div>
                     <div className="h-6 w-px bg-zinc-800 hidden md:block" />
 
@@ -81,6 +91,13 @@ export function DataBrowserHeader({
                                 )
                             })}
                     </div>
+
+                    {/* Right: Items on Page (pushed to end) */}
+                    {itemsOnPage !== undefined && (
+                        <div className="ml-auto text-sm text-zinc-600 font-medium whitespace-nowrap">
+                            Showing {itemsOnPage} items
+                        </div>
+                    )}
                 </div>
             </div>
 
