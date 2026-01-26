@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { revalidatePath } from 'next/cache'
 import { normalizeTagName } from '@/lib/utils/normalizeTagName'
+import { handleSupabaseError } from '@/lib/utils/errorHandler'
 
 export async function getTags() {
     const supabase = createServiceRoleClient()
@@ -12,7 +13,7 @@ export async function getTags() {
         .order('name', { ascending: true })
         .limit(500) // Limit for performance, use getTagsByIds for specific lookups
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getTags')
     return data || []
 }
 
@@ -25,7 +26,7 @@ export async function getTagsByIds(ids: string[]): Promise<{ id: string; name: s
         .select('id, name')
         .in('id', ids)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getTagsByIds')
     return data || []
 }
 
@@ -63,7 +64,7 @@ export async function createTag(name: string) {
                 .single()
             return retryExisting
         }
-        throw error
+        handleSupabaseError(error, 'createTag')
     }
 
     revalidatePath('/tags')
@@ -122,6 +123,6 @@ export async function deleteTag(id: string) {
         .delete()
         .eq('id', id)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'deleteTag')
     revalidatePath('/tags')
 }

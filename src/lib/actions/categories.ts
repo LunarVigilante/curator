@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { downloadImageFromUrl } from './upload'
 import { DEFAULT_CATEGORIES, normalizeCategory } from '@/lib/constants'
 import { getSession } from '@/lib/auth'
+import { handleSupabaseError } from '@/lib/utils/errorHandler'
 
 export async function seedDefaultCategories(userId: string) {
     const supabase = await createClient()
@@ -44,7 +45,7 @@ export async function getCategories() {
         .select('*')
         .order('sort_order', { ascending: true })
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getCategories')
     return data || []
 }
 
@@ -95,7 +96,7 @@ export async function updateCategory(
         })
         .eq('id', id)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'updateCategory')
 
     revalidatePath('/')
     revalidatePath(`/categories/${id}`)
@@ -135,7 +136,7 @@ export async function createCategory(data: {
         .select()
         .single()
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'createCategory')
 
     if (session?.user?.id) {
         await logActivity(session.user.id, 'CREATED_LIST', { categoryName: data.name })
@@ -152,7 +153,7 @@ export async function deleteCategory(id: string) {
         .delete()
         .eq('id', id)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'deleteCategory')
     revalidatePath('/')
 }
 
@@ -164,7 +165,7 @@ export async function getCategory(id: string) {
         .eq('id', id)
         .single()
 
-    if (error && error.code !== 'PGRST116') throw error
+    if (error && error.code !== 'PGRST116') handleSupabaseError(error, 'getCategory')
     return data || null
 }
 
@@ -175,7 +176,7 @@ export async function updateCategoryOrder(categoryId: string, newOrder: number) 
         .update({ sort_order: newOrder })
         .eq('id', categoryId)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'updateCategoryOrder')
 
     revalidatePath('/')
     revalidatePath('/categories')
@@ -190,7 +191,7 @@ export async function reorderCategories(items: { id: string; sortOrder: number }
             .update({ sort_order: item.sortOrder })
             .eq('id', item.id)
 
-        if (error) throw error
+        if (error) handleSupabaseError(error, 'reorderCategories')
     }
 
     revalidatePath('/')
@@ -210,7 +211,7 @@ export async function toggleCategoryFeature(id: string, isFeatured: boolean) {
         .update({ is_featured: isFeatured })
         .eq('id', id)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'toggleCategoryFeature')
     revalidatePath('/')
 }
 
@@ -222,7 +223,7 @@ export async function getFeaturedCategories() {
         .eq('is_featured', true)
         .order('sort_order', { ascending: true })
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getFeaturedCategories')
     return data || []
 }
 
@@ -242,7 +243,7 @@ export async function getAllCategoriesWithOwners() {
         `)
         .order('name', { ascending: true })
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getAllCategoriesWithOwners')
     return data || []
 }
 
@@ -290,7 +291,7 @@ export async function getPublicCategories(
 
     const { data, count, error } = await queryBuilder
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getPublicCategories')
 
     const totalCount = count || 0
     const totalPages = Math.ceil(totalCount / limit)
@@ -315,7 +316,7 @@ export async function getUserCategories(userId: string) {
         .eq('user_id', userId)
         .order('sort_order', { ascending: true })
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getUserCategories')
 
     // Transform to include item count
     return (data || []).map((cat: any) => ({

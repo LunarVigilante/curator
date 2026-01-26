@@ -11,6 +11,7 @@ import { searchMediaAction } from './media'
 import { getCategory } from './categories'
 import { transformItem, transformItems } from '@/lib/utils/transformItem'
 import { upsertGlobalItem } from '@/lib/utils/globalItems'
+import { handleSupabaseError } from '@/lib/utils/errorHandler'
 
 
 export async function getItems(
@@ -51,7 +52,7 @@ export async function getItems(
 
     const { data, count, error } = await queryBuilder
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'getItems')
 
     const totalCount = count || 0
 
@@ -81,7 +82,7 @@ export async function getItem(id: string) {
         .eq('id', id)
         .single()
 
-    if (error && error.code !== 'PGRST116') throw error
+    if (error && error.code !== 'PGRST116') handleSupabaseError(error, 'getItem')
     if (!item) return null
 
     // Transform using shared helper
@@ -153,7 +154,7 @@ export async function createItemInternal(input: z.input<typeof createItemSchema>
         .select()
         .single()
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'createItemInternal')
 
     if (tagIds && tagIds.length > 0) {
         await (supabase.from('items_to_tags') as any).insert(
@@ -366,7 +367,7 @@ export async function applyItemEnhancement(itemId: string, enhancement: { sugges
                 .insert({ name: tagName })
                 .select()
                 .single()
-            if (error) throw error
+            if (error) handleSupabaseError(error, 'updateItem:globalItems')
             tag = newTag
         }
 
@@ -402,7 +403,7 @@ export async function deleteItem(id: string, categoryId?: string) {
         .delete()
         .eq('id', id)
 
-    if (error) throw error
+    if (error) handleSupabaseError(error, 'deleteItem')
 
     if (categoryId) {
         revalidatePath(`/categories/${categoryId}`)
@@ -419,7 +420,7 @@ export async function updateItemScores(updates: { id: string, elo: number }[]) {
         const { error } = await (supabase.from('items') as any)
             .update({ elo_score: update.elo })
             .eq('id', update.id)
-        if (error) throw error
+        if (error) handleSupabaseError(error, 'updateItemScores')
     }
 
     revalidatePath('/items')
