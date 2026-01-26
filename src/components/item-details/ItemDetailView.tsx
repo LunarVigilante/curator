@@ -91,7 +91,7 @@ export default function ItemDetailView({
     const { isAdmin } = useUser()
     const [reportOpen, setReportOpen] = useState(false)
     const [descriptionExpanded, setDescriptionExpanded] = useState(false)
-    const [isLoadingFreshData, setIsLoadingFreshData] = useState(false)
+    const [_isLoadingFreshData, setIsLoadingFreshData] = useState(false)
 
     // Audio player state (for music tracks)
     const [isPlaying, setIsPlaying] = useState(false)
@@ -147,7 +147,7 @@ export default function ItemDetailView({
         }
 
         fetchFreshData()
-    }, [isOpen, item?.id]) // Only re-fetch when modal opens or item ID changes
+    }, [isOpen, item?.id, onItemChange]) // Only re-fetch when modal opens or item ID changes
 
     // Reset states on item change
     useEffect(() => {

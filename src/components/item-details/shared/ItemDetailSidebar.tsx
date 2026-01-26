@@ -4,23 +4,14 @@ import React from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import {
-    Pencil, Flag, Trash2, ExternalLink, Tag as TagIcon,
+    Flag, ExternalLink, Tag as TagIcon,
     Gamepad2, Film, Music, Globe, Box, Play, Sparkles,
-    RefreshCw, Wand2, MoreHorizontal, Settings2, Clapperboard
+    Clapperboard
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { PlatformBadgeList } from '@/components/ui/PlatformBadge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { cn } from '@/lib/utils'
 import { useUser } from '@/hooks/useUser'
 import type { GlobalItem } from '../types'
 import { normalizeCategory } from '../utils'
@@ -40,16 +31,16 @@ interface ItemDetailSidebarProps {
 
 export function ItemDetailSidebar({
     item,
-    onEdit,
-    onDelete,
+    onEdit: _onEdit,
+    onDelete: _onDelete,
     onReportOpen,
-    onRefreshMetadata,
-    onRegenerateDescription,
-    isRefreshing,
-    isRegenerating,
+    onRefreshMetadata: _onRefreshMetadata,
+    onRegenerateDescription: _onRegenerateDescription,
+    isRefreshing: _isRefreshing,
+    isRegenerating: _isRegenerating,
     onSimilarItemClick
 }: ItemDetailSidebarProps) {
-    const { isAdmin } = useUser()
+    const { isAdmin: _isAdmin } = useUser()
     const category = normalizeCategory(item.category_type)
     const isMusicArtist = category === 'MUSIC_ARTIST'
     const isVideoGame = category === 'VIDEO_GAME'

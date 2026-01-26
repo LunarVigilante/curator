@@ -38,7 +38,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
             if (!response.ok) throw new Error('Failed')
             toast.success(`Regenerated description for ${item.title}`)
             fetchItems()
-        } catch (e) {
+        } catch (_e) {
             toast.error('Regeneration failed')
         } finally {
             setRegeneratingDescriptionIds(prev => {
@@ -69,7 +69,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
                 toast.success(`Generated ${validTags.length} tags for ${item.title}`)
                 fetchItems()
             }
-        } catch (e) {
+        } catch (_e) {
             toast.error('Tag generation failed')
         } finally {
             setRegeneratingTagIds(prev => {
@@ -99,7 +99,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
             } else {
                 toast.error('Refresh failed')
             }
-        } catch (e) {
+        } catch (_e) {
             toast.error('Metadata refresh failed')
         } finally {
             setRefreshingMetadataIds(prev => {
@@ -144,7 +144,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
                 }
                 toast.success(`Deleted ${idsToDelete.length} items from ${deleteConfirm.source}`)
             }
-        } catch (e) {
+        } catch (_e) {
             toast.error('Delete failed')
         } finally {
             setActionLoading(false)
@@ -257,7 +257,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
             const { error } = await supabase.from('global_items').update(updates).eq('id', item.id)
             if (error) throw error
             toast.success('Item saved')
-        } catch (e) {
+        } catch (_e) {
             toast.error('Save failed')
         } finally {
             setActionLoading(false)
@@ -275,7 +275,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
             })
             if (error) throw error
             toast.success('Configuration saved')
-        } catch (e) {
+        } catch (_e) {
             toast.error('Failed to save configuration')
         } finally {
             setActionLoading(false)

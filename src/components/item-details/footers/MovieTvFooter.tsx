@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Building, Film, Pencil, Sparkles, Globe, DollarSign, Award, Calendar } from 'lucide-react'
+import { Building, Film, Pencil, Sparkles } from 'lucide-react'
 import type { GlobalItem } from '../types'
 import { DetailRow } from '../shared'
 import { isValidValue, formatRuntime, formatCurrency, getLanguageName, getCountryName } from '../utils'

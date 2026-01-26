@@ -10,9 +10,9 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
-import { refreshMetadata, MetadataRefreshOptions } from './MetadataService'
-import { buildEmbeddingText, StructuredDescription } from '@/lib/ai/structured-description'
-import { generateEmbedding, generateTags, ensureTags, rewriteDescription } from '@/lib/harvesters/shared'
+import { refreshMetadata } from './MetadataService'
+import { buildEmbeddingText } from '@/lib/ai/structured-description'
+import { generateEmbedding, generateTags, ensureTags } from '@/lib/harvesters/shared'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { generateStructuredDescription, combineDescription } from '@/lib/ai/structured-description'
 
