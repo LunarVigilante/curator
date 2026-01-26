@@ -28,7 +28,6 @@ export interface RawItemRow extends Tables<'items'> {
     tags?: Array<{ tag: Tag | null }> | null
     ratings?: Rating[] | null
     category?: Tables<'categories'> & { custom_ranks?: unknown[] } | null
-    elo_score?: number
 }
 
 // Type for transformed item returned to UI

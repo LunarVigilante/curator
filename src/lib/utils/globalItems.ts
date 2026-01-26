@@ -1,11 +1,15 @@
 /**
  * Global Item Management Utilities
  * Extracted from items.ts for better maintainability
+ * 
+ * This module uses proper Database-derived types for full type safety.
  */
 
 import { createClient } from '@/lib/supabase/server'
+import { createTypedQuery } from '@/lib/supabase/queries'
+import type { GlobalItem, TablesInsert, TablesUpdate } from '@/lib/types/database'
 
-// Types
+// Input type for creating/updating global items (camelCase for API layer)
 export interface GlobalItemData {
     externalId?: string | null
     title: string
@@ -15,17 +19,8 @@ export interface GlobalItemData {
     categoryType?: string | null
 }
 
- 
-export interface GlobalItemRow {
-    id: string
-    external_id: string | null
-    title: string
-    description: string | null
-    image_url: string | null
-    metadata: Record<string, unknown> | null
-    cached_tags: string[] | null
-    category_type: string | null
-}
+// Re-export the proper Database type for consumers
+export type { GlobalItem }
 
 /**
  * Extract tags from metadata for caching
@@ -53,44 +48,44 @@ export function extractCachedTags(metadata: string | null): { tags: string[], pa
 /**
  * Find existing global item by external ID
  */
-export async function findGlobalItemByExternalId(externalId: string): Promise<GlobalItemRow | null> {
+export async function findGlobalItemByExternalId(externalId: string): Promise<GlobalItem | null> {
     const supabase = await createClient()
+    const q = createTypedQuery(supabase)
 
-     
-    const { data } = await (supabase.from('global_items') as any)
+    const { data } = await q.globalItems()
         .select('*')
         .eq('external_id', externalId)
         .single()
 
-    return data || null
+    return data
 }
 
 /**
  * Find existing global item by title and image
  */
-export async function findGlobalItemByTitleAndImage(title: string, imageUrl: string | null): Promise<GlobalItemRow | null> {
+export async function findGlobalItemByTitleAndImage(title: string, imageUrl: string | null): Promise<GlobalItem | null> {
     const supabase = await createClient()
+    const q = createTypedQuery(supabase)
 
-     
-    const { data } = await (supabase.from('global_items') as any)
+    const { data } = await q.globalItems()
         .select('*')
         .eq('title', title)
         .eq('image_url', imageUrl || '')
         .single()
 
-    return data || null
+    return data
 }
 
 /**
  * Compute updates needed for an existing global item
  */
 export function computeGlobalItemUpdates(
-    existing: GlobalItemRow,
+    existing: GlobalItem,
     newData: GlobalItemData,
     cachedTags: string[],
     parsedMeta: Record<string, unknown> | null
-): Record<string, unknown> | null {
-    const updates: Record<string, unknown> = {}
+): TablesUpdate<'global_items'> | null {
+    const updates: TablesUpdate<'global_items'> = {}
     let hasUpdates = false
 
     // Update external_id if missing
@@ -105,15 +100,17 @@ export function computeGlobalItemUpdates(
         hasUpdates = true
     }
 
-    // Update cached_tags if missing
-    if ((!existing.cached_tags || existing.cached_tags.length === 0) && cachedTags.length > 0) {
+    // Update cached_tags if missing or empty
+    const existingTags = existing.cached_tags
+    const hasCachedTags = Array.isArray(existingTags) && existingTags.length > 0
+    if (!hasCachedTags && cachedTags.length > 0) {
         updates.cached_tags = cachedTags
         hasUpdates = true
     }
 
     // Update metadata if missing
     if (!existing.metadata && parsedMeta) {
-        updates.metadata = parsedMeta
+        updates.metadata = parsedMeta as TablesUpdate<'global_items'>['metadata']
         hasUpdates = true
     }
 
@@ -135,18 +132,18 @@ export function computeGlobalItemUpdates(
 /**
  * Update an existing global item with new data
  */
-export async function updateGlobalItem(id: string, updates: Record<string, unknown>): Promise<GlobalItemRow> {
+export async function updateGlobalItem(id: string, updates: TablesUpdate<'global_items'>): Promise<GlobalItem> {
     const supabase = await createClient()
+    const q = createTypedQuery(supabase)
 
-     
-    const { data, error } = await (supabase.from('global_items') as any)
+    const { data, error } = await q.globalItems()
         .update(updates)
         .eq('id', id)
         .select()
         .single()
 
     if (error) throw error
-    return data
+    return data!
 }
 
 /**
@@ -156,32 +153,34 @@ export async function createGlobalItem(
     data: GlobalItemData,
     cachedTags: string[],
     parsedMeta: Record<string, unknown> | null
-): Promise<GlobalItemRow> {
+): Promise<GlobalItem> {
     const supabase = await createClient()
+    const q = createTypedQuery(supabase)
 
-     
-    const { data: newItem, error } = await (supabase.from('global_items') as any)
-        .insert({
-            external_id: data.externalId,
-            title: data.title,
-            description: data.description,
-            image_url: data.imageUrl,
-            metadata: parsedMeta,
-            cached_tags: cachedTags.length > 0 ? cachedTags : null,
-            category_type: data.categoryType
-        })
+    const insertData: TablesInsert<'global_items'> = {
+        external_id: data.externalId,
+        title: data.title,
+        description: data.description,
+        image_url: data.imageUrl,
+        metadata: parsedMeta as TablesInsert<'global_items'>['metadata'],
+        cached_tags: cachedTags.length > 0 ? cachedTags : null,
+        category_type: data.categoryType
+    }
+
+    const { data: newItem, error } = await q.globalItems()
+        .insert(insertData)
         .select()
         .single()
 
     if (error) throw error
-    return newItem
+    return newItem!
 }
 
 /**
  * Upsert a global item - find existing or create new
  * This is the main entry point that orchestrates the smaller functions
  */
-export async function upsertGlobalItem(data: GlobalItemData): Promise<GlobalItemRow> {
+export async function upsertGlobalItem(data: GlobalItemData): Promise<GlobalItem> {
     // Extract cached tags from metadata
     const { tags: cachedTags, parsedMeta } = extractCachedTags(data.metadata ?? null)
 

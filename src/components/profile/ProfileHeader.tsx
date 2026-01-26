@@ -23,14 +23,29 @@ export function ProfileHeader({ profile, isOwner, onEditClick, onCoverEditClick 
 
     return (
         <div className="relative">
-            {/* Background banner - custom image or gradient */}
+            {/* Background banner - custom image or premium texture fallback */}
             {profile.coverImage ? (
                 <div
-                    className="absolute inset-0 h-32 bg-cover bg-center"
+                    className="absolute inset-x-0 top-0 h-32 bg-cover bg-center"
                     style={{ backgroundImage: `url(${profile.coverImage})` }}
                 />
             ) : (
-                <div className="absolute inset-0 h-32 bg-gradient-to-r from-purple-600/20 via-blue-600/20 to-pink-600/20" />
+                <div className="absolute inset-x-0 top-0 h-32 overflow-hidden">
+                    {/* Dark gradient base with subtle color hints */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900" />
+                    {/* Subtle color accent */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-900/20 via-transparent to-blue-900/20" />
+                    {/* Noise texture overlay */}
+                    <div
+                        className="absolute inset-0 opacity-40"
+                        style={{
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+                            backgroundSize: '128px 128px'
+                        }}
+                    />
+                    {/* Bottom fade */}
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-900/80 to-transparent" />
+                </div>
             )}
 
             {/* Cover edit button (owner only) */}

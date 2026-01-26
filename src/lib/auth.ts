@@ -2,7 +2,36 @@
  * Supabase Auth Helper
  * 
  * This module provides authentication helpers for Supabase Auth.
- * It replaces the previous BetterAuth implementation.
+ * 
+ * ## Auth Pattern Conventions
+ * 
+ * The project uses two authentication functions for different scenarios:
+ * 
+ * ### `getSession()` (this module)
+ * Use when you need the **full user session with profile data**:
+ * - Admin routes and administrative actions
+ * - Social features (comments, reactions, follows)
+ * - Profile-dependent logic (display name, bio, role checks)
+ * - Activity logging that requires user identity
+ * 
+ * ### `getGuestUserId()` (from `@/lib/actions/auth`)
+ * Use when you **only need the user ID** for ownership/filtering:
+ * - Fetching user's own items, categories, ratings
+ * - Ownership verification before mutations
+ * - Features that support both authenticated and anonymous users
+ * - Performance-critical paths (avoids extra profile fetch)
+ * 
+ * @example
+ * // Full auth required
+ * const session = await getSession()
+ * if (!session) throw new Error('Authentication required')
+ * const { user, profile } = session
+ * 
+ * @example
+ * // Ownership check only
+ * const userId = await getGuestUserId()
+ * if (!userId) throw new Error('Unauthorized')
+ * // ... filter by user_id
  */
 
 import { createClient } from '@/lib/supabase/server'
@@ -16,9 +45,15 @@ export interface AuthSession {
 
 /**
  * Get the current authenticated user and their profile.
- * Use this for actions requiring full authentication (admin, social features, sensitive data).
+ * 
+ * **Use this for actions requiring full authentication:**
+ * - Admin routes and role-based access control
+ * - Social features (comments, reactions, activity feeds)
+ * - Profile-dependent actions (display name, settings, bio)
+ * - Any action that needs `profile.role` or other profile fields
  * 
  * @returns The session object with user and profile, or null if not authenticated.
+ * @see getGuestUserId in `@/lib/actions/auth` for lightweight ownership checks
  */
 export async function getSession(): Promise<AuthSession | null> {
     const supabase = await createClient()

@@ -58,9 +58,9 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
                 )}
             </div>
 
-            {/* Tagline */}
+            {/* Tagline - Serif font, no border */}
             {item.tagline && (
-                <p className="text-xl text-zinc-400 font-light italic border-l-2 border-zinc-700 pl-4 py-1">
+                <p className="text-xl text-zinc-400 font-light italic font-serif py-1">
                     &ldquo;{item.tagline}&rdquo;
                 </p>
             )}

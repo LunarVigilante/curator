@@ -1,229 +1,307 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import pLimit from 'p-limit'
 import type { GlobalItem } from '../types'
 import type { useDataBrowserState } from './useDataBrowserState'
+import type { useDataFetching } from './useDataFetching'
 
 type BrowserState = ReturnType<typeof useDataBrowserState>
+type DataState = ReturnType<typeof useDataFetching>
 
-interface ItemActionsProps {
-    state: BrowserState
-    refreshItems: () => Promise<void>
-    onItemsDeleted: (ids: string[]) => void
-}
-
-export function useItemActions({ state, refreshItems, onItemsDeleted }: ItemActionsProps) {
+export function useItemActions(state: BrowserState, data: DataState) {
     const { selection, modals } = state
+    const { items, setItems, fetchItems } = data
     const supabase = createClient()
 
-    // --------------------------------------------------------
-    // DELETE
-    // --------------------------------------------------------
-    const handleDelete = useCallback(async (id: string) => {
-        try {
-            const { error } = await supabase.from('global_items').delete().eq('id', id)
-            if (error) throw error
-
-            toast.success('Item deleted')
-            onItemsDeleted([id])
-
-            // If viewing details of deleted item, close it
-            if (modals.viewItem?.id === id) {
-                modals.setViewItem(null)
-            }
-        } catch (err: any) {
-            console.error('Delete error:', err)
-            toast.error('Failed to delete item')
-        }
-    }, [supabase, modals, onItemsDeleted])
-
-    const handleBulkDelete = useCallback(async () => {
-        if (selection.selectedIds.size === 0) return
-
-        try {
-            const ids = Array.from(selection.selectedIds)
-            const { error } = await supabase.from('global_items').delete().in('id', ids)
-
-            if (error) throw error
-
-            toast.success(`Deleted ${ids.length} items`)
-            onItemsDeleted(ids)
-            selection.setSelectedIds(new Set())
-            modals.setDeleteConfirm(null)
-        } catch (err: any) {
-            console.error('Bulk delete error:', err)
-            toast.error('Failed to delete items')
-        }
-    }, [supabase, selection, modals, onItemsDeleted])
-
-    const handleDeleteSource = useCallback(async (source: string) => {
-        try {
-            // Note: This matches the original logic which likely relies on strict source string matching
-            const { error } = await supabase.from('global_items').delete().eq('source', source)
-
-            if (error) throw error
-
-            toast.success(`Deleted all items from ${source}`)
-            refreshItems() // Full refresh needed for bulk source delete
-            modals.setDeleteConfirm(null)
-        } catch (err: any) {
-            console.error('Source delete error:', err)
-            toast.error('Failed to delete items from source')
-        }
-    }, [supabase, refreshItems, modals])
+    // Loading states
+    const [actionLoading, setActionLoading] = useState(false)
+    const [bulkActionProgress, setBulkActionProgress] = useState<{ current: number; total: number; action: string } | null>(null)
+    const [regeneratingDescriptionIds, setRegeneratingDescriptionIds] = useState<Set<string>>(new Set())
+    const [regeneratingTagIds, setRegeneratingTagIds] = useState<Set<string>>(new Set())
+    const [refreshingMetadataIds, setRefreshingMetadataIds] = useState<Set<string>>(new Set())
 
     // --------------------------------------------------------
-    // ANALYZE / UPDATE
+    // SINGLE ITEM ACTIONS
     // --------------------------------------------------------
-    const handleAnalyze = useCallback(async () => {
-        if (selection.selectedIds.size === 0) return
 
-        const loadingToast = toast.loading(`Analyzing ${selection.selectedIds.size} items...`)
-
-        try {
-            const ids = Array.from(selection.selectedIds)
-
-            // Call API endpoint
-            const response = await fetch('/api/ai/enrich-metadata', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itemIds: ids })
-            })
-
-            if (!response.ok) {
-                throw new Error('Analysis failed')
-            }
-
-            const result = await response.json()
-            toast.success(`Analysis complete: ${result.updated} updated`)
-            selection.setSelectedIds(new Set())
-            refreshItems()
-        } catch (err: any) {
-            console.error('Analysis error:', err)
-            toast.error('Analysis failed: ' + err.message)
-        } finally {
-            toast.dismiss(loadingToast)
-        }
-    }, [selection, refreshItems])
-
-    const handleRefreshMetadata = useCallback(async (item: GlobalItem) => {
-        const loadingToast = toast.loading(`Refreshing ${item.title}...`)
-        try {
-            const response = await fetch('/api/ai/enrich-metadata', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    itemId: item.id,
-                    title: item.title,
-                    type: item.category_type,
-                    force: true
-                })
-            })
-
-            if (!response.ok) throw new Error('Refresh failed')
-
-            toast.success(`Refreshed ${item.title}`)
-            refreshItems()
-        } catch (err: any) {
-            console.error('Refresh error:', err)
-            toast.error('Refresh failed')
-        } finally {
-            toast.dismiss(loadingToast)
-        }
-    }, [refreshItems])
-
-    const handleRegenerateDescription = useCallback(async (item: GlobalItem) => {
-        const loadingToast = toast.loading(`Regenerating description for ${item.title}...`)
+    const handleRegenerate = useCallback(async (item: GlobalItem) => {
+        setRegeneratingDescriptionIds(prev => new Set(prev).add(item.id))
         try {
             const response = await fetch('/api/ai/regenerate-description', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    itemId: item.id,
-                    title: item.title,
-                    type: item.category_type
-                })
+                body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })
             })
-
-            if (!response.ok) throw new Error('Regeneration failed')
-
+            if (!response.ok) throw new Error('Failed')
             toast.success(`Regenerated description for ${item.title}`)
-            refreshItems()
-        } catch (err: any) {
-            console.error('Regeneration error:', err)
+            fetchItems()
+        } catch (e) {
             toast.error('Regeneration failed')
         } finally {
-            toast.dismiss(loadingToast)
+            setRegeneratingDescriptionIds(prev => {
+                const next = new Set(prev)
+                next.delete(item.id)
+                return next
+            })
         }
-    }, [refreshItems])
+    }, [fetchItems])
 
-    const handleGenerateTags = useCallback(async (item: GlobalItem) => {
-        const loadingToast = toast.loading(`Generating tags for ${item.title}...`)
+    const handleGenerateTagsForItem = useCallback(async (item: GlobalItem) => {
+        setRegeneratingTagIds(prev => new Set(prev).add(item.id))
         try {
-            const response = await fetch('/api/ai/generate-tags', {
+            const { generateTagsAction } = await import('@/lib/actions/ai')
+            const { createTagsBatch } = await import('@/lib/actions/tags')
+
+            const data = await generateTagsAction({
+                title: item.title,
+                type: item.category_type || '',
+                description: item.description || ''
+            })
+
+            if (data.tags && data.tags.length > 0) {
+                const validTags = await createTagsBatch(data.tags)
+                await supabase.from('global_items').update({
+                    cached_tags: validTags.map(t => ({ id: t.id, name: t.name }))
+                }).eq('id', item.id)
+                toast.success(`Generated ${validTags.length} tags for ${item.title}`)
+                fetchItems()
+            }
+        } catch (e) {
+            toast.error('Tag generation failed')
+        } finally {
+            setRegeneratingTagIds(prev => {
+                const next = new Set(prev)
+                next.delete(item.id)
+                return next
+            })
+        }
+    }, [supabase, fetchItems])
+
+    const handleRefreshMetadata = useCallback(async (item: GlobalItem) => {
+        setRefreshingMetadataIds(prev => new Set(prev).add(item.id))
+        try {
+            const response = await fetch('/api/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     itemId: item.id,
                     title: item.title,
-                    type: item.category_type
+                    type: item.category_type || '',
+                    force: true
                 })
             })
-
-            if (!response.ok) throw new Error('Tag generation failed')
-
-            toast.success(`Generated tags for ${item.title}`)
-            refreshItems()
-        } catch (err: any) {
-            console.error('Tag error:', err)
-            toast.error('Tag generation failed')
-        } finally {
-            toast.dismiss(loadingToast)
-        }
-    }, [refreshItems])
-
-    // --------------------------------------------------------
-    // ADD / EDIT
-    // --------------------------------------------------------
-    const handleSaveItem = useCallback(async (item: Partial<GlobalItem>) => {
-        try {
-            if (modals.editMode === 'edit' && item.id) {
-                const { error } = await (supabase
-                    .from('global_items') as any)
-                    .update(item)
-                    .eq('id', item.id)
-
-                if (error) throw error
-                toast.success('Item updated')
+            if (response.ok) {
+                toast.success(`Refreshed metadata for ${item.title}`)
+                fetchItems()
             } else {
-                // Remove ID for creation to let DB generate it (if using UUID) or ensure it's provided
-                const { id: _id, ...newItem } = item
-                const { error } = await (supabase
-                    .from('global_items') as any)
-                    .insert([newItem])
+                toast.error('Refresh failed')
+            }
+        } catch (e) {
+            toast.error('Metadata refresh failed')
+        } finally {
+            setRefreshingMetadataIds(prev => {
+                const next = new Set(prev)
+                next.delete(item.id)
+                return next
+            })
+        }
+    }, [fetchItems])
 
+    // --------------------------------------------------------
+    // BULK ACTIONS
+    // --------------------------------------------------------
+
+    const handleBulkDelete = useCallback(async (
+        deleteConfirm: { type: 'single' | 'selected' | 'source'; source?: string; id?: string },
+        confirmText: string
+    ) => {
+        if (deleteConfirm.type === 'source' && confirmText !== 'DELETE') return
+
+        setActionLoading(true)
+        try {
+            if (deleteConfirm.type === 'selected') {
+                const { error } = await supabase.from('global_items').delete().in('id', Array.from(selection.selectedIds))
                 if (error) throw error
-                toast.success('Item created')
+                selection.setSelectedIds(new Set())
+                toast.success(`Deleted ${selection.selectedIds.size} items`)
+            } else if (deleteConfirm.type === 'single' && deleteConfirm.id) {
+                const { error } = await supabase.from('global_items').delete().eq('id', deleteConfirm.id)
+                if (error) throw error
+                setItems(prev => prev.filter(i => i.id !== deleteConfirm.id))
+                toast.success('Item deleted')
+            } else if (deleteConfirm.type === 'source' && deleteConfirm.source) {
+                // Find all items with this source in external_ids
+                const { data: itemsToDelete } = await supabase.from('global_items').select('id, external_ids')
+                const idsToDelete = (itemsToDelete as any[])
+                    ?.filter(item => item.external_ids && deleteConfirm.source! in item.external_ids)
+                    .map(item => item.id) || []
+
+                for (let i = 0; i < idsToDelete.length; i += 1000) {
+                    await supabase.from('global_items').delete().in('id', idsToDelete.slice(i, i + 1000))
+                }
+                toast.success(`Deleted ${idsToDelete.length} items from ${deleteConfirm.source}`)
+            }
+        } catch (e) {
+            toast.error('Delete failed')
+        } finally {
+            setActionLoading(false)
+        }
+    }, [supabase, selection, setItems])
+
+    const handleBulkRegenerateDescriptions = useCallback(async () => {
+        if (selection.selectedIds.size === 0) return
+
+        const ids = Array.from(selection.selectedIds)
+        const total = ids.length
+        const limit = pLimit(5)
+
+        setBulkActionProgress({ current: 0, total, action: 'Regenerating descriptions' })
+
+        let success = 0
+        let completed = 0
+
+        const promises = ids.map(id => limit(async () => {
+            const item = items.find(it => it.id === id)
+            if (!item) {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating descriptions' })
+                return
             }
 
-            modals.setEditItem(null)
-            refreshItems()
-        } catch (err: any) {
-            console.error('Save error:', err)
-            toast.error('Failed to save item')
+            try {
+                const response = await fetch('/api/ai/regenerate-description', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })
+                })
+                if (response.ok) success++
+            } catch (e) {
+                console.error('Bulk regen error for', item.title, e)
+            } finally {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating descriptions' })
+            }
+        }))
+
+        await Promise.all(promises)
+
+        setBulkActionProgress(null)
+        selection.setSelectedIds(new Set())
+        fetchItems()
+        toast.success(`Regenerated ${success}/${total} descriptions`)
+    }, [selection, items, fetchItems])
+
+    const handleBulkRegenerateTags = useCallback(async () => {
+        if (selection.selectedIds.size === 0) return
+
+        const ids = Array.from(selection.selectedIds)
+        const total = ids.length
+        const limit = pLimit(5)
+
+        setBulkActionProgress({ current: 0, total, action: 'Regenerating tags' })
+
+        const { generateTagsAction } = await import('@/lib/actions/ai')
+        const { createTagsBatch } = await import('@/lib/actions/tags')
+
+        let success = 0
+        let completed = 0
+
+        const promises = ids.map(id => limit(async () => {
+            const item = items.find(it => it.id === id)
+            if (!item) {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating tags' })
+                return
+            }
+
+            try {
+                const data = await generateTagsAction({
+                    title: item.title,
+                    type: item.category_type || '',
+                    description: item.description || ''
+                })
+
+                if (data.tags && data.tags.length > 0) {
+                    const validTags = await createTagsBatch(data.tags)
+                    await supabase.from('global_items').update({
+                        cached_tags: validTags.map(t => ({ id: t.id, name: t.name }))
+                    }).eq('id', item.id)
+                    success++
+                }
+            } catch (e) {
+                console.error('Bulk tag error for', item.title, e)
+            } finally {
+                completed++
+                setBulkActionProgress({ current: completed, total, action: 'Regenerating tags' })
+            }
+        }))
+
+        await Promise.all(promises)
+
+        setBulkActionProgress(null)
+        selection.setSelectedIds(new Set())
+        fetchItems()
+        toast.success(`Regenerated tags for ${success}/${total} items`)
+    }, [selection, items, supabase, fetchItems])
+
+    // --------------------------------------------------------
+    // SAVE / CONFIG
+    // --------------------------------------------------------
+
+    const handleSaveEdit = useCallback(async (item: GlobalItem, updates: Partial<GlobalItem>) => {
+        setActionLoading(true)
+        try {
+            const { error } = await supabase.from('global_items').update(updates).eq('id', item.id)
+            if (error) throw error
+            toast.success('Item saved')
+        } catch (e) {
+            toast.error('Save failed')
+        } finally {
+            setActionLoading(false)
         }
-    }, [supabase, modals, refreshItems])
+    }, [supabase])
+
+    const handleSaveConfig = useCallback(async () => {
+        setActionLoading(true)
+        try {
+            const { error } = await supabase.from('system_settings').upsert({
+                key: 'STEAMGRIDDB_API_KEY',
+                value: modals.steamGridKey,
+                category: 'integrations',
+                is_secret: true
+            })
+            if (error) throw error
+            toast.success('Configuration saved')
+        } catch (e) {
+            toast.error('Failed to save configuration')
+        } finally {
+            setActionLoading(false)
+        }
+    }, [supabase, modals.steamGridKey])
 
     return {
-        handleDelete,
-        handleBulkDelete,
-        handleDeleteSource,
-        handleAnalyze,
+        // Loading states
+        actionLoading,
+        bulkActionProgress,
+        regeneratingDescriptionIds,
+        regeneratingTagIds,
+        refreshingMetadataIds,
+
+        // Single item actions
+        handleRegenerate,
+        handleGenerateTagsForItem,
         handleRefreshMetadata,
-        handleRegenerateDescription,
-        handleGenerateTags,
-        handleSaveItem
+
+        // Bulk actions
+        handleBulkDelete,
+        handleBulkRegenerateDescriptions,
+        handleBulkRegenerateTags,
+
+        // Save/Config
+        handleSaveEdit,
+        handleSaveConfig
     }
 }

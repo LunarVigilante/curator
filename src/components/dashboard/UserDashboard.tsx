@@ -7,6 +7,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Plus, Settings, GripVertical, X, Pencil } from 'lucide-react';
 import ActivityFeed from './ActivityFeed';
 import ChallengeCard from './ChallengeCard';
+import GettingStartedChecklist from './GettingStartedChecklist';
+import TasteProfileTeaser from './TasteProfileTeaser';
+import RecentActivityWidget from './RecentActivityWidget';
+import TasteProfileChartWidget from './TasteProfileChartWidget';
+import OnboardingTour from '@/components/onboarding/OnboardingTour';
 import { Button } from '@/components/ui/button';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -16,6 +21,7 @@ import EditCategoryDialog from '@/components/dialogs/EditCategoryDialog';
 import CreateCategoryDialog from '@/components/dialogs/CreateCategoryDialog';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { ChecklistStatus } from '@/lib/actions/checklist';
 
 interface Category {
     id: string;
@@ -34,6 +40,7 @@ interface UserDashboardProps {
     userName: string;
     currentChallenge?: any;
     activities?: any[];
+    checklistStatus?: ChecklistStatus;
 }
 
 export default function UserDashboard({
@@ -42,7 +49,8 @@ export default function UserDashboard({
     followedUsers = [],
     userName,
     currentChallenge,
-    activities = []
+    activities = [],
+    checklistStatus
 }: UserDashboardProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [categories, setCategories] = useState(userCategories);
@@ -88,7 +96,7 @@ export default function UserDashboard({
     };
 
     return (
-        <div className="container mx-auto px-4 py-8 space-y-12">
+        <div className="max-w-[1600px] mx-auto w-full px-6 space-y-10 py-8">
 
             {editingCategory && (
                 <EditCategoryDialog
@@ -132,22 +140,42 @@ export default function UserDashboard({
                 </Button>
             </header>
 
-            {currentChallenge && (
-                <ChallengeCard challenge={currentChallenge} />
-            )}
+            {/* Onboarding Tour */}
+            <OnboardingTour />
+
+
 
             <div className="flex flex-col lg:flex-row gap-8">
                 <div className="flex-1 space-y-12">
+                    {/* Getting Started & Taste Profile Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {(checklistStatus?.allComplete) ? (
+                            <RecentActivityWidget className="h-full" />
+                        ) : (
+                            <GettingStartedChecklist className="h-full" data-tour="checklist" />
+                        )}
+
+                        {(checklistStatus?.allComplete) ? (
+                            <TasteProfileChartWidget className="h-full" />
+                        ) : (
+                            <TasteProfileTeaser className="h-full" />
+                        )}
+                    </div>
+
+                    {currentChallenge && (
+                        <ChallengeCard challenge={currentChallenge} />
+                    )}
                     {/* My Collections */}
                     <section className="space-y-6">
                         <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3" data-tour="collections">
                                 <h2 className="text-xl font-semibold">My Collections</h2>
                                 <Button
                                     variant="secondary"
                                     size="sm"
                                     className="h-7 text-xs gap-1 bg-white/10 hover:bg-white/20 text-white border border-white/5"
                                     onClick={() => setIsCreateModalOpen(true)}
+                                    data-tour="new-collection"
                                 >
                                     <Plus className="h-3 w-3" /> New
                                 </Button>
@@ -246,7 +274,7 @@ export default function UserDashboard({
 
 
                 {/* Sidebar - Followed Curators & Activity */}
-                <aside className={`lg:w-72 flex-shrink-0 space-y-8 ${activities.length === 0 && followedUsers.length === 0 ? 'hidden lg:block lg:invisible' : ''}`}>
+                <aside className={`lg:w-72 flex-shrink-0 space-y-8 ${activities.length === 0 && followedUsers.length === 0 ? 'hidden' : ''}`}>
 
                     {/* Activity Feed - Only show if there are activities */}
                     {activities.length > 0 && (

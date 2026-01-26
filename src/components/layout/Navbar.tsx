@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { supabase, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
-import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users, Database } from "lucide-react";
+import { User, Settings, Shield, LogOut, ChevronDown, Bookmark, Heart, Users, Database, Trophy } from "lucide-react";
 import NotificationBell from "@/components/ui/NotificationBell";
 import {
     DropdownMenu,
@@ -86,7 +86,13 @@ export function Navbar() {
 
                     <nav className="flex items-center space-x-6 text-sm font-medium">
                         {!isSetupPage && (
-                            <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/browse">Browse</Link>
+                            <>
+                                <Link className="transition-colors hover:text-foreground/80 text-foreground/60" href="/browse" data-tour="browse">Browse</Link>
+                                <Link className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center gap-1.5" href="/leaderboards" data-tour="leaderboards">
+                                    <Trophy className="h-3.5 w-3.5" />
+                                    Leaderboards
+                                </Link>
+                            </>
                         )}
                     </nav>
                 </div>

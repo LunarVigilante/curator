@@ -67,12 +67,28 @@ export function TopPicksSection({ picks, isOwner, onAddClick }: TopPicksSectionP
             </CardHeader>
             <CardContent>
                 {items.length === 0 ? (
-                    <div className="text-center py-8 text-zinc-500">
-                        <Trophy className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>No top picks yet</p>
-                        {isOwner && (
-                            <p className="text-sm mt-1">Pin your favorite items to show off your taste!</p>
-                        )}
+                    /* Trophy Case - 3 Empty Slots */
+                    <div className="flex gap-4 justify-center py-4">
+                        {[1, 2, 3].map((slot) => (
+                            <button
+                                key={slot}
+                                onClick={isOwner ? onAddClick : undefined}
+                                disabled={!isOwner}
+                                className={`
+                                    flex flex-col items-center justify-center
+                                    aspect-[2/3] w-24 sm:w-28
+                                    border-2 border-dashed border-zinc-800 
+                                    bg-zinc-900/30 rounded-lg
+                                    transition-all duration-200
+                                    ${isOwner ? 'hover:border-zinc-600 hover:bg-zinc-800/30 cursor-pointer' : 'cursor-default'}
+                                `}
+                            >
+                                <Plus className={`w-6 h-6 mb-2 ${isOwner ? 'text-zinc-600' : 'text-zinc-700'}`} />
+                                <span className={`text-xs ${isOwner ? 'text-zinc-500' : 'text-zinc-600'}`}>
+                                    {isOwner ? 'Add Pick' : 'Empty'}
+                                </span>
+                            </button>
+                        ))}
                     </div>
                 ) : (
                     <Reorder.Group

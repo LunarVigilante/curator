@@ -18,6 +18,7 @@ interface StandardLayoutProps {
     onItemChange?: (item: GlobalItem | null) => void
     onRefreshMetadata?: () => void
     onRegenerateDescription?: () => void
+    onSimilarItemClick?: (itemId: string) => void
     isRefreshing?: boolean
     isRegenerating?: boolean
     containerVariants: any
@@ -27,6 +28,10 @@ interface StandardLayoutProps {
 
 /**
  * Standard two-column layout for Movies, TV, Games, Anime, and Music Albums
+ * 
+ * Layout Structure:
+ * - LEFT: Sidebar with scrollable "Similar Items" section
+ * - RIGHT: Fixed header/cast at top, scrollable description in middle, fixed footer at bottom
  */
 export function StandardLayout({
     item,
@@ -35,6 +40,7 @@ export function StandardLayout({
     onReportOpen,
     onRefreshMetadata,
     onRegenerateDescription,
+    onSimilarItemClick,
     isRefreshing,
     isRegenerating,
     containerVariants,
@@ -47,12 +53,6 @@ export function StandardLayout({
     const isVideoGame = category === 'VIDEO_GAME'
     const isMovie = category === 'MOVIE'
     const isTV = category === 'TV' || category === 'TV_SHOW'
-    const _isMusicAlbum = category === 'MUSIC_ALBUM'
-    const _isMusicArtist = category === 'MUSIC_ARTIST'
-
-    // Cast display logic
-    const _displayedCast = item.cast?.slice(0, 10).join(', ')
-    const _hasMoreCast = (item.cast?.length || 0) > 10
 
     return (
         <div className="relative z-10 flex flex-col md:flex-row w-full h-full">
@@ -83,21 +83,20 @@ export function StandardLayout({
                     onRegenerateDescription={onRegenerateDescription}
                     isRefreshing={isRefreshing}
                     isRegenerating={isRegenerating}
+                    onSimilarItemClick={onSimilarItemClick}
                 />
             </motion.div>
 
-            {/* --- RIGHT COLUMN: Content --- */}
+            {/* --- RIGHT COLUMN: Content with fixed header/footer and scrollable description --- */}
             <div className="relative z-10 flex-1 flex flex-col p-6 md:p-8 overflow-hidden">
-                {/* Close Button placed here for mobile access, though usually in Dialog wrapper */}
-                {/* (Handled by parent Dialog usually, but keeping layout distinct) */}
-
-                <ScrollArea className="flex-1 -mx-2 px-2">
-                    <motion.div
-                        className="space-y-8 pb-10"
-                        variants={containerVariants}
-                        initial="hidden"
-                        animate="visible"
-                    >
+                <motion.div
+                    className="flex flex-col h-full"
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="visible"
+                >
+                    {/* === FIXED TOP: Header + Awards + Cast === */}
+                    <div className="flex-shrink-0 space-y-4">
                         {/* Header Section */}
                         <motion.div variants={itemVariants}>
                             <ItemDetailHeader item={item} />
@@ -110,38 +109,41 @@ export function StandardLayout({
                             </motion.div>
                         )}
 
-                        {/* Cast Row (Pills) */}
-                        {item.cast && item.cast.length > 0 && (
+                        {/* Cast Row (Pills) - Fixed above description */}
+                        {(isMovie || isTV || isAnime || (item.cast && item.cast.length > 0)) && (
                             <motion.div variants={itemVariants}>
-                                <CastRow cast={item.cast} />
+                                <CastRow cast={item.cast || []} />
                             </motion.div>
                         )}
+                    </div>
 
-                        {/* Description */}
-                        {item.description && (
+                    {/* === SCROLLABLE MIDDLE: Description === */}
+                    {item.description && (
+                        <ScrollArea className="flex-1 my-4 -mx-2 px-2 min-h-0">
                             <motion.div
                                 variants={itemVariants}
-                                className="prose prose-invert max-w-none text-zinc-300 text-lg leading-relaxed font-light"
+                                className="prose prose-invert max-w-none text-zinc-300 text-base leading-relaxed font-light pr-4"
                             >
                                 <ReactMarkdown
                                     components={{
-                                        p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
+                                        p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
                                         strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>
                                     }}
                                 >
                                     {item.description}
                                 </ReactMarkdown>
                             </motion.div>
-                        )}
+                        </ScrollArea>
+                    )}
 
-                        {/* Category Specific Footers (Refined 4-column grid) */}
+                    {/* === FIXED BOTTOM: Category Specific Footers === */}
+                    <div className="flex-shrink-0">
                         {isAnime && <AnimeFooter item={item} itemVariants={itemVariants} />}
                         {isBoardGame && <BoardGameFooter item={item} itemVariants={itemVariants} />}
                         {isVideoGame && <VideoGameFooter item={item} itemVariants={itemVariants} />}
                         {(isMovie || isTV) && <MovieTvFooter item={item} itemVariants={itemVariants} isTV={isTV} />}
-
-                    </motion.div>
-                </ScrollArea>
+                    </div>
+                </motion.div>
             </div>
         </div>
     )

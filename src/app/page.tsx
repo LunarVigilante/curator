@@ -3,6 +3,7 @@ import { getFeaturedCategories, getUserCategories, checkAndSeedUserCategories } 
 import { getFollowedUsers } from '@/lib/actions/social';
 import { getChallengeTemplates } from '@/lib/actions/challenges';
 import { getRecentActivities } from '@/lib/actions/activity';
+import { getChecklistStatus } from '@/lib/actions/checklist';
 import UserDashboard from '@/components/dashboard/UserDashboard';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -19,11 +20,12 @@ export default async function LandingPage() {
     // Self-healing: Ensure user has categories
     await checkAndSeedUserCategories(session.user.id);
 
-    const [userCategories, followedUsers, challenges, recentActivities] = await Promise.all([
+    const [userCategories, followedUsers, challenges, recentActivities, checklistStatus] = await Promise.all([
       getUserCategories(session.user.id),
       getFollowedUsers(session.user.id),
       getChallengeTemplates(),
-      getRecentActivities()
+      getRecentActivities(),
+      getChecklistStatus()
     ]);
 
     return (
@@ -34,6 +36,7 @@ export default async function LandingPage() {
         userName={session.profile?.name || session.user.email || 'User'}
         currentChallenge={challenges[0] || null}
         activities={recentActivities as any}
+        checklistStatus={checklistStatus}
       />
     );
   }

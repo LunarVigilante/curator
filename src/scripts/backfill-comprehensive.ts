@@ -1,30 +1,41 @@
 /**
  * Comprehensive Metadata Backfill Script
  * 
- * This script processes items in 4 phases to fill in missing metadata:
- * 1. OMDB Metadata - Fetches ratings, awards, writer, box office (MOVIE, TV_SHOW, ANIME)
- * 2. 4-Part Descriptions - Generates structured descriptions (premise, themes, tone, style)
- * 3. Tag Generation - Generates AI tags for items with missing cached_tags
- * 4. Embedding Regeneration - Rebuilds embeddings using enriched metadata
+ * REFACTORED to use shared enrichment services for consistency with API endpoints.
+ * 
+ * This script processes items in phases to fill in missing metadata:
+ * 1. Metadata - Fetches from TMDB/OMDB/etc (uses MetadataService)
+ * 2. Descriptions - Generates 4-part structured descriptions (uses AIEnrichmentService)
+ * 3. Tags - Generates AI tags
+ * 4. Embeddings - Rebuilds embeddings using enriched metadata
+ * 5. Full - Runs all phases at once using the unified pipeline
  * 
  * Usage:
  *   npx tsx src/scripts/backfill-comprehensive.ts --category=MOVIE
  *   npx tsx src/scripts/backfill-comprehensive.ts --category=TV_SHOW --limit=100
- *   npx tsx src/scripts/backfill-comprehensive.ts --category=ANIME --phase=omdb
+ *   npx tsx src/scripts/backfill-comprehensive.ts --category=ANIME --phase=metadata
+ *   npx tsx src/scripts/backfill-comprehensive.ts --category=MOVIE --phase=full
  *   npx tsx src/scripts/backfill-comprehensive.ts --category=MOVIE --dry-run
  * 
  * Options:
  *   --category=<TYPE>  Required. Category to process (MOVIE, TV_SHOW, ANIME, VIDEO_GAME, etc.)
  *   --limit=<N>        Optional. Process only N items per phase
- *   --phase=<PHASE>    Optional. Run specific phase: omdb, descriptions, tags, embeddings, all (default: all)
+ *   --phase=<PHASE>    Optional. Run specific phase: metadata, descriptions, tags, embeddings, full, all
  *   --dry-run          Optional. Preview changes without saving
  *   --force            Optional. Force regeneration even if data exists
  */
 
 import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { generateStructuredDescription, combineDescription, buildEmbeddingText } from '@/lib/ai/structured-description';
+import {
+    refreshMetadata,
+    enrichItem,
+    fullEnrichment,
+    type EnrichmentResult
+} from '@/lib/services/enrichment';
+import { buildEmbeddingText } from '@/lib/ai/structured-description';
 import { generateEmbedding, generateTags, ensureTags, aiLimiter, sleep } from '@/lib/harvesters/shared';
+import { generateStructuredDescription, combineDescription } from '@/lib/ai/structured-description';
 
 // ============================================================================
 // CONFIGURATION
@@ -32,20 +43,13 @@ import { generateEmbedding, generateTags, ensureTags, aiLimiter, sleep } from '@
 
 const BATCH_SIZE = 50;
 const DELAY_BETWEEN_ITEMS = 100; // ms
-const OMDB_BASE_URL = 'https://www.omdbapi.com';
-const OMDB_API_KEY = process.env.OMDB_API_KEY;
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const VALID_CATEGORIES = [
     'ANIME', 'MOVIE', 'TV_SHOW', 'VIDEO_GAME', 'BOARD_GAME', 'BOOK',
     'MANGA', 'LIGHT_NOVEL', 'MUSIC_ARTIST', 'MUSIC_ALBUM', 'MUSIC_TRACK', 'PODCAST', 'COMICS'
 ];
 
-const OMDB_SUPPORTED_CATEGORIES = ['MOVIE', 'TV_SHOW', 'ANIME'];
-const TMDB_SUPPORTED_CATEGORIES = ['MOVIE', 'TV_SHOW'];
-
-type Phase = 'omdb' | 'tmdb' | 'descriptions' | 'tags' | 'embeddings' | 'all';
+type Phase = 'metadata' | 'descriptions' | 'tags' | 'embeddings' | 'full' | 'all';
 
 // ============================================================================
 // CLI ARGUMENT PARSING
@@ -81,7 +85,7 @@ function parseArgs(): CLIOptions {
         process.exit(1);
     }
 
-    const validPhases: Phase[] = ['omdb', 'tmdb', 'descriptions', 'tags', 'embeddings', 'all'];
+    const validPhases: Phase[] = ['metadata', 'descriptions', 'tags', 'embeddings', 'full', 'all'];
     const phase = phaseArg && validPhases.includes(phaseArg) ? phaseArg : 'all';
 
     return {
@@ -94,743 +98,391 @@ function parseArgs(): CLIOptions {
 }
 
 // ============================================================================
-// OMDB FUNCTIONS (Adapted from harvest-tmdb-smart.ts)
+// PHASE STATS
 // ============================================================================
 
-interface OMDbData {
-    imdb_rating: number | null;
-    imdb_votes: number | null;
-    rotten_tomatoes_rating: number | null;
-    metacritic_rating: number | null;
-    awards: string | null;
-    rated: string | null;
-    writer: string | null;
-    box_office: string | null;
+interface PhaseStats {
+    processed: number;
+    updated: number;
+    skipped: number;
+    failed: number;
 }
 
-async function fetchOmdbData(imdbId: string): Promise<OMDbData | null> {
-    if (!OMDB_API_KEY || !imdbId) return null;
+function createStats(): PhaseStats {
+    return { processed: 0, updated: 0, skipped: 0, failed: 0 };
+}
 
-    const url = `${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&i=${imdbId}&tomatoes=true`;
-    try {
-        const res = await fetch(url);
-        if (!res.ok) {
-            console.warn(`   ⚠️ OMDb HTTP Error ${res.status} for ${imdbId}`);
-            return null;
-        }
+// ============================================================================
+// PHASE 1: METADATA (Using shared MetadataService)
+// ============================================================================
 
-        const data = await res.json();
-        if (data.Response === 'False') {
-            console.warn(`   ⚠️ OMDb API Error for ${imdbId}: ${data.Error}`);
-            return null;
-        }
+async function runMetadataPhase(supabase: any, options: CLIOptions): Promise<PhaseStats> {
+    const stats = createStats();
 
-        // Extract Rotten Tomatoes safely
-        let rtScore: number | null = null;
-        const rtSource = data.Ratings?.find((r: any) => r.Source === 'Rotten Tomatoes');
-        if (rtSource && rtSource.Value) {
-            rtScore = parseInt(rtSource.Value.replace('%', ''), 10);
-        }
+    console.log('\n' + '─'.repeat(70));
+    console.log('📡 PHASE: METADATA REFRESH (Using MetadataService)');
+    console.log('─'.repeat(70));
 
-        return {
-            imdb_rating: data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
-            imdb_votes: data.imdbVotes ? parseInt(data.imdbVotes.replace(/,/g, ''), 10) : null,
-            rotten_tomatoes_rating: rtScore,
-            metacritic_rating: data.Metascore && data.Metascore !== 'N/A' ? parseInt(data.Metascore, 10) : null,
-            awards: data.Awards && data.Awards !== 'N/A' ? data.Awards : null,
-            rated: data.Rated && data.Rated !== 'N/A' ? data.Rated : null,
-            writer: data.Writer && data.Writer !== 'N/A' ? data.Writer : null,
-            box_office: data.BoxOffice && data.BoxOffice !== 'N/A' ? data.BoxOffice : null,
-        };
-    } catch (e: any) {
-        console.warn(`   ⚠️ OMDb Exception for ${imdbId}:`, e.message);
-        return null;
+    // Query for items - all items in category (force will overwrite, non-force fills gaps)
+    const { data: items, error } = await (supabase.from('global_items') as any)
+        .select('id, title, category_type')
+        .eq('category_type', options.category)
+        .order('created_at', { ascending: false })
+        .limit(options.limit || 1000);
+
+    if (error) {
+        console.error('❌ Query error:', error);
+        return stats;
     }
-}
 
-async function fetchOmdbDataByTitle(title: string, year: number): Promise<OMDbData | null> {
-    if (!OMDB_API_KEY) return null;
+    console.log(`📊 Found ${items?.length || 0} items to process\n`);
+    if (!items || items.length === 0) return stats;
 
-    // Clean title for anime (remove parenthetical notes, etc.)
-    const cleanTitle = title.replace(/\s*\([^)]*\)\s*/g, '').trim();
+    for (const item of items) {
+        stats.processed++;
 
-    const url = `${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&t=${encodeURIComponent(cleanTitle)}&y=${year}&tomatoes=true`;
-    try {
-        let res = await fetch(url);
-        let data = await res.json();
+        try {
+            console.log(`   [${stats.processed}/${items.length}] ${item.title}`);
 
-        // Attempt 2: Loose Year (OMDb sometimes has years off by 1)
-        if (data.Response === 'False') {
-            const looseUrl = `${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&t=${encodeURIComponent(cleanTitle)}&tomatoes=true`;
-            res = await fetch(looseUrl);
-            data = await res.json();
-        }
-
-        if (!res.ok || data.Response === 'False') return null;
-
-        let rtScore: number | null = null;
-        const rtSource = data.Ratings?.find((r: any) => r.Source === 'Rotten Tomatoes');
-        if (rtSource && rtSource.Value) {
-            rtScore = parseInt(rtSource.Value.replace('%', ''), 10);
-        }
-
-        return {
-            imdb_rating: data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
-            imdb_votes: data.imdbVotes ? parseInt(data.imdbVotes.replace(/,/g, ''), 10) : null,
-            rotten_tomatoes_rating: rtScore,
-            metacritic_rating: data.Metascore && data.Metascore !== 'N/A' ? parseInt(data.Metascore, 10) : null,
-            awards: data.Awards && data.Awards !== 'N/A' ? data.Awards : null,
-            rated: data.Rated && data.Rated !== 'N/A' ? data.Rated : null,
-            writer: data.Writer && data.Writer !== 'N/A' ? data.Writer : null,
-            box_office: data.BoxOffice && data.BoxOffice !== 'N/A' ? data.BoxOffice : null,
-        };
-    } catch (e) {
-        return null;
-    }
-}
-
-// ============================================================================
-// TMDB FUNCTIONS (For TV Metadata: created_by, episode_run_time, etc.)
-// ============================================================================
-
-async function fetchTmdbDetails(tmdbId: number, mediaType: 'movie' | 'tv'): Promise<any | null> {
-    if (!TMDB_API_KEY || !tmdbId) return null;
-
-    const url = `${TMDB_BASE_URL}/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    try {
-        const res = await fetch(url);
-        if (!res.ok) {
-            if (res.status === 429) {
-                console.warn('   ⚠️ TMDB Rate limited. Sleeping 2s...');
-                await sleep(2000);
-                return fetchTmdbDetails(tmdbId, mediaType);
+            if (options.dryRun) {
+                console.log(`      ⏭️  DRY RUN - Would refresh metadata`);
+                stats.skipped++;
+                continue;
             }
-            if (res.status === 404) return null;
-            return null;
-        }
-        return await res.json();
-    } catch (e: any) {
-        console.warn(`   ⚠️ TMDB Exception for ${tmdbId}:`, e.message);
-        return null;
-    }
-}
 
-// ============================================================================
-// PHASE 1.5: TMDB METADATA BACKFILL (TV: created_by, episode_run_time, dates)
-// ============================================================================
+            const result = await refreshMetadata(supabase, item.id, { force: options.force });
 
-async function runTmdbPhase(supabase: any, options: CLIOptions): Promise<{ processed: number, updated: number, skipped: number, failed: number }> {
-    const stats = { processed: 0, updated: 0, skipped: 0, failed: 0 };
+            if (result.success && result.fieldsUpdated.length > 0) {
+                // Update the item
+                await (supabase.from('global_items') as any)
+                    .update(result.enrichedData)
+                    .eq('id', item.id);
 
-    if (!TMDB_SUPPORTED_CATEGORIES.includes(options.category)) {
-        console.log(`\n⏭️  TMDB Phase: Skipping (not supported for ${options.category})`);
-        return stats;
-    }
+                // Also regenerate embedding with new metadata
+                const { data: updatedItem } = await (supabase.from('global_items') as any)
+                    .select('*')
+                    .eq('id', item.id)
+                    .single();
 
-    if (!TMDB_API_KEY) {
-        console.warn('\n⚠️  TMDB Phase: Skipping (TMDB_API_KEY not set)');
-        return stats;
-    }
+                if (updatedItem) {
+                    const embeddingText = buildEmbeddingText(updatedItem);
+                    const embedding = await generateEmbedding(embeddingText);
+                    if (embedding) {
+                        await (supabase.from('global_items') as any)
+                            .update({ embedding })
+                            .eq('id', item.id);
+                    }
+                }
 
-    console.log('\n' + '═'.repeat(70));
-    console.log('📺 PHASE 1.5: TMDB METADATA BACKFILL (TV Shows)');
-    console.log('═'.repeat(70));
+                console.log(`      ✅ Updated ${result.fieldsUpdated.length} fields + embedding`);
+                stats.updated++;
+            } else {
+                console.log(`      ⏭️  No new metadata found`);
+                stats.skipped++;
+            }
 
-    const isTV = options.category === 'TV_SHOW';
-    const mediaType = isTV ? 'tv' : 'movie';
-
-    // Query items with TMDB ID but missing TV metadata
-    let query = supabase
-        .from('global_items')
-        .select('id, title, external_ids, metadata')
-        .eq('category_type', options.category)
-        .not('external_ids', 'is', null);
-
-    // For TV, look for items missing created_by in metadata
-    if (isTV && !options.force) {
-        query = query.or('metadata.is.null,metadata->>created_by.is.null');
-    }
-
-    if (options.limit) {
-        query = query.limit(options.limit);
-    }
-
-    const { data: items, error } = await query;
-
-    if (error) {
-        console.error('❌ Query error:', error);
-        return stats;
-    }
-
-    console.log(`📋 Found ${items?.length || 0} items needing TMDB metadata\n`);
-
-    if (!items || items.length === 0) {
-        console.log('✅ All items already have TMDB metadata!');
-        return stats;
-    }
-
-    for (const item of items) {
-        stats.processed++;
-
-        const tmdbId = item.external_ids?.tmdb || item.external_ids?.tmdb_tv;
-        if (!tmdbId) {
-            console.log(`   ⚠️ [${stats.processed}/${items.length}] ${item.title} - No TMDB ID`);
-            stats.skipped++;
-            continue;
-        }
-
-        console.log(`   ╔════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ 📺 [${stats.processed}/${items.length}] ${item.title}`);
-        console.log(`   ╠════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ ID: ${item.id}`);
-        console.log(`   ║ TMDB ID: ${tmdbId}`);
-
-        // Fetch TMDB details
-        console.log(`   ║ 🎯 Fetching TMDB details...`);
-        const details = await fetchTmdbDetails(tmdbId, mediaType);
-
-        if (!details) {
-            console.log(`   ║ ⚠️ No TMDB data found`);
-            console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-            stats.skipped++;
-            await sleep(DELAY_BETWEEN_ITEMS);
-            continue;
-        }
-
-        // Extract TV-specific metadata
-        const createdBy = details.created_by?.map((c: any) => c.name) || [];
-        const episodeRunTime = details.episode_run_time || [];
-        const type = details.type || null;
-        const firstAirDate = details.first_air_date || null;
-        const lastAirDate = details.last_air_date || null;
-
-        console.log(`   ║ ✅ TMDB data retrieved`);
-        if (isTV) {
-            console.log(`   ║    Created By: ${createdBy.slice(0, 3).join(', ') || 'N/A'}`);
-            console.log(`   ║    Episode Runtime: ${episodeRunTime[0] || 'N/A'}m`);
-            console.log(`   ║    Type: ${type || 'N/A'}`);
-            console.log(`   ║    Air Dates: ${firstAirDate || 'N/A'} - ${lastAirDate || 'N/A'}`);
-        }
-
-        if (options.dryRun) {
-            console.log(`   ║ 🔍 DRY RUN: Would update metadata`);
-            console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-            stats.updated++;
-            continue;
-        }
-
-        // Build update payload - merge with existing metadata
-        const existingMetadata = item.metadata || {};
-        const newMetadata = {
-            ...existingMetadata,
-            created_by: createdBy.length > 0 ? createdBy : existingMetadata.created_by,
-            episode_run_time: episodeRunTime.length > 0 ? episodeRunTime : existingMetadata.episode_run_time,
-            type: type || existingMetadata.type,
-            first_air_date: firstAirDate || existingMetadata.first_air_date,
-            last_air_date: lastAirDate || existingMetadata.last_air_date,
-        };
-
-        console.log(`   ║ 💾 Saving to database...`);
-        const { error: updateError } = await supabase
-            .from('global_items')
-            .update({
-                metadata: newMetadata,
-                last_metadata_update: new Date().toISOString()
-            })
-            .eq('id', item.id);
-
-        if (updateError) {
-            console.log(`   ║ ❌ Update failed: ${updateError.message}`);
+        } catch (error: any) {
+            console.log(`      ❌ Error: ${error.message}`);
             stats.failed++;
-        } else {
-            console.log(`   ║ ✅ Saved successfully`);
-            stats.updated++;
         }
 
-        console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
         await sleep(DELAY_BETWEEN_ITEMS);
     }
 
-    console.log(`\n📊 TMDB Phase Complete: ${stats.updated} updated, ${stats.skipped} skipped, ${stats.failed} failed`);
     return stats;
 }
 
 // ============================================================================
-// PHASE 1: OMDB METADATA BACKFILL
+// PHASE 2: DESCRIPTIONS (Using shared AIEnrichmentService)
 // ============================================================================
 
-async function runOmdbPhase(supabase: any, options: CLIOptions): Promise<{ processed: number, updated: number, skipped: number, failed: number }> {
-    const stats = { processed: 0, updated: 0, skipped: 0, failed: 0 };
+async function runDescriptionsPhase(supabase: any, options: CLIOptions): Promise<PhaseStats> {
+    const stats = createStats();
 
-    if (!OMDB_SUPPORTED_CATEGORIES.includes(options.category)) {
-        console.log(`\n⏭️  OMDB Phase: Skipping (not supported for ${options.category})`);
-        return stats;
-    }
+    console.log('\n' + '─'.repeat(70));
+    console.log('📝 PHASE: AI DESCRIPTIONS (Using AIEnrichmentService)');
+    console.log('─'.repeat(70));
 
-    if (!OMDB_API_KEY) {
-        console.warn('\n⚠️  OMDB Phase: Skipping (OMDB_API_KEY not set)');
-        return stats;
-    }
-
-    console.log('\n' + '═'.repeat(70));
-    console.log('📊 PHASE 1: OMDB METADATA BACKFILL');
-    console.log('═'.repeat(70));
-
-    // Query items missing OMDB data
-    let query = supabase
-        .from('global_items')
-        .select('id, title, release_year, external_ids, imdb_rating, rotten_tomatoes_rating, metacritic_rating, romaji_title')
-        .eq('category_type', options.category);
-
-    if (!options.force) {
-        // Only items missing at least one OMDB field
-        query = query.or('imdb_rating.is.null,rotten_tomatoes_rating.is.null,metacritic_rating.is.null');
-    }
-
-    if (options.limit) {
-        query = query.limit(options.limit);
-    }
-
-    const { data: items, error } = await query;
-
-    if (error) {
-        console.error('❌ Query error:', error);
-        return stats;
-    }
-
-    console.log(`📋 Found ${items?.length || 0} items needing OMDB data\n`);
-
-    if (!items || items.length === 0) {
-        console.log('✅ All items already have OMDB data!');
-        return stats;
-    }
-
-    for (const item of items) {
-        stats.processed++;
-
-        console.log(`   ╔════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ 🎬 [${stats.processed}/${items.length}] ${item.title}`);
-        console.log(`   ╠════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ ID: ${item.id}`);
-        console.log(`   ║ Year: ${item.release_year || 'N/A'}`);
-        console.log(`   ║ Current: IMDB ${item.imdb_rating || 'N/A'} | RT ${item.rotten_tomatoes_rating || 'N/A'}% | MC ${item.metacritic_rating || 'N/A'}`);
-
-        // Try fetching OMDB data
-        let omdbData: OMDbData | null = null;
-        const imdbId = item.external_ids?.imdb;
-
-        if (imdbId) {
-            console.log(`   ║ 🎯 Fetching by IMDB ID: ${imdbId}...`);
-            omdbData = await fetchOmdbData(imdbId);
-        }
-
-        if (!omdbData && item.title && item.release_year) {
-            console.log(`   ║ 🎯 Fetching by Title+Year: "${item.title}" (${item.release_year})...`);
-            omdbData = await fetchOmdbDataByTitle(item.title, item.release_year);
-        }
-
-        // For anime, try romaji title as fallback
-        if (!omdbData && item.romaji_title && item.release_year) {
-            console.log(`   ║ 🎯 Fetching by Romaji Title: "${item.romaji_title}"...`);
-            omdbData = await fetchOmdbDataByTitle(item.romaji_title, item.release_year);
-        }
-
-        if (!omdbData) {
-            console.log(`   ║ ⚠️  No OMDB data found`);
-            console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-            stats.skipped++;
-            await sleep(DELAY_BETWEEN_ITEMS);
-            continue;
-        }
-
-        console.log(`   ║ ✅ OMDB data retrieved`);
-        console.log(`   ║    IMDB: ${omdbData.imdb_rating || 'N/A'} | RT: ${omdbData.rotten_tomatoes_rating || 'N/A'}% | MC: ${omdbData.metacritic_rating || 'N/A'}`);
-        console.log(`   ║    Awards: ${omdbData.awards || 'N/A'}`);
-
-        if (options.dryRun) {
-            console.log(`   ║ 🔍 DRY RUN: Would update with OMDB data`);
-            console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-            stats.updated++;
-            continue;
-        }
-
-        // Build update payload (only update missing fields unless force)
-        const updatePayload: any = {
-            last_metadata_update: new Date().toISOString()
-        };
-
-        if (omdbData.imdb_rating && (options.force || !item.imdb_rating)) {
-            updatePayload.imdb_rating = omdbData.imdb_rating;
-        }
-        if (omdbData.imdb_votes) {
-            updatePayload.imdb_votes = omdbData.imdb_votes;
-        }
-        if (omdbData.rotten_tomatoes_rating && (options.force || !item.rotten_tomatoes_rating)) {
-            updatePayload.rotten_tomatoes_rating = omdbData.rotten_tomatoes_rating;
-        }
-        if (omdbData.metacritic_rating && (options.force || !item.metacritic_rating)) {
-            updatePayload.metacritic_rating = omdbData.metacritic_rating;
-        }
-        if (omdbData.awards) {
-            updatePayload.awards_text = omdbData.awards;
-        }
-        if (omdbData.rated) {
-            updatePayload.content_rating = omdbData.rated;
-        }
-        if (omdbData.writer) {
-            updatePayload.writer = omdbData.writer;
-        }
-        if (omdbData.box_office) {
-            updatePayload.box_office = omdbData.box_office;
-        }
-
-        console.log(`   ║ 💾 Saving to database...`);
-        const { error: updateError } = await supabase
-            .from('global_items')
-            .update(updatePayload)
-            .eq('id', item.id);
-
-        if (updateError) {
-            console.log(`   ║ ❌ Update failed: ${updateError.message}`);
-            stats.failed++;
-        } else {
-            console.log(`   ║ ✅ Saved successfully`);
-            stats.updated++;
-        }
-
-        console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-        await sleep(DELAY_BETWEEN_ITEMS);
-    }
-
-    console.log(`\n📊 OMDB Phase Complete: ${stats.updated} updated, ${stats.skipped} skipped, ${stats.failed} failed`);
-    return stats;
-}
-
-// ============================================================================
-// PHASE 2: 4-PART STRUCTURED DESCRIPTIONS
-// ============================================================================
-
-async function runDescriptionsPhase(supabase: any, options: CLIOptions): Promise<{ processed: number, updated: number, skipped: number, failed: number }> {
-    const stats = { processed: 0, updated: 0, skipped: 0, failed: 0 };
-
-    console.log('\n' + '═'.repeat(70));
-    console.log('📝 PHASE 2: 4-PART STRUCTURED DESCRIPTIONS');
-    console.log('═'.repeat(70));
-
-    // Query items missing description_parts but having description
-    let query = supabase
-        .from('global_items')
-        .select('id, title, description, category_type, genres, cast, director, studio, developers, publishers, designers, mechanics, platforms, cached_tags, metadata')
+    // Query for items needing descriptions
+    let query = (supabase.from('global_items') as any)
+        .select('id, title, description, category_type, metadata')
         .eq('category_type', options.category)
-        .not('description', 'is', null);
+        .order('created_at', { ascending: false });
 
     if (!options.force) {
         query = query.is('description_parts', null);
     }
 
-    if (options.limit) {
-        query = query.limit(options.limit);
-    }
-
-    const { data: items, error } = await query;
+    const { data: items, error } = await query.limit(options.limit || 1000);
 
     if (error) {
         console.error('❌ Query error:', error);
         return stats;
     }
 
-    console.log(`📋 Found ${items?.length || 0} items needing structured descriptions\n`);
-
-    if (!items || items.length === 0) {
-        console.log('✅ All items already have structured descriptions!');
-        return stats;
-    }
+    console.log(`📊 Found ${items?.length || 0} items to process\n`);
+    if (!items || items.length === 0) return stats;
 
     for (const item of items) {
         stats.processed++;
 
-        console.log(`   ╔════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ 📽️  [${stats.processed}/${items.length}] ${item.title}`);
-        console.log(`   ╠════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ ID: ${item.id}`);
-        console.log(`   ║ Category: ${item.category_type}`);
-        console.log(`   ║ Original Description: ${(item.description || '').slice(0, 100)}...`);
-
         try {
-            // Generate 4-part structured description
-            console.log(`   ║ 🧠 Generating 4-part structured description...`);
-            const startTime = Date.now();
+            console.log(`   [${stats.processed}/${items.length}] ${item.title}`);
 
+            if (options.dryRun) {
+                console.log(`      ⏭️  DRY RUN - Would generate description`);
+                stats.skipped++;
+                continue;
+            }
+
+            // Generate 4-part structured description
             const description_parts = await aiLimiter(() =>
                 generateStructuredDescription(supabase, {
                     title: item.title,
-                    originalDescription: item.description,
+                    originalDescription: item.description || '',
                     type: item.category_type,
                     metadata: item.metadata
                 })
             );
-            const descTime = Date.now() - startTime;
 
-            console.log(`   ║ ✅ Description generated in ${descTime}ms`);
-            console.log(`   ║    📝 Premise: ${(description_parts.premise || '').slice(0, 60)}...`);
-            console.log(`   ║    📝 Themes: ${(description_parts.themes || '').slice(0, 60)}...`);
-            console.log(`   ║    📝 Tone: ${(description_parts.tone || '').slice(0, 60)}...`);
-            console.log(`   ║    📝 Style: ${(description_parts.style || '').slice(0, 60)}...`);
+            if (description_parts.premise || description_parts.themes) {
+                const description = combineDescription(description_parts);
 
-            // Combine for backwards compatibility
-            const description = combineDescription(description_parts);
-            console.log(`   ║ 📄 Combined description length: ${description.length} chars`);
+                await (supabase.from('global_items') as any)
+                    .update({
+                        description,
+                        description_parts,
+                        last_metadata_update: new Date().toISOString()
+                    })
+                    .eq('id', item.id);
 
-            if (options.dryRun) {
-                console.log(`   ║ 🔍 DRY RUN: Would update description_parts`);
-                console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
+                console.log(`      ✅ Generated ${description.length} char description`);
                 stats.updated++;
-                continue;
-            }
-
-            // Update item
-            console.log(`   ║ 💾 Saving to database...`);
-            const { error: updateError } = await supabase
-                .from('global_items')
-                .update({
-                    description,
-                    description_parts,
-                    last_metadata_update: new Date().toISOString()
-                })
-                .eq('id', item.id);
-
-            if (updateError) {
-                console.log(`   ║ ❌ Update failed: ${updateError.message}`);
-                stats.failed++;
             } else {
-                console.log(`   ║ ✅ Saved successfully`);
-                stats.updated++;
+                console.log(`      ⏭️  Failed to generate description`);
+                stats.skipped++;
             }
 
-        } catch (err: any) {
-            console.log(`   ║ ❌ Generation failed: ${err.message}`);
+        } catch (error: any) {
+            console.log(`      ❌ Error: ${error.message}`);
             stats.failed++;
         }
 
-        console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
         await sleep(DELAY_BETWEEN_ITEMS);
     }
 
-    console.log(`\n📊 Descriptions Phase Complete: ${stats.updated} updated, ${stats.skipped} skipped, ${stats.failed} failed`);
     return stats;
 }
 
 // ============================================================================
-// PHASE 3: TAG GENERATION
+// PHASE 3: TAGS (Using shared tag generation)
 // ============================================================================
 
-async function runTagsPhase(supabase: any, options: CLIOptions): Promise<{ processed: number, updated: number, skipped: number, failed: number }> {
-    const stats = { processed: 0, updated: 0, skipped: 0, failed: 0 };
+async function runTagsPhase(supabase: any, options: CLIOptions): Promise<PhaseStats> {
+    const stats = createStats();
 
-    console.log('\n' + '═'.repeat(70));
-    console.log('🏷️  PHASE 3: TAG GENERATION');
-    console.log('═'.repeat(70));
+    console.log('\n' + '─'.repeat(70));
+    console.log('🏷️  PHASE: AI TAG GENERATION');
+    console.log('─'.repeat(70));
 
-    // Query items missing tags
-    let query = supabase
-        .from('global_items')
+    // Query for items needing tags
+    let query = (supabase.from('global_items') as any)
         .select('id, title, description, category_type, genres, keywords')
         .eq('category_type', options.category)
-        .not('description', 'is', null);
+        .order('created_at', { ascending: false });
 
     if (!options.force) {
         query = query.or('cached_tags.is.null,cached_tags.eq.[]');
     }
 
-    if (options.limit) {
-        query = query.limit(options.limit);
-    }
-
-    const { data: items, error } = await query;
+    const { data: items, error } = await query.limit(options.limit || 1000);
 
     if (error) {
         console.error('❌ Query error:', error);
         return stats;
     }
 
-    console.log(`📋 Found ${items?.length || 0} items needing tags\n`);
-
-    if (!items || items.length === 0) {
-        console.log('✅ All items already have tags!');
-        return stats;
-    }
+    console.log(`📊 Found ${items?.length || 0} items to process\n`);
+    if (!items || items.length === 0) return stats;
 
     for (const item of items) {
         stats.processed++;
 
-        console.log(`   ╔════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ 🏷️  [${stats.processed}/${items.length}] ${item.title}`);
-        console.log(`   ╠════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ ID: ${item.id}`);
-        console.log(`   ║ Genres: ${(item.genres || []).slice(0, 5).join(', ') || 'N/A'}`);
-
         try {
-            console.log(`   ║ 🤖 Generating AI tags...`);
-            const startTime = Date.now();
-
-            // Build context from existing metadata
-            const tagContext = [
-                item.description,
-                `Genres: ${(item.genres || []).join(', ')}`,
-                `Keywords: ${(item.keywords || []).join(', ')}`
-            ].filter(Boolean).join(' ');
-
-            const tagNames = await aiLimiter(() =>
-                generateTags(supabase, item.title, tagContext, item.category_type)
-            );
-
-            const validTags = await ensureTags(supabase, tagNames);
-            const tagTime = Date.now() - startTime;
-
-            console.log(`   ║ ✅ Generated ${tagNames.length} tags in ${tagTime}ms`);
-            console.log(`   ║    Tags: ${tagNames.slice(0, 8).join(', ')}`);
+            console.log(`   [${stats.processed}/${items.length}] ${item.title}`);
 
             if (options.dryRun) {
-                console.log(`   ║ 🔍 DRY RUN: Would update cached_tags`);
-                console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-                stats.updated++;
+                console.log(`      ⏭️  DRY RUN - Would generate tags`);
+                stats.skipped++;
                 continue;
             }
 
-            // Update item
-            console.log(`   ║ 💾 Saving to database...`);
-            const { error: updateError } = await supabase
-                .from('global_items')
-                .update({
-                    cached_tags: validTags,
-                    last_metadata_update: new Date().toISOString()
-                })
-                .eq('id', item.id);
+            const tagInput = [
+                ...(item.keywords || []),
+                ...(item.genres || [])
+            ].join(', ');
 
-            if (updateError) {
-                console.log(`   ║ ❌ Update failed: ${updateError.message}`);
-                stats.failed++;
-            } else {
-                console.log(`   ║ ✅ Saved successfully`);
+            const aiTagNames = await aiLimiter(() =>
+                generateTags(supabase, item.title, `${item.description || ''} Keywords: ${tagInput}`, item.category_type)
+            );
+
+            if (aiTagNames && aiTagNames.length > 0) {
+                const validTags = await ensureTags(supabase, aiTagNames);
+
+                await (supabase.from('global_items') as any)
+                    .update({ cached_tags: validTags })
+                    .eq('id', item.id);
+
+                console.log(`      ✅ Generated ${validTags.length} tags`);
                 stats.updated++;
+            } else {
+                console.log(`      ⏭️  No tags generated`);
+                stats.skipped++;
             }
 
-        } catch (err: any) {
-            console.log(`   ║ ❌ Generation failed: ${err.message}`);
+        } catch (error: any) {
+            console.log(`      ❌ Error: ${error.message}`);
             stats.failed++;
         }
 
-        console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
         await sleep(DELAY_BETWEEN_ITEMS);
     }
 
-    console.log(`\n📊 Tags Phase Complete: ${stats.updated} updated, ${stats.skipped} skipped, ${stats.failed} failed`);
     return stats;
 }
 
 // ============================================================================
-// PHASE 4: EMBEDDING REGENERATION
+// PHASE 4: EMBEDDINGS
 // ============================================================================
 
-async function runEmbeddingsPhase(supabase: any, options: CLIOptions): Promise<{ processed: number, updated: number, skipped: number, failed: number }> {
-    const stats = { processed: 0, updated: 0, skipped: 0, failed: 0 };
+async function runEmbeddingsPhase(supabase: any, options: CLIOptions): Promise<PhaseStats> {
+    const stats = createStats();
 
-    console.log('\n' + '═'.repeat(70));
-    console.log('🧮 PHASE 4: EMBEDDING REGENERATION');
-    console.log('═'.repeat(70));
+    console.log('\n' + '─'.repeat(70));
+    console.log('🧮 PHASE: EMBEDDING REGENERATION');
+    console.log('─'.repeat(70));
 
-    // Query items needing embeddings
-    let query = supabase
-        .from('global_items')
-        .select('id, title, description, description_parts, category_type, genres, cast, director, studio, developers, publishers, designers, mechanics, platforms, cached_tags, metadata, themes')
-        .eq('category_type', options.category);
+    // Query for items needing embeddings
+    let query = (supabase.from('global_items') as any)
+        .select('*')
+        .eq('category_type', options.category)
+        .order('created_at', { ascending: false });
 
     if (!options.force) {
         query = query.is('embedding', null);
     }
 
-    if (options.limit) {
-        query = query.limit(options.limit);
-    }
-
-    const { data: items, error } = await query;
+    const { data: items, error } = await query.limit(options.limit || 1000);
 
     if (error) {
         console.error('❌ Query error:', error);
         return stats;
     }
 
-    console.log(`📋 Found ${items?.length || 0} items needing embeddings\n`);
-
-    if (!items || items.length === 0) {
-        console.log('✅ All items already have embeddings!');
-        return stats;
-    }
+    console.log(`📊 Found ${items?.length || 0} items to process\n`);
+    if (!items || items.length === 0) return stats;
 
     for (const item of items) {
         stats.processed++;
 
-        console.log(`   ╔════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ 🧮 [${stats.processed}/${items.length}] ${item.title}`);
-        console.log(`   ╠════════════════════════════════════════════════════════════════`);
-        console.log(`   ║ ID: ${item.id}`);
-
         try {
-            // Build rich embedding text
-            console.log(`   ║ 🔗 Building embedding text from metadata...`);
-            const embeddingText = buildEmbeddingText(item);
-            console.log(`   ║    Embedding text length: ${embeddingText.length} chars`);
-
-            // Generate embedding
-            console.log(`   ║ 🧮 Generating embedding vector...`);
-            const startTime = Date.now();
-            const embedding = await generateEmbedding(embeddingText);
-            const embedTime = Date.now() - startTime;
-
-            if (!embedding) {
-                console.log(`   ║ ⚠️  No embedding generated`);
-                stats.skipped++;
-                console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-                continue;
-            }
-
-            console.log(`   ║ ✅ Embedding generated in ${embedTime}ms (${embedding.length} dimensions)`);
+            console.log(`   [${stats.processed}/${items.length}] ${item.title}`);
 
             if (options.dryRun) {
-                console.log(`   ║ 🔍 DRY RUN: Would update embedding`);
-                console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
-                stats.updated++;
+                console.log(`      ⏭️  DRY RUN - Would generate embedding`);
+                stats.skipped++;
                 continue;
             }
 
-            // Update item
-            console.log(`   ║ 💾 Saving to database...`);
-            const { error: updateError } = await supabase
-                .from('global_items')
-                .update({
-                    embedding,
-                    last_metadata_update: new Date().toISOString()
-                })
-                .eq('id', item.id);
+            const embeddingText = buildEmbeddingText(item);
+            const embedding = await generateEmbedding(embeddingText);
 
-            if (updateError) {
-                console.log(`   ║ ❌ Update failed: ${updateError.message}`);
-                stats.failed++;
-            } else {
-                console.log(`   ║ ✅ Saved successfully`);
+            if (embedding) {
+                await (supabase.from('global_items') as any)
+                    .update({ embedding })
+                    .eq('id', item.id);
+
+                console.log(`      ✅ Generated embedding (${embedding.length} dims)`);
                 stats.updated++;
+            } else {
+                console.log(`      ⏭️  Failed to generate embedding`);
+                stats.skipped++;
             }
 
-        } catch (err: any) {
-            console.log(`   ║ ❌ Generation failed: ${err.message}`);
+        } catch (error: any) {
+            console.log(`      ❌ Error: ${error.message}`);
             stats.failed++;
         }
 
-        console.log(`   ╚════════════════════════════════════════════════════════════════\n`);
         await sleep(DELAY_BETWEEN_ITEMS);
     }
 
-    console.log(`\n📊 Embeddings Phase Complete: ${stats.updated} updated, ${stats.skipped} skipped, ${stats.failed} failed`);
+    return stats;
+}
+
+// ============================================================================
+// PHASE: FULL (Everything at once using unified pipeline)
+// ============================================================================
+
+async function runFullPhase(supabase: any, options: CLIOptions): Promise<PhaseStats> {
+    const stats = createStats();
+
+    console.log('\n' + '─'.repeat(70));
+    console.log('🚀 PHASE: FULL ENRICHMENT (Using EnrichmentPipeline)');
+    console.log('─'.repeat(70));
+
+    // Query for all items in category
+    const { data: items, error } = await (supabase.from('global_items') as any)
+        .select('id, title, category_type')
+        .eq('category_type', options.category)
+        .order('created_at', { ascending: false })
+        .limit(options.limit || 1000);
+
+    if (error) {
+        console.error('❌ Query error:', error);
+        return stats;
+    }
+
+    console.log(`📊 Found ${items?.length || 0} items to process\n`);
+    if (!items || items.length === 0) return stats;
+
+    for (const item of items) {
+        stats.processed++;
+
+        try {
+            console.log(`   [${stats.processed}/${items.length}] ${item.title}`);
+
+            if (options.dryRun) {
+                console.log(`      ⏭️  DRY RUN - Would run full enrichment`);
+                stats.skipped++;
+                continue;
+            }
+
+            // Use the unified fullEnrichment function
+            const result: EnrichmentResult = await aiLimiter(() =>
+                fullEnrichment(supabase, item.id)
+            );
+
+            if (result.success) {
+                console.log(`      ✅ Enriched: ${result.fieldsUpdated.length} fields updated`);
+                if (result.metadataUpdated) console.log(`         📡 Metadata refreshed`);
+                if (result.descriptionGenerated) console.log(`         📝 Description generated`);
+                if (result.tagsGenerated > 0) console.log(`         🏷️  ${result.tagsGenerated} tags generated`);
+                if (result.embeddingGenerated) console.log(`         🧮 Embedding generated`);
+                stats.updated++;
+            } else {
+                console.log(`      ⏭️  No updates: ${result.error || 'Unknown'}`);
+                stats.skipped++;
+            }
+
+        } catch (error: any) {
+            console.log(`      ❌ Error: ${error.message}`);
+            stats.failed++;
+        }
+
+        await sleep(DELAY_BETWEEN_ITEMS);
+    }
+
     return stats;
 }
 
@@ -843,7 +495,7 @@ async function main() {
     const supabase = createServiceRoleClient();
 
     console.log('\n' + '═'.repeat(70));
-    console.log('🚀 COMPREHENSIVE METADATA BACKFILL');
+    console.log('🚀 COMPREHENSIVE METADATA BACKFILL (Using Shared Services)');
     console.log('═'.repeat(70));
     console.log(`📂 Category: ${options.category}`);
     console.log(`📦 Phase: ${options.phase}`);
@@ -852,44 +504,51 @@ async function main() {
     if (options.force) console.log(`⚡ FORCE MODE: Regenerating even if data exists`);
     console.log('═'.repeat(70));
 
-    const totals = {
-        omdb: { processed: 0, updated: 0, skipped: 0, failed: 0 },
-        tmdb: { processed: 0, updated: 0, skipped: 0, failed: 0 },
-        descriptions: { processed: 0, updated: 0, skipped: 0, failed: 0 },
-        tags: { processed: 0, updated: 0, skipped: 0, failed: 0 },
-        embeddings: { processed: 0, updated: 0, skipped: 0, failed: 0 }
+    const totals: Record<string, PhaseStats> = {
+        metadata: createStats(),
+        descriptions: createStats(),
+        tags: createStats(),
+        embeddings: createStats(),
+        full: createStats()
     };
 
-    // Run phases
-    if (options.phase === 'all' || options.phase === 'tmdb') {
-        totals.tmdb = await runTmdbPhase(supabase, options);
-    }
+    // Run phases based on selection
+    if (options.phase === 'full') {
+        // Full enrichment runs everything together
+        totals.full = await runFullPhase(supabase, options);
+    } else {
+        // Individual phases
+        if (options.phase === 'all' || options.phase === 'metadata') {
+            totals.metadata = await runMetadataPhase(supabase, options);
+        }
 
-    if (options.phase === 'all' || options.phase === 'omdb') {
-        totals.omdb = await runOmdbPhase(supabase, options);
-    }
+        if (options.phase === 'all' || options.phase === 'descriptions') {
+            totals.descriptions = await runDescriptionsPhase(supabase, options);
+        }
 
-    if (options.phase === 'all' || options.phase === 'descriptions') {
-        totals.descriptions = await runDescriptionsPhase(supabase, options);
-    }
+        if (options.phase === 'all' || options.phase === 'tags') {
+            totals.tags = await runTagsPhase(supabase, options);
+        }
 
-    if (options.phase === 'all' || options.phase === 'tags') {
-        totals.tags = await runTagsPhase(supabase, options);
-    }
-
-    if (options.phase === 'all' || options.phase === 'embeddings') {
-        totals.embeddings = await runEmbeddingsPhase(supabase, options);
+        if (options.phase === 'all' || options.phase === 'embeddings') {
+            totals.embeddings = await runEmbeddingsPhase(supabase, options);
+        }
     }
 
     // Final summary
     console.log('\n' + '═'.repeat(70));
     console.log('✅ BACKFILL COMPLETE');
     console.log('═'.repeat(70));
-    console.log(`📊 OMDB:         ${totals.omdb.updated} updated, ${totals.omdb.skipped} skipped, ${totals.omdb.failed} failed`);
-    console.log(`📺 TMDB:         ${totals.tmdb.updated} updated, ${totals.tmdb.skipped} skipped, ${totals.tmdb.failed} failed`);
-    console.log(`📝 Descriptions: ${totals.descriptions.updated} updated, ${totals.descriptions.skipped} skipped, ${totals.descriptions.failed} failed`);
-    console.log(`🏷️  Tags:         ${totals.tags.updated} updated, ${totals.tags.skipped} skipped, ${totals.tags.failed} failed`);
-    console.log(`🧮 Embeddings:   ${totals.embeddings.updated} updated, ${totals.embeddings.skipped} skipped, ${totals.embeddings.failed} failed`);
+
+    if (options.phase === 'full') {
+        console.log(`🚀 Full:         ${totals.full.updated} updated, ${totals.full.skipped} skipped, ${totals.full.failed} failed`);
+    } else {
+        console.log(`📡 Metadata:     ${totals.metadata.updated} updated, ${totals.metadata.skipped} skipped, ${totals.metadata.failed} failed`);
+        console.log(`📝 Descriptions: ${totals.descriptions.updated} updated, ${totals.descriptions.skipped} skipped, ${totals.descriptions.failed} failed`);
+        console.log(`🏷️  Tags:         ${totals.tags.updated} updated, ${totals.tags.skipped} skipped, ${totals.tags.failed} failed`);
+        console.log(`🧮 Embeddings:   ${totals.embeddings.updated} updated, ${totals.embeddings.skipped} skipped, ${totals.embeddings.failed} failed`);
+    }
+
     console.log('═'.repeat(70) + '\n');
 }
 
