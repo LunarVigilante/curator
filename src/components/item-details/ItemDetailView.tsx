@@ -599,6 +599,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                             <Button
                                                 size="lg"
                                                 onClick={handleTrackPlayPause}
+                                                aria-label={isPlaying ? "Pause preview" : "Play preview"}
                                                 className="h-20 w-20 rounded-full transition-all duration-300 bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 shadow-lg shadow-purple-500/30 hover:scale-105"
                                             >
                                                 {isPlaying ? (
@@ -717,6 +718,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                 onClick={onClose}
                                 size="icon"
                                 variant="ghost"
+                                aria-label="Close details"
                                 className="absolute top-4 right-4 h-10 w-10 rounded-full bg-black/40 hover:bg-black/60 text-white"
                             >
                                 <X className="w-5 h-5" />
@@ -812,6 +814,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                     onClick={onClose}
                                     size="icon"
                                     variant="ghost"
+                                    aria-label="Close details"
                                     className="absolute top-4 right-4 h-10 w-10 rounded-full bg-black/20 hover:bg-black/40 text-white z-50"
                                 >
                                     <X className="w-5 h-5" />
@@ -983,14 +986,14 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                         )}
 
                                         {/* Poster Overlay Actions (Hover) */}
-                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-3 backdrop-blur-sm">
-                                            <Button size="icon" variant="secondary" className="h-10 w-10 rounded-full bg-white/10 hover:bg-white text-white hover:text-black border border-white/20 transition-all scale-90 group-hover:scale-100" onClick={() => onEdit(item)} title="Edit">
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-3 backdrop-blur-sm">
+                                            <Button size="icon" variant="secondary" aria-label="Edit item" className="h-10 w-10 rounded-full bg-white/10 hover:bg-white text-white hover:text-black border border-white/20 transition-all scale-90 group-hover:scale-100" onClick={() => onEdit(item)} title="Edit">
                                                 <Pencil className="w-4 h-4" />
                                             </Button>
-                                            <Button size="icon" variant="secondary" className="h-10 w-10 rounded-full bg-white/10 hover:bg-red-500 text-white border border-white/20 transition-all scale-90 group-hover:scale-100" onClick={() => onDelete(item.id)} title="Delete">
+                                            <Button size="icon" variant="secondary" aria-label="Delete item" className="h-10 w-10 rounded-full bg-white/10 hover:bg-red-500 text-white border border-white/20 transition-all scale-90 group-hover:scale-100" onClick={() => onDelete(item.id)} title="Delete">
                                                 <Trash2 className="w-4 h-4" />
                                             </Button>
-                                            <Button size="icon" variant="secondary" className="h-10 w-10 rounded-full bg-white/10 hover:bg-amber-500 text-white border border-white/20 transition-all scale-90 group-hover:scale-100" onClick={() => setReportOpen(true)} title="Report">
+                                            <Button size="icon" variant="secondary" aria-label="Report issue" className="h-10 w-10 rounded-full bg-white/10 hover:bg-amber-500 text-white border border-white/20 transition-all scale-90 group-hover:scale-100" onClick={() => setReportOpen(true)} title="Report">
                                                 <Flag className="w-4 h-4" />
                                             </Button>
                                         </div>
@@ -1147,6 +1150,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
+                                                aria-label="More options"
                                                 className="h-10 w-10 text-zinc-400 hover:text-white rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md transition-colors"
                                             >
                                                 <MoreHorizontal className="w-5 h-5" />
@@ -1190,6 +1194,7 @@ export default function ItemDetailView({ item, isOpen, onClose, onEdit, onDelete
                                     <Button
                                         variant="ghost"
                                         size="icon"
+                                        aria-label="Close details"
                                         className="h-10 w-10 text-zinc-400 hover:text-white rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md transition-colors"
                                         onClick={onClose}
                                     >
