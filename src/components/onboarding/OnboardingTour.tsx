@@ -95,12 +95,12 @@ function markLocalTourCompleted(): void {
 }
 
 export default function OnboardingTour({ forceStart = false, onComplete }: OnboardingTourProps) {
-    const [shouldShowTour, setShouldShowTour] = useState(false)
+    // Initialize directly from forceStart to avoid setState in effect
+    const [shouldShowTour, setShouldShowTour] = useState(forceStart)
 
     useEffect(() => {
-        // Force start bypasses all checks
+        // Force start is handled by initial state - skip effect logic
         if (forceStart) {
-            setShouldShowTour(true)
             return
         }
 

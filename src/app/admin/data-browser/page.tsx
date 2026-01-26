@@ -25,7 +25,7 @@ import ReportItemDialog from '@/components/dialogs/ReportItemDialog'
 function DataBrowserContent() {
     // Core state management
     const state = useDataBrowserState()
-    const { filters, ui, sort, selection, modals } = state
+    const { filters, ui, selection, modals } = state
 
     // Data fetching
     const data = useDataFetching(state)
@@ -40,7 +40,7 @@ function DataBrowserContent() {
             filters.setDebouncedSearchQuery(filters.searchQuery)
         }, 400)
         return () => clearTimeout(timer)
-    }, [filters.searchQuery, filters.setDebouncedSearchQuery])
+    }, [filters.searchQuery, filters.setDebouncedSearchQuery, filters])
 
     // Handle page input for pagination
     const handlePageInput = useCallback((e: React.FormEvent) => {

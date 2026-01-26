@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now()
 
     try {
-        const { itemId, title, type, force = false } = await request.json()
+        const { itemId, title, _type, force = false } = await request.json()
 
         if (!itemId) {
             return NextResponse.json(
