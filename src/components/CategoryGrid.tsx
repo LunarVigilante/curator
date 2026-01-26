@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, memo, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
@@ -86,12 +86,12 @@ export default function CategoryGrid({ categories, bentoLayout = false, onSucces
     const activeCategory = localCategories.find(cat => cat.id === activeId)
 
     // Get grid classes based on card position for bento layout
-    const getGridClasses = (index: number) => {
+    const getGridClasses = useCallback((index: number) => {
         if (!bentoLayout) return ''
         if (index === 0) return 'md:col-span-2 md:row-span-2' // Anime: 2×2 big square
         if (index === 1 || index === 2) return 'md:col-span-2' // Manga & Games: 2×1 wide rectangles
         return '' // Others: 1×1 regular squares
-    }
+    }, [bentoLayout])
 
     // Get aspect ratio based on card position
 
@@ -133,6 +133,7 @@ export default function CategoryGrid({ categories, bentoLayout = false, onSucces
                                         src={activeCategory.image}
                                         alt={activeCategory.name}
                                         fill
+                                        sizes="200px"
                                         className="object-cover"
                                     />
                                 ) : (
@@ -156,13 +157,13 @@ export default function CategoryGrid({ categories, bentoLayout = false, onSucces
     )
 }
 
-function DraggableCategory({ category, index, bentoLayout, getGridClasses, onEdit }: {
+const DraggableCategory = memo(({ category, index, bentoLayout, getGridClasses, onEdit }: {
     category: Category
     index: number
     bentoLayout: boolean
     getGridClasses: (index: number) => string
     onEdit: (category: Category) => void
-}) {
+}) => {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: category.id,
     })
@@ -174,6 +175,16 @@ function DraggableCategory({ category, index, bentoLayout, getGridClasses, onEdi
     const style = transform ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
     } : undefined
+
+    // Calculate sizes based on bento layout logic
+    // Bento index 0: 2x2 (large square) -> ~50vw on desktop
+    // Bento index 1,2: 2x1 (wide) -> ~50vw on desktop
+    // Others: 1x1 (small square) -> ~25vw on desktop
+    // Mobile: 100vw
+    // Standard Grid: ~300px
+    const sizes = bentoLayout
+        ? (index < 3 ? '(max-width: 768px) 100vw, 50vw' : '(max-width: 768px) 100vw, 25vw')
+        : '(max-width: 768px) 100vw, 300px'
 
     return (
         <div
@@ -196,6 +207,7 @@ function DraggableCategory({ category, index, bentoLayout, getGridClasses, onEdi
                                     src={category.image}
                                     alt={category.name}
                                     fill
+                                    sizes={sizes}
                                     className="object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-110"
                                 />
                             ) : (
@@ -247,4 +259,5 @@ function DraggableCategory({ category, index, bentoLayout, getGridClasses, onEdi
             </div>
         </div>
     )
-}
+})
+DraggableCategory.displayName = 'DraggableCategory'
