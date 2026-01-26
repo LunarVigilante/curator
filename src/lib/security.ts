@@ -55,3 +55,52 @@ export function isSafeUrl(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * Secure wrapper around fetch that validates URLs and follows redirects securely.
+ * Prevents SSRF by validating every URL in the redirect chain.
+ *
+ * @param input - The URL to fetch (string or URL object)
+ * @param init - Fetch options
+ * @returns The response from the final destination
+ */
+export async function safeFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  const MAX_REDIRECTS = 5;
+  let currentUrl = input.toString();
+  let redirectCount = 0;
+
+  // Clone options and force manual redirect handling
+  const options: RequestInit = { ...init, redirect: 'manual' };
+
+  while (redirectCount < MAX_REDIRECTS) {
+    if (!isSafeUrl(currentUrl)) {
+      throw new Error(`Invalid or unsafe URL: ${currentUrl}`);
+    }
+
+    const response = await fetch(currentUrl, options);
+
+    // Check for redirect status codes (301, 302, 303, 307, 308)
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) {
+        // Redirect without location? Return response as is.
+        return response;
+      }
+
+      // Resolve relative URLs
+      try {
+        currentUrl = new URL(location, currentUrl).toString();
+      } catch {
+        throw new Error(`Invalid redirect URL: ${location}`);
+      }
+
+      redirectCount++;
+      continue;
+    }
+
+    // Not a redirect, return response
+    return response;
+  }
+
+  throw new Error(`Too many redirects (limit: ${MAX_REDIRECTS})`);
+}
