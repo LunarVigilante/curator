@@ -2,22 +2,24 @@
  * Hybrid Search Service
  * 
  * Implements:
- * - Voyage-3 embedding generation (1024 dimensions)
+ * - Voyage-4 embedding generation (dimensions vary by output_dimension setting)
  * - Keyword search via Supabase textSearch
  * - Semantic search via match_documents RPC
  * - Reciprocal Rank Fusion (RRF) for hybrid results
+ * - Langfuse tracing for AI observability
  */
 
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { log } from 'next-axiom';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
 const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
-const VOYAGE_MODEL = 'voyage-3';
-// Voyage-3 produces 1024-dimensional embeddings
+const VOYAGE_MODEL = 'voyage-4';
+// Voyage-4 is the latest model with improved performance
 
 // RRF parameters
 const RRF_K = 60; // Constant for RRF formula (typically 60)
@@ -67,6 +69,7 @@ export async function generateEmbedding(
     inputType: 'document' | 'query' = 'document'
 ): Promise<number[] | null> {
     const apiKey = process.env.VOYAGE_API_KEY;
+    const startTime = Date.now();
 
     if (!apiKey) {
         console.error('[Search] VOYAGE_API_KEY not configured');
@@ -87,14 +90,22 @@ export async function generateEmbedding(
             },
             body: JSON.stringify({
                 model: VOYAGE_MODEL,
-                input: [text.slice(0, 32000)], // Voyage-3 max input
+                input: [text.slice(0, 120000)], // Voyage-4 max input (120k context)
                 input_type: inputType,
             }),
         });
 
+        const latencyMs = Date.now() - startTime;
+
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[Search] Voyage API error ${response.status}: ${errorText}`);
+            log.error('[Voyage] Embedding generation failed', {
+                model: VOYAGE_MODEL,
+                inputType,
+                status: response.status,
+                latencyMs,
+            });
             return null;
         }
 
@@ -105,9 +116,23 @@ export async function generateEmbedding(
             return null;
         }
 
+        // Log successful embedding generation for observability
+        log.info('[Voyage] Embedding generated', {
+            model: VOYAGE_MODEL,
+            inputType,
+            dimensions: data.data[0].embedding.length,
+            tokens: data.usage?.total_tokens,
+            latencyMs,
+        });
+
         return data.data[0].embedding;
     } catch (error) {
         console.error('[Search] Error generating embedding:', error);
+        log.error('[Voyage] Embedding exception', {
+            model: VOYAGE_MODEL,
+            inputType,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return null;
     }
 }

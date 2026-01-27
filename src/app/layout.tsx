@@ -7,6 +7,7 @@ import { AntigravityBackground } from "@/components/ui/AntigravityBackground";
 import { Navbar } from "@/components/layout/Navbar";
 import { PasswordResetGuard } from "@/components/auth/PasswordResetGuard";
 import { GlobalNoiseFilter } from "@/components/ui/GlobalNoiseFilter";
+import { AxiomWebVitals } from 'next-axiom';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,6 +40,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} antialiased min-h-screen bg-black text-white`}
         suppressHydrationWarning
       >
+        <AxiomWebVitals />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <GlobalNoiseFilter />
           <PasswordResetGuard />
