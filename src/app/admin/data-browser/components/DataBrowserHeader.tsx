@@ -1,13 +1,19 @@
 'use client'
 
 import React from 'react'
-import { LayoutGrid } from 'lucide-react'
+import { LayoutGrid, ArrowUpDown, Clock, Calendar, ArrowDownAZ, ArrowUpAZ, Plus } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { X } from 'lucide-react'
 import { formatCategoryLabel } from '@/lib/constants'
 import { Stats } from '../types'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface DataBrowserHeaderProps {
     tileSize: number
@@ -19,7 +25,21 @@ interface DataBrowserHeaderProps {
     // Filtered view counts
     totalCount?: number
     itemsOnPage?: number
+    // Sorting
+    sortField?: string
+    setSortField?: (field: string) => void
+    sortOrder?: 'asc' | 'desc'
+    setSortOrder?: (order: 'asc' | 'desc') => void
 }
+
+const SORT_OPTIONS = [
+    { field: 'last_metadata_update', order: 'desc' as const, label: 'Last Updated', icon: Clock },
+    { field: 'title', order: 'asc' as const, label: 'Title A-Z', icon: ArrowDownAZ },
+    { field: 'title', order: 'desc' as const, label: 'Title Z-A', icon: ArrowUpAZ },
+    { field: 'release_year', order: 'desc' as const, label: 'Year (Newest)', icon: Calendar },
+    { field: 'release_year', order: 'asc' as const, label: 'Year (Oldest)', icon: Calendar },
+    { field: 'created_at', order: 'desc' as const, label: 'Date Added', icon: Plus },
+]
 
 export function DataBrowserHeader({
     tileSize,
@@ -29,29 +49,71 @@ export function DataBrowserHeader({
     onRemoveFilter,
     onClearFilters,
     totalCount,
-    itemsOnPage
+    itemsOnPage,
+    sortField = 'last_metadata_update',
+    setSortField,
+    sortOrder = 'desc',
+    setSortOrder
 }: DataBrowserHeaderProps) {
     const hasActiveFilters = Object.keys(activeFilters).length > 0
 
+    const currentSort = SORT_OPTIONS.find(
+        opt => opt.field === sortField && opt.order === sortOrder
+    ) || SORT_OPTIONS[0]
+
+    const handleSortChange = (field: string, order: 'asc' | 'desc') => {
+        setSortField?.(field)
+        setSortOrder?.(order)
+    }
+
     return (
         <div className="mb-6">
-            {/* Title & Slider Row */}
+            {/* Title & Controls Row */}
             <div className="flex justify-between items-start mb-6">
                 <div>
                     <h1 className="text-3xl font-serif font-bold text-white mb-2">Data Browser</h1>
                     <p className="text-zinc-400">Manage and curate your content database</p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <LayoutGrid className="w-4 h-4 text-zinc-400" />
-                    <Slider
-                        value={[tileSize]}
-                        onValueChange={(v) => setTileSize(v[0])}
-                        min={0}
-                        max={100}
-                        step={5}
-                        className="w-32"
-                    />
+                <div className="flex items-center gap-4">
+                    {/* Sort Dropdown */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-2 bg-zinc-900/50 border-zinc-700 hover:bg-zinc-800">
+                                <currentSort.icon className="w-4 h-4 text-cyan-400" />
+                                <span className="text-zinc-300">{currentSort.label}</span>
+                                <ArrowUpDown className="w-3 h-3 text-zinc-500" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-700">
+                            {SORT_OPTIONS.map((opt) => (
+                                <DropdownMenuItem
+                                    key={`${opt.field}-${opt.order}`}
+                                    onClick={() => handleSortChange(opt.field, opt.order)}
+                                    className={`gap-2 ${opt.field === sortField && opt.order === sortOrder
+                                            ? 'bg-cyan-900/30 text-cyan-400'
+                                            : 'text-zinc-300'
+                                        }`}
+                                >
+                                    <opt.icon className="w-4 h-4" />
+                                    {opt.label}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Tile Size Slider */}
+                    <div className="flex items-center gap-3">
+                        <LayoutGrid className="w-4 h-4 text-zinc-400" />
+                        <Slider
+                            value={[tileSize]}
+                            onValueChange={(v) => setTileSize(v[0])}
+                            min={0}
+                            max={100}
+                            step={5}
+                            className="w-32"
+                        />
+                    </div>
                 </div>
             </div>
 

@@ -107,10 +107,11 @@ export default async function middleware(request: NextRequest) {
     )
 
     // 0. Setup Check - Redirect to setup if no users exist
-    const isSetupRoute = pathname.startsWith('/setup') || pathname.startsWith('/api/setup')
+    const isSetupRoute = pathname.startsWith('/setup') || pathname.startsWith('/api/setup') || pathname.startsWith('/api/v1/setup')
     const isStaticAsset = pathname.startsWith('/_next') || pathname.startsWith('/images') || pathname.includes('.')
+    const isMiddlewareCheck = request.headers.get('x-middleware-check') === 'true'
 
-    if (!isSetupRoute && !isStaticAsset) {
+    if (!isSetupRoute && !isStaticAsset && !isMiddlewareCheck) {
         // Check cookie first - if verified, skip the API call entirely
         const setupVerifiedCookie = request.cookies.get(SETUP_VERIFIED_COOKIE)
 

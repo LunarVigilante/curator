@@ -63,6 +63,10 @@ function DataBrowserContent() {
                 onClearFilters={filters.clearAllFilters}
                 totalCount={ui.totalCount}
                 itemsOnPage={items.length}
+                sortField={state.sort.sortField}
+                setSortField={state.sort.setSortField}
+                sortOrder={state.sort.sortOrder}
+                setSortOrder={state.sort.setSortOrder}
             />
 
             <div className="flex gap-6 items-start">
