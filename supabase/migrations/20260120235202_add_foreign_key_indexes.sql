@@ -1,0 +1,3 @@
+-- Migration: add_foreign_key_indexes
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.

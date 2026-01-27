@@ -4,15 +4,22 @@ import { createClient } from '@/lib/supabase/server'
 import { createTypedQuery } from '@/lib/supabase/queries'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { signInFormSchema, registerFormSchema } from '@/lib/validation/auth-schemas'
 
 /**
  * Sign in with email and password
  */
 export async function signIn(formData: FormData) {
-    const supabase = await createClient()
+    // Validate input with Zod
+    const result = signInFormSchema.safeParse(formData)
 
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
+    if (!result.success) {
+        const firstError = result.error.issues[0]
+        return { error: firstError.message }
+    }
+
+    const { email, password } = result.data
+    const supabase = await createClient()
 
     const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -31,16 +38,20 @@ export async function signIn(formData: FormData) {
  * Sign up with email and password (invite-only)
  */
 export async function register(prevState: any, formData: FormData) {
-    const supabase = await createClient()
+    // Validate input with Zod
+    const result = registerFormSchema.safeParse(formData)
 
-    const name = formData.get('username') as string
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
-    const inviteCode = formData.get('inviteCode') as string
-
-    if (!email || !password || !name || !inviteCode) {
-        return { message: 'All fields are required' }
+    if (!result.success) {
+        const errors: Record<string, string> = {}
+        for (const issue of result.error.issues) {
+            const field = issue.path[0] as string
+            errors[field] = issue.message
+        }
+        return { errors }
     }
+
+    const { username: name, email, password, inviteCode } = result.data
+    const supabase = await createClient()
 
     try {
         const q = createTypedQuery(supabase)
@@ -97,11 +108,12 @@ export async function register(prevState: any, formData: FormData) {
 }
 
 /**
- * Sign out the current user
+ * Sign out the current user (global by default - all devices)
+ * @param scope - 'local' for current device only, 'global' for all devices (default)
  */
-export async function signOut() {
+export async function signOut(scope: 'local' | 'global' = 'global') {
     const supabase = await createClient()
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope })
     revalidatePath('/', 'layout')
     redirect('/login')
 }
@@ -231,4 +243,135 @@ export async function signInWithProvider(provider: 'google' | 'github' | 'discor
     if (data.url) {
         redirect(data.url)
     }
+}
+
+// ============================================================================
+// SUDO MODE ACTIONS (Require password verification for sensitive operations)
+// ============================================================================
+
+/**
+ * Verify the user's current password (sudo mode check)
+ * Use this before performing any sensitive action
+ */
+export async function verifyPassword(password: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+        return { success: false, error: 'Not authenticated' }
+    }
+
+    if (!user.email) {
+        return { success: false, error: 'User email not found' }
+    }
+
+    // Re-authenticate with the provided password
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password,
+    })
+
+    if (signInError) {
+        if (signInError.message.includes('Invalid login credentials')) {
+            return { success: false, error: 'Incorrect password' }
+        }
+        return { success: false, error: signInError.message }
+    }
+
+    return { success: true }
+}
+
+/**
+ * Change password with current password verification (sudo mode)
+ * Requires the user to provide their current password before changing
+ */
+export async function changePasswordSecure(
+    currentPassword: string,
+    newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+    // Verify current password first
+    const verification = await verifyPassword(currentPassword)
+
+    if (!verification.success) {
+        return verification
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+    })
+
+    if (error) {
+        return { success: false, error: error.message }
+    }
+
+    return { success: true }
+}
+
+/**
+ * Update email with password verification (sudo mode)
+ * Requires the user to provide their password before changing email
+ */
+export async function updateEmailSecure(
+    password: string,
+    newEmail: string
+): Promise<{ success: boolean; error?: string }> {
+    // Verify password first
+    const verification = await verifyPassword(password)
+
+    if (!verification.success) {
+        return verification
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase.auth.updateUser({
+        email: newEmail,
+    })
+
+    if (error) {
+        return { success: false, error: error.message }
+    }
+
+    return { success: true, error: 'Confirmation email sent to new address' }
+}
+
+/**
+ * Update profile with password verification (sudo mode)
+ * Requires the user to provide their password before updating sensitive profile fields
+ */
+export async function updateProfileSecure(
+    password: string,
+    updates: { name?: string; displayName?: string; bio?: string }
+): Promise<{ success: boolean; error?: string }> {
+    // Verify password first
+    const verification = await verifyPassword(password)
+
+    if (!verification.success) {
+        return verification
+    }
+
+    const supabase = await createClient()
+    const q = createTypedQuery(supabase)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { success: false, error: 'Not authenticated' }
+    }
+
+    const { error } = await q.profiles()
+        .update({
+            name: updates.name,
+            display_name: updates.displayName,
+            bio: updates.bio,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+
+    if (error) {
+        return { success: false, error: error.message }
+    }
+
+    revalidatePath('/settings')
+    return { success: true }
 }

@@ -188,7 +188,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
         setIsSendingTestEmail(true);
         try {
-            const res = await fetch('/api/admin/test-email', {
+            const res = await fetch('/api/v1/admin/test-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ recipient: testEmailRecipient, apiKey: resendKey })
@@ -211,7 +211,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         setIsLoadingModels(true);
         setAvailableModels([]);
         try {
-            const res = await fetch('/api/admin/llm/models', {
+            const res = await fetch('/api/v1/admin/llm/models', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider: llmProvider, apiKey: llmApiKey })

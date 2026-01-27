@@ -1,6 +1,39 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useSyncExternalStore } from 'react'
+
+// Type declaration for Global Privacy Control
+declare global {
+    interface Navigator {
+        globalPrivacyControl?: boolean | string
+    }
+}
+
+/**
+ * Get GPC value from navigator (works on server and client)
+ */
+function getGPCSnapshot(): boolean | null {
+    if (typeof navigator === 'undefined') return null
+
+    const gpc = navigator.globalPrivacyControl
+
+    if (typeof gpc === 'boolean') {
+        return gpc
+    } else if (typeof gpc === 'string') {
+        return gpc === '1' || gpc === 'true'
+    }
+
+    return null
+}
+
+function getGPCServerSnapshot(): boolean | null {
+    return null
+}
+
+function subscribeToGPC(_callback: () => void): () => void {
+    // GPC doesn't change during session, no need to subscribe
+    return () => { }
+}
 
 /**
  * Hook to detect Global Privacy Control (GPC) signal
@@ -9,23 +42,29 @@ import { useState, useEffect } from 'react'
  * @returns {boolean | null} - true if GPC enabled, false if disabled, null if not supported
  */
 export function useGlobalPrivacyControl(): boolean | null {
-    const [gpcEnabled, setGpcEnabled] = useState<boolean | null>(null)
+    return useSyncExternalStore(
+        subscribeToGPC,
+        getGPCSnapshot,
+        getGPCServerSnapshot
+    )
+}
 
-    useEffect(() => {
-        // Check for GPC signal
-        // @ts-expect-error - globalPrivacyControl is not in TypeScript types yet
-        const gpc = navigator.globalPrivacyControl
+/**
+ * Get consent opt-out status from localStorage
+ */
+function getConsentSnapshot(): boolean {
+    if (typeof localStorage === 'undefined') return false
+    return localStorage.getItem('curator_privacy_consent') === 'declined'
+}
 
-        if (typeof gpc === 'boolean') {
-            setGpcEnabled(gpc)
-        } else if (typeof gpc === 'string') {
-            setGpcEnabled(gpc === '1' || gpc === 'true')
-        } else {
-            setGpcEnabled(null) // Not supported
-        }
-    }, [])
+function getConsentServerSnapshot(): boolean {
+    return false
+}
 
-    return gpcEnabled
+function subscribeToConsent(callback: () => void): () => void {
+    // Listen for storage changes (in case of cross-tab updates)
+    window.addEventListener('storage', callback)
+    return () => window.removeEventListener('storage', callback)
 }
 
 /**
@@ -37,15 +76,11 @@ export function usePrivacyOptOut(): {
     source: 'gpc' | 'consent' | 'none'
 } {
     const gpcEnabled = useGlobalPrivacyControl()
-    const [consentOptOut, setConsentOptOut] = useState(false)
-
-    useEffect(() => {
-        // Check localStorage for previous opt-out
-        const consent = localStorage.getItem('curator_privacy_consent')
-        if (consent === 'declined') {
-            setConsentOptOut(true)
-        }
-    }, [])
+    const consentOptOut = useSyncExternalStore(
+        subscribeToConsent,
+        getConsentSnapshot,
+        getConsentServerSnapshot
+    )
 
     // GPC takes precedence
     if (gpcEnabled === true) {

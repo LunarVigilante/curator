@@ -1,0 +1,3 @@
+-- Migration: fix_duplicate_and_unused_indexes
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.

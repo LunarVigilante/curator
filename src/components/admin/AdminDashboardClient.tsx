@@ -39,7 +39,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
     useEffect(() => {
         const fetchInvites = async () => {
             try {
-                const res = await fetch('/api/admin/invites');
+                const res = await fetch('/api/v1/admin/invites');
                 if (res.ok) {
                     const data = await res.json();
                     setInvites(data);
@@ -56,7 +56,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
     const handleGenerateInvite = async () => {
         setIsGenerating(true);
         try {
-            const res = await fetch('/api/admin/invites', {
+            const res = await fetch('/api/v1/admin/invites', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ maxUses }),
@@ -83,13 +83,13 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
         setInvites(prev => prev.filter(i => i.id !== id));
 
         try {
-            const res = await fetch(`/api/admin/invites?id=${id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/v1/admin/invites?id=${id}`, { method: 'DELETE' });
             if (res.ok) {
                 toast.success('Invite revoked');
             } else {
                 toast.error('Failed to revoke invite');
                 // Revert on error - refetch
-                const refetch = await fetch('/api/admin/invites');
+                const refetch = await fetch('/api/v1/admin/invites');
                 if (refetch.ok) setInvites(await refetch.json());
             }
         } catch {
@@ -107,7 +107,7 @@ export default function AdminDashboardClient({ systemSettings }: AdminDashboardC
         setIsLoading(true);
 
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await fetch('/api/v1/admin/users', {
                 method: 'POST',
                 body: JSON.stringify({ email, name, password: 'changeme123' }),
                 headers: { 'Content-Type': 'application/json' }

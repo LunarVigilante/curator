@@ -1,6 +1,10 @@
 'use client'
 
+<<<<<<< HEAD
 import { useState, useEffect } from 'react'
+=======
+import { useState, useCallback, useSyncExternalStore } from 'react'
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 import { X } from 'lucide-react'
 import { useGlobalPrivacyControl } from '@/lib/hooks/useGlobalPrivacyControl'
 
@@ -10,6 +14,34 @@ const CONSENT_TIMESTAMP_KEY = 'curator_privacy_consent_timestamp'
 type ConsentState = 'pending' | 'accepted' | 'declined'
 
 /**
+<<<<<<< HEAD
+=======
+ * Save consent to localStorage
+ */
+function saveConsent(state: ConsentState): void {
+    localStorage.setItem(CONSENT_KEY, state)
+    localStorage.setItem(CONSENT_TIMESTAMP_KEY, new Date().toISOString())
+}
+
+/**
+ * Get stored consent from localStorage
+ */
+function getStoredConsentSnapshot(): ConsentState | null {
+    if (typeof localStorage === 'undefined') return null
+    return localStorage.getItem(CONSENT_KEY) as ConsentState | null
+}
+
+function getStoredConsentServerSnapshot(): ConsentState | null {
+    return null
+}
+
+function subscribeToStoredConsent(callback: () => void): () => void {
+    window.addEventListener('storage', callback)
+    return () => window.removeEventListener('storage', callback)
+}
+
+/**
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
  * CCPA/CPRA 2026 Compliant Consent Banner
  * 
  * Features:
@@ -19,11 +51,15 @@ type ConsentState = 'pending' | 'accepted' | 'declined'
  * - No Dark Patterns: No manipulative language or hidden options
  */
 export function ConsentBanner() {
+<<<<<<< HEAD
     const [consent, setConsent] = useState<ConsentState>('pending')
+=======
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
     const [showBanner, setShowBanner] = useState(false)
     const [showConfirmation, setShowConfirmation] = useState(false)
     const gpcEnabled = useGlobalPrivacyControl()
 
+<<<<<<< HEAD
     useEffect(() => {
         // Check for existing consent
         const storedConsent = localStorage.getItem(CONSENT_KEY) as ConsentState | null
@@ -58,12 +94,49 @@ export function ConsentBanner() {
         localStorage.setItem(CONSENT_KEY, 'declined')
         localStorage.setItem(CONSENT_TIMESTAMP_KEY, new Date().toISOString())
         setConsent('declined')
+=======
+    // Use useSyncExternalStore to read localStorage without causing cascading renders
+    const storedConsent = useSyncExternalStore(
+        subscribeToStoredConsent,
+        getStoredConsentSnapshot,
+        getStoredConsentServerSnapshot
+    )
+
+    // Determine if banner should show (computed, not stored in state)
+    const shouldShowBanner = !storedConsent && gpcEnabled !== true && !showConfirmation
+
+    // Show banner after delay on initial mount if no consent stored
+    useState(() => {
+        if (typeof window === 'undefined') return
+        if (storedConsent || gpcEnabled === true) return
+
+        const timer = setTimeout(() => setShowBanner(true), 1000)
+        return () => clearTimeout(timer)
+    })
+
+    // Auto-decline for GPC users (save to localStorage, no state update needed)
+    if (gpcEnabled === true && !storedConsent) {
+        saveConsent('declined')
+    }
+
+    const handleAccept = useCallback(() => {
+        saveConsent('accepted')
+        setShowBanner(false)
+    }, [])
+
+    const handleDecline = useCallback(() => {
+        saveConsent('declined')
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
         setShowBanner(false)
         setShowConfirmation(true)
 
         // Hide confirmation after 5 seconds
         setTimeout(() => setShowConfirmation(false), 5000)
+<<<<<<< HEAD
     }
+=======
+    }, [])
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 
     // Opt-Out Confirmation (required by 2026 regulations)
     if (showConfirmation) {
@@ -92,7 +165,11 @@ export function ConsentBanner() {
         )
     }
 
+<<<<<<< HEAD
     if (!showBanner) return null
+=======
+    if (!showBanner || !shouldShowBanner) return null
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 
     return (
         <div className="fixed bottom-0 left-0 right-0 z-50 p-4 md:p-6">

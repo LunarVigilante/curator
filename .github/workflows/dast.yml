@@ -58,10 +58,21 @@ jobs:
               `;
               
               // Find the PR associated with this deployment
+<<<<<<< HEAD
+=======
+              // Use deployment SHA instead of ref for better reliability
+              const deploymentSha = context.payload.deployment_status?.deployment?.sha;
+              if (!deploymentSha) {
+                console.log('No deployment SHA found, skipping PR comment');
+                return;
+              }
+              
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
               const { data: prs } = await github.rest.pulls.list({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 state: 'open',
+<<<<<<< HEAD
                 head: `${context.repo.owner}:${context.payload.deployment_status.deployment.ref}`
               });
               
@@ -72,5 +83,21 @@ jobs:
                   issue_number: prs[0].number,
                   body: body
                 });
+=======
+              });
+              
+              // Find PR matching this deployment's commit SHA
+              const matchingPr = prs.find(pr => pr.head.sha === deploymentSha);
+              
+              if (matchingPr) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: matchingPr.number,
+                  body: body
+                });
+              } else {
+                console.log('No matching PR found for deployment SHA:', deploymentSha);
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
               }
             }

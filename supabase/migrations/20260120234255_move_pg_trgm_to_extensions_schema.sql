@@ -1,0 +1,3 @@
+-- Migration: move_pg_trgm_to_extensions_schema
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.

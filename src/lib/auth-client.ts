@@ -40,9 +40,10 @@ export async function signUp(email: string, password: string, metadata?: { name?
 
 /**
  * Sign out the current user
+ * @param scope - 'local' for current device only, 'global' for all devices (default)
  */
-export async function signOut() {
-    const { error } = await supabase.auth.signOut();
+export async function signOut(scope: 'local' | 'global' = 'global') {
+    const { error } = await supabase.auth.signOut({ scope });
     return { error };
 }
 

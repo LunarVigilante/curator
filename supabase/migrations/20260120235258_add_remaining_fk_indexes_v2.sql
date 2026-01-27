@@ -1,0 +1,3 @@
+-- Migration: add_remaining_fk_indexes_v2
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.
