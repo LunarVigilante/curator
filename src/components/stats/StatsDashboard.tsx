@@ -60,7 +60,7 @@ export default function StatsDashboard({ serverStats, categoryId, itemCount, onC
     const handleAnalyze = async () => {
         setShowTasteReport(true)
         try {
-            const res = await fetch('/api/ai/analyze-taste', {
+            const res = await fetch('/api/v1/ai/analyze-taste', {
                 method: 'POST',
                 body: JSON.stringify({ categoryId })
             })

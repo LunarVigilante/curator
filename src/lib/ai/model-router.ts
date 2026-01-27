@@ -5,10 +5,11 @@
  * - Priority-based provider selection
  * - Automatic failover on errors
  * - Cost/complexity routing
- * - Circuit breaker pattern
+ * - Circuit breaker pattern (distributed via Upstash)
  */
 
 import { callLLM, type LLMOptions } from '@/lib/llm'
+import { Redis } from '@upstash/redis'
 
 export interface ProviderConfig {
     name: string
@@ -68,54 +69,130 @@ const PROVIDERS: ProviderConfig[] = [
     },
 ]
 
-// Circuit breaker state (in-memory, consider Upstash for distributed)
-const circuitState = new Map<string, {
+const CIRCUIT_THRESHOLD = 3 // failures before opening
+const CIRCUIT_RESET_MS = 60000 // 1 minute reset
+const CIRCUIT_KEY_PREFIX = 'circuit:'
+
+// Lazy-initialized Redis client for distributed circuit breaker
+let redis: Redis | null = null
+
+function getRedis(): Redis | null {
+    if (redis) return redis
+
+    const url = process.env.UPSTASH_REDIS_REST_URL
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN
+
+    if (!url || !token) {
+        console.warn('[ModelRouter] Upstash not configured, circuit breaker will be in-memory only')
+        return null
+    }
+
+    redis = new Redis({ url, token })
+    return redis
+}
+
+// In-memory fallback when Upstash not available
+const inMemoryCircuitState = new Map<string, {
     failures: number
     lastFailure: number
     isOpen: boolean
 }>()
 
-const CIRCUIT_THRESHOLD = 3 // failures before opening
-const CIRCUIT_RESET_MS = 60000 // 1 minute reset
-
 /**
- * Check if circuit breaker is open for a provider
+ * Check if circuit breaker is open for a provider (distributed)
  */
-function isCircuitOpen(provider: string): boolean {
-    const state = circuitState.get(provider)
-    if (!state) return false
+async function isCircuitOpen(provider: string): Promise<boolean> {
+    const client = getRedis()
 
-    // Check if we should reset
-    if (state.isOpen && Date.now() - state.lastFailure > CIRCUIT_RESET_MS) {
-        state.isOpen = false
-        state.failures = 0
-        return false
+    if (!client) {
+        // Fallback to in-memory
+        const state = inMemoryCircuitState.get(provider)
+        if (!state) return false
+
+        if (state.isOpen && Date.now() - state.lastFailure > CIRCUIT_RESET_MS) {
+            state.isOpen = false
+            state.failures = 0
+            return false
+        }
+        return state.isOpen
     }
 
-    return state.isOpen
+    try {
+        const key = `${CIRCUIT_KEY_PREFIX}${provider}`
+        const data = await client.get<{ failures: number; lastFailure: number; isOpen: boolean }>(key)
+
+        if (!data) return false
+
+        // Check if we should reset
+        if (data.isOpen && Date.now() - data.lastFailure > CIRCUIT_RESET_MS) {
+            await client.del(key)
+            return false
+        }
+
+        return data.isOpen
+    } catch (error) {
+        console.warn('[ModelRouter] Redis error, falling back to in-memory:', error)
+        return false
+    }
 }
 
 /**
- * Record a failure for circuit breaker
+ * Record a failure for circuit breaker (distributed)
  */
-function recordFailure(provider: string): void {
-    const state = circuitState.get(provider) || { failures: 0, lastFailure: 0, isOpen: false }
-    state.failures++
-    state.lastFailure = Date.now()
+async function recordFailure(provider: string): Promise<void> {
+    const client = getRedis()
 
-    if (state.failures >= CIRCUIT_THRESHOLD) {
-        state.isOpen = true
-        console.warn(`[ModelRouter] Circuit opened for ${provider}`)
+    if (!client) {
+        // Fallback to in-memory
+        const state = inMemoryCircuitState.get(provider) || { failures: 0, lastFailure: 0, isOpen: false }
+        state.failures++
+        state.lastFailure = Date.now()
+
+        if (state.failures >= CIRCUIT_THRESHOLD) {
+            state.isOpen = true
+            console.warn(`[ModelRouter] Circuit opened for ${provider}`)
+        }
+
+        inMemoryCircuitState.set(provider, state)
+        return
     }
 
-    circuitState.set(provider, state)
+    try {
+        const key = `${CIRCUIT_KEY_PREFIX}${provider}`
+        const data = await client.get<{ failures: number; lastFailure: number; isOpen: boolean }>(key) ||
+            { failures: 0, lastFailure: 0, isOpen: false }
+
+        data.failures++
+        data.lastFailure = Date.now()
+
+        if (data.failures >= CIRCUIT_THRESHOLD) {
+            data.isOpen = true
+            console.warn(`[ModelRouter] Circuit opened for ${provider}`)
+        }
+
+        // Store with TTL of 2 minutes (auto-cleanup)
+        await client.set(key, data, { ex: 120 })
+    } catch (error) {
+        console.warn('[ModelRouter] Redis error recording failure:', error)
+    }
 }
 
 /**
  * Record a success (resets circuit breaker)
  */
-function recordSuccess(provider: string): void {
-    circuitState.delete(provider)
+async function recordSuccess(provider: string): Promise<void> {
+    const client = getRedis()
+
+    if (!client) {
+        inMemoryCircuitState.delete(provider)
+        return
+    }
+
+    try {
+        await client.del(`${CIRCUIT_KEY_PREFIX}${provider}`)
+    } catch (error) {
+        console.warn('[ModelRouter] Redis error recording success:', error)
+    }
 }
 
 /**
@@ -162,9 +239,17 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
         maxRetries = 3
     } = options
 
-    // Sort by priority
-    const sortedProviders = [...PROVIDERS]
-        .filter(p => p.isAvailable && !isCircuitOpen(p.name))
+    // Filter available providers (check circuits in parallel)
+    const circuitChecks = await Promise.all(
+        PROVIDERS.map(async p => ({
+            provider: p,
+            isOpen: await isCircuitOpen(p.name)
+        }))
+    )
+
+    const sortedProviders = circuitChecks
+        .filter(c => c.provider.isAvailable && !c.isOpen)
+        .map(c => c.provider)
         .sort((a, b) => a.priority - b.priority)
 
     if (sortedProviders.length === 0) {
@@ -198,7 +283,7 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
                 const response = await callLLM(llmOptions)
 
                 // Success - reset circuit
-                recordSuccess(provider.name)
+                await recordSuccess(provider.name)
 
                 return {
                     response,
@@ -225,14 +310,14 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
         }
 
         // Provider exhausted after all retries, record failure and try next
-        recordFailure(provider.name)
+        await recordFailure(provider.name)
     }
 
     // All providers failed - return static fallback
     console.error('[ModelRouter] All providers failed:', lastError?.message)
 
     return {
-        response: getStaticFallback(prompt),
+        response: getStaticFallback(),
         provider: 'static',
         model: 'none',
         fallbackUsed: true,
@@ -255,7 +340,7 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function getStaticFallback(prompt: string): string {
+function getStaticFallback(): string {
     // Return a safe static response when all AI providers fail
     return JSON.stringify({
         error: false,

@@ -6,7 +6,7 @@ We take the security of Curator seriously. If you discover a security vulnerabil
 
 ### How to Report
 
-**Email:** security@curator.app (replace with your actual security contact)
+**Email:** contact@epoche.dev
 
 **Include:**
 - Description of the vulnerability

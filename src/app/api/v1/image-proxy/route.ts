@@ -1,28 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isSafeUrl } from '@/lib/security';
+import { withPublicApi, badRequest, internalError } from '@/lib/middleware';
+import { log } from 'next-axiom';
 
 /**
  * Image Proxy API
  * 
  * Fetches external images and serves them through our server to avoid CORS issues.
- * Usage: /api/image-proxy?url=<encoded-image-url>
+ * Usage: /api/v1/image-proxy?url=<encoded-image-url>
+ * 
+ * This is a PUBLIC route with anonymous rate limiting (10/min).
  */
-export async function GET(request: NextRequest) {
+export const GET = withPublicApi(async (request: NextRequest) => {
     const { searchParams } = new URL(request.url);
     const imageUrl = searchParams.get('url');
 
     if (!imageUrl) {
-        return NextResponse.json(
-            { error: 'Missing url parameter' },
-            { status: 400 }
-        );
+        return badRequest('Missing url parameter');
     }
 
     if (!isSafeUrl(imageUrl)) {
-        return NextResponse.json(
-            { error: 'Invalid or restricted URL' },
-            { status: 400 }
-        );
+        log.warn('[ImageProxy] Blocked unsafe URL', { url: imageUrl.substring(0, 100) });
+        return badRequest('Invalid or restricted URL');
     }
 
     try {
@@ -51,10 +50,7 @@ export async function GET(request: NextRequest) {
             }
         });
     } catch (error) {
-        console.error('Image proxy error:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch image' },
-            { status: 500 }
-        );
+        log.error('[ImageProxy] Fetch failed', { error: String(error) });
+        return internalError('Failed to fetch image');
     }
-}
+});

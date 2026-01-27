@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import { SystemConfigService } from '@/lib/services/SystemConfigService'
 import { DEFAULT_CATEGORIES } from '@/lib/constants'
+import { validateSearchQuery } from '@/lib/utils/input-sanitization'
 
 // --- Authorization Helper ---
 async function assertAdmin() {
@@ -223,6 +224,7 @@ export async function getAllUsers(options?: {
     total: number
     page: number
     totalPages: number
+    error?: string
 }> {
     await assertAdmin()
     const supabase = await createClient()
@@ -232,14 +234,31 @@ export async function getAllUsers(options?: {
     const offset = (page - 1) * limit
     const search = options?.search?.trim()
 
+    // Validate search query if provided (prevents SQL filter injection)
+    let safeSearch: string | undefined
+    if (search) {
+        const validation = validateSearchQuery(search)
+        if (!validation.success) {
+            return {
+                users: [],
+                total: 0,
+                page,
+                totalPages: 0,
+                error: validation.error
+            }
+        }
+        safeSearch = validation.data
+    }
+
     let query = supabase
         .from('profiles')
         .select('id, name, email, image, role, is_locked_out, created_at', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
 
-    if (search) {
-        query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%`)
+    if (safeSearch) {
+        // Safe to use - search has been validated and sanitized
+        query = query.or(`name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`)
     }
 
     const { data: userList, count, error } = await query

@@ -205,7 +205,7 @@ export default function ItemDetailView({
         if (!isAdmin) return
         setIsRefreshing(true)
         try {
-            const response = await fetch('/api/ai/enrich-metadata', {
+            const response = await fetch('/api/v1/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type, force: true })
@@ -232,7 +232,7 @@ export default function ItemDetailView({
         if (!isAdmin) return
         setIsRegenerating(true)
         try {
-            const response = await fetch('/api/ai/regenerate-description', {
+            const response = await fetch('/api/v1/ai/regenerate-description', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })

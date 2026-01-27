@@ -1,38 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callLLM, cleanLLMResponse } from '@/lib/llm';
 import { SystemConfigService } from '@/lib/services/SystemConfigService';
+import { withAiApi, internalError, validationError } from '@/lib/middleware';
+import { parseRequestBody, generateDetailsSchema } from '@/lib/validation/api-schemas';
+import { log } from 'next-axiom';
 
-export async function POST(request: NextRequest) {
-    try {
-        const { title, type, context } = await request.json();
+export const POST = withAiApi(async (request: NextRequest) => {
+    // Validate request body with Zod schema
+    const validation = await parseRequestBody(request, generateDetailsSchema);
+    if (!validation.success) {
+        return validationError(validation.error);
+    }
 
-        if (!title || !type) {
-            return NextResponse.json(
-                { error: 'title and type are required' },
-                { status: 400 }
-            );
-        }
+    const { title, type, context } = validation.data;
 
-        // Fetch LLM config from database
-        const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
-        const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
-        const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
-        const model = await SystemConfigService.getDecryptedConfig('llm_model');
+    // Fetch LLM config from database
+    const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter';
+    const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key');
+    const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint');
+    const model = await SystemConfigService.getDecryptedConfig('llm_model');
 
-        // Legacy fallback keys
-        const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key');
-        const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key');
+    // Legacy fallback keys
+    const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key');
+    const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key');
 
-        const finalApiKey = apiKey || anannasKey || openaiKey;
+    const finalApiKey = apiKey || anannasKey || openaiKey;
 
-        if (!finalApiKey) {
-            return NextResponse.json(
-                { error: 'LLM API Key not configured in System Settings' },
-                { status: 500 }
-            );
-        }
+    if (!finalApiKey) {
+        return internalError('LLM API Key not configured in System Settings');
+    }
 
-        const systemPrompt = `You are an expert curator and critic. Generate a description and tags for the given item.
+    const systemPrompt = `You are an expert curator and critic. Generate a description and tags for the given item.
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -52,12 +50,12 @@ TAG RULES:
 
 Return ONLY valid JSON. No markdown, no code blocks.`;
 
-        const userPrompt = `Generate description and tags for:
+    const userPrompt = `Generate description and tags for:
 Title: ${title}
 Type: ${type}
 ${context ? `Additional Context: ${context}` : ''}`;
 
-        // Call LLM with explicit config
+    try {
         const response = await callLLM({
             userPrompt,
             systemPrompt,
@@ -71,7 +69,6 @@ ${context ? `Additional Context: ${context}` : ''}`;
         let result: { description: string; tags: string[] };
 
         try {
-            // Try to extract JSON from potential code blocks
             let jsonString = response;
 
             // Remove markdown code blocks if present
@@ -88,9 +85,7 @@ ${context ? `Additional Context: ${context}` : ''}`;
             }
 
             result = JSON.parse(jsonString);
-            console.log('Parsed LLM result:', JSON.stringify(result, null, 2));
         } catch {
-            console.error('Failed to parse LLM response as JSON:', response);
             // Fallback: try to extract what we can
             result = {
                 description: cleanLLMResponse(response),
@@ -104,7 +99,6 @@ ${context ? `Additional Context: ${context}` : ''}`;
         }
 
         if (!Array.isArray(result.tags)) {
-            console.warn('Tags was not an array, got:', typeof result.tags, result.tags);
             result.tags = [];
         }
 
@@ -113,14 +107,12 @@ ${context ? `Additional Context: ${context}` : ''}`;
             .filter((tag): tag is string => typeof tag === 'string')
             .slice(0, 8);
 
-        console.log('Final API response - tags count:', result.tags.length, 'tags:', result.tags);
+        log.info('[GenerateDetails] Generated', { title, tagsCount: result.tags.length });
         return NextResponse.json(result);
-    } catch (error) {
-        console.error('Generate details error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Failed to generate details';
-        return NextResponse.json(
-            { error: errorMessage },
-            { status: 500 }
-        );
+
+    } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        log.error('[GenerateDetails] Failed', { error: error.message });
+        return internalError('Details generation failed', error);
     }
-}
+});

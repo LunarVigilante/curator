@@ -6,12 +6,14 @@
  */
 
 // Allowed tables for AI queries (read-only access)
+// Note: profiles table access is controlled via BLOCKED_COLUMNS which excludes
+// sensitive fields (email, api_key, etc). All non-blocked columns are considered public.
 const ALLOWED_TABLES = new Set([
     'global_items',
     'categories',
     'tags',
     'item_tags',
-    'profiles',  // Only public fields
+    'profiles',
 ])
 
 // Blocked columns (sensitive data)
