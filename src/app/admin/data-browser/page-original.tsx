@@ -858,7 +858,7 @@ export default function DataBrowserPage() {
 
         try {
             // Call enrich-metadata with descriptionOnly=true (only regenerates description, skips metadata)
-            const response = await fetch('/api/ai/enrich-metadata', {
+            const response = await fetch('/api/v1/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -904,7 +904,7 @@ export default function DataBrowserPage() {
         setRefreshingMetadataIds(prev => new Set(prev).add(item.id))
 
         try {
-            const response = await fetch('/api/ai/enrich-metadata', {
+            const response = await fetch('/api/v1/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1022,7 +1022,7 @@ export default function DataBrowserPage() {
             }
 
             try {
-                const response = await fetch('/api/ai/regenerate-description', {
+                const response = await fetch('/api/v1/ai/regenerate-description', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })

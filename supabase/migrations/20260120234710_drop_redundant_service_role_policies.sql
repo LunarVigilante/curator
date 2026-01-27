@@ -1,0 +1,3 @@
+-- Migration: drop_redundant_service_role_policies
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.

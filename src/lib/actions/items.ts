@@ -12,6 +12,7 @@ import { getCategory } from './categories'
 import { transformItem, transformItems } from '@/lib/utils/transformItem'
 import { upsertGlobalItem } from '@/lib/utils/globalItems'
 import { handleSupabaseError } from '@/lib/utils/errorHandler'
+import { validateSearchQuery, validateUUID } from '@/lib/utils/input-sanitization'
 
 
 export async function getItems(
@@ -19,11 +20,40 @@ export async function getItems(
     page: number = 1,
     limit: number = 12,
     categoryId?: string
-) {
+): Promise<{ items: any[]; totalCount: number; totalPages: number; error?: string }> {
     const session = await getSession()
     const userId = session?.user?.id
     const supabase = await createClient()
     const offset = (page - 1) * limit
+
+    // Validate search query if provided (prevents SQL filter injection)
+    let safeQuery: string | undefined
+    if (query) {
+        const validation = validateSearchQuery(query)
+        if (!validation.success) {
+            // Return empty results with error message for UI notification
+            return {
+                items: [],
+                totalCount: 0,
+                totalPages: 0,
+                error: validation.error
+            }
+        }
+        safeQuery = validation.data
+    }
+
+    // Validate categoryId if provided
+    if (categoryId) {
+        const categoryValidation = validateUUID(categoryId, 'Category ID')
+        if (!categoryValidation.success) {
+            return {
+                items: [],
+                totalCount: 0,
+                totalPages: 0,
+                error: categoryValidation.error
+            }
+        }
+    }
 
     // Build query
     let queryBuilder = (supabase.from('items') as any)
@@ -38,9 +68,9 @@ export async function getItems(
         queryBuilder = queryBuilder.eq('category_id', categoryId)
     }
 
-    if (query) {
-        // Search in both global_items title and items name
-        queryBuilder = queryBuilder.or(`name.ilike.%${query}%,global_item.title.ilike.%${query}%`)
+    if (safeQuery) {
+        // Safe to use - query has been validated and sanitized
+        queryBuilder = queryBuilder.or(`name.ilike.%${safeQuery}%,global_item.title.ilike.%${safeQuery}%`)
     }
 
     queryBuilder = queryBuilder

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getCurrentUserId } from '@/lib/auth'
+import { validateUUID, validateTextContent, INPUT_LIMITS } from '@/lib/utils/input-sanitization'
 
 // ============================================================================
 // Comment Types
@@ -131,8 +132,24 @@ export async function addCollectionComment(
         return { success: false, error: 'Not authenticated' }
     }
 
-    if (!content.trim()) {
-        return { success: false, error: 'Comment cannot be empty' }
+    // Validate categoryId
+    const categoryValidation = validateUUID(categoryId, 'Category ID')
+    if (!categoryValidation.success) {
+        return { success: false, error: categoryValidation.error }
+    }
+
+    // Validate parentId if provided
+    if (parentId) {
+        const parentValidation = validateUUID(parentId, 'Parent comment ID')
+        if (!parentValidation.success) {
+            return { success: false, error: parentValidation.error }
+        }
+    }
+
+    // Validate content length
+    const contentValidation = validateTextContent(content, 'Comment', INPUT_LIMITS.COMMENT, 1)
+    if (!contentValidation.success) {
+        return { success: false, error: contentValidation.error }
     }
 
     const supabase = await createClient()

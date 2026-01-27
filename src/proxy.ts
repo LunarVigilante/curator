@@ -10,6 +10,57 @@ const SETUP_COOKIE_MAX_AGE = 86400 // 24 hours in seconds
 export default async function middleware(request: NextRequest) {
     let response = NextResponse.next({ request })
     const pathname = request.nextUrl.pathname
+    const isProduction = process.env.NODE_ENV === 'production'
+
+    // =========================================================================
+    // SECURITY HEADERS
+    // =========================================================================
+
+    // HSTS - Force HTTPS for 1 year, include subdomains, allow preload
+    if (isProduction) {
+        response.headers.set(
+            'Strict-Transport-Security',
+            'max-age=31536000; includeSubDomains; preload'
+        )
+    }
+
+    // Prevent clickjacking
+    response.headers.set('X-Frame-Options', 'DENY')
+
+    // Prevent MIME type sniffing
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+
+    // Control referrer information
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+    // Permissions policy - disable sensitive features
+    response.headers.set(
+        'Permissions-Policy',
+        'camera=(), microphone=(), geolocation=(), interest-cohort=()'
+    )
+
+    // XSS protection (legacy, but still useful for older browsers)
+    response.headers.set('X-XSS-Protection', '1; mode=block')
+
+    // Content Security Policy
+    const cspDirectives = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js requires these
+        "style-src 'self' 'unsafe-inline'", // Tailwind requires inline styles
+        "img-src 'self' data: https: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self' https://*.supabase.co https://*.upstash.io https://*.axiom.co https://*.sentry.io wss://*.supabase.co",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "base-uri 'self'",
+        isProduction ? "upgrade-insecure-requests" : ""
+    ].filter(Boolean).join('; ')
+
+    response.headers.set('Content-Security-Policy', cspDirectives)
+
+    // =========================================================================
+    // SUPABASE CLIENT SETUP
+    // =========================================================================
 
     // Check for required environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -35,6 +86,18 @@ export default async function middleware(request: NextRequest) {
                         request.cookies.set(name, value)
                     )
                     response = NextResponse.next({ request })
+
+                    // Re-apply security headers after creating new response
+                    if (isProduction) {
+                        response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+                    }
+                    response.headers.set('X-Frame-Options', 'DENY')
+                    response.headers.set('X-Content-Type-Options', 'nosniff')
+                    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+                    response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()')
+                    response.headers.set('X-XSS-Protection', '1; mode=block')
+                    response.headers.set('Content-Security-Policy', cspDirectives)
+
                     cookiesToSet.forEach(({ name, value, options }) =>
                         response.cookies.set(name, value, options)
                     )
@@ -54,7 +117,7 @@ export default async function middleware(request: NextRequest) {
         if (!setupVerifiedCookie) {
             // No cookie - need to check if setup is required
             try {
-                const checkUrl = new URL('/api/setup/check', request.url)
+                const checkUrl = new URL('/api/v1/setup/check', request.url)
                 const checkResponse = await fetch(checkUrl, {
                     headers: { 'x-middleware-check': 'true' },
                 })

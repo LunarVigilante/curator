@@ -22,7 +22,7 @@ export default function RegisterPage() {
         setIsVerifying(true)
         setVerifyStatus('idle')
         try {
-            const res = await fetch(`/api/invites/check?code=${inviteCode}`)
+            const res = await fetch(`/api/v1/invites/check?code=${inviteCode}`)
             const data = await res.json()
             if (data.valid) {
                 setVerifyStatus('valid')

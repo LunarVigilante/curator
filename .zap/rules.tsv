@@ -1,0 +1,21 @@
+# ZAP Scan Rule Configuration
+# Format: rule_id	action	description
+# Actions: IGNORE, WARN, FAIL
+
+# CSP-related (handled by middleware)
+10038	IGNORE	Content Security Policy (CSP) Header Not Set
+10055	IGNORE	CSP: Wildcard Directive
+
+# Already configured in vercel.json/middleware
+10020	IGNORE	X-Frame-Options Header Not Set
+10021	IGNORE	X-Content-Type-Options Header Missing
+
+# Expected for API routes
+10035	IGNORE	Strict-Transport-Security Header Not Set
+
+# Non-applicable for SPA
+10109	IGNORE	Modern Web Application
+
+# Cookie settings managed by Supabase
+10029	WARN	Cookie No HttpOnly Flag
+10011	WARN	Cookie Without Secure Flag

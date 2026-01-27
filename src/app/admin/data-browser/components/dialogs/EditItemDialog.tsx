@@ -118,7 +118,7 @@ export function EditItemDialog({
         if (!title) return
         setIsGeneratingDescription(true)
         try {
-            const response = await fetch('/api/ai/regenerate-description', {
+            const response = await fetch('/api/v1/ai/regenerate-description', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itemId: item?.id, title, type: categoryType, preview: true })

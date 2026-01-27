@@ -30,7 +30,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
     const handleRegenerate = useCallback(async (item: GlobalItem) => {
         setRegeneratingDescriptionIds(prev => new Set(prev).add(item.id))
         try {
-            const response = await fetch('/api/ai/regenerate-description', {
+            const response = await fetch('/api/v1/ai/regenerate-description', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })
@@ -83,7 +83,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
     const handleRefreshMetadata = useCallback(async (item: GlobalItem) => {
         setRefreshingMetadataIds(prev => new Set(prev).add(item.id))
         try {
-            const response = await fetch('/api/ai/enrich-metadata', {
+            const response = await fetch('/api/v1/ai/enrich-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -172,7 +172,7 @@ export function useItemActions(state: BrowserState, data: DataState) {
             }
 
             try {
-                const response = await fetch('/api/ai/regenerate-description', {
+                const response = await fetch('/api/v1/ai/regenerate-description', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ itemId: item.id, title: item.title, type: item.category_type })
