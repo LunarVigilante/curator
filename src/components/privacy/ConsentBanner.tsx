@@ -1,10 +1,6 @@
 'use client'
 
-<<<<<<< HEAD
-import { useState, useEffect } from 'react'
-=======
-import { useState, useCallback, useSyncExternalStore } from 'react'
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
+import { useState, useCallback, useSyncExternalStore, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useGlobalPrivacyControl } from '@/lib/hooks/useGlobalPrivacyControl'
 
@@ -14,8 +10,6 @@ const CONSENT_TIMESTAMP_KEY = 'curator_privacy_consent_timestamp'
 type ConsentState = 'pending' | 'accepted' | 'declined'
 
 /**
-<<<<<<< HEAD
-=======
  * Save consent to localStorage
  */
 function saveConsent(state: ConsentState): void {
@@ -41,9 +35,8 @@ function subscribeToStoredConsent(callback: () => void): () => void {
 }
 
 /**
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
  * CCPA/CPRA 2026 Compliant Consent Banner
- * 
+ *
  * Features:
  * - Symmetry in Choice: Accept/Decline buttons have equal prominence
  * - GPC Signal Detection: Honors navigator.globalPrivacyControl
@@ -51,50 +44,10 @@ function subscribeToStoredConsent(callback: () => void): () => void {
  * - No Dark Patterns: No manipulative language or hidden options
  */
 export function ConsentBanner() {
-<<<<<<< HEAD
-    const [consent, setConsent] = useState<ConsentState>('pending')
-=======
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
     const [showBanner, setShowBanner] = useState(false)
     const [showConfirmation, setShowConfirmation] = useState(false)
     const gpcEnabled = useGlobalPrivacyControl()
 
-<<<<<<< HEAD
-    useEffect(() => {
-        // Check for existing consent
-        const storedConsent = localStorage.getItem(CONSENT_KEY) as ConsentState | null
-
-        // If GPC is enabled, auto-decline and don't show banner
-        if (gpcEnabled === true) {
-            localStorage.setItem(CONSENT_KEY, 'declined')
-            localStorage.setItem(CONSENT_TIMESTAMP_KEY, new Date().toISOString())
-            setConsent('declined')
-            setShowBanner(false)
-            return
-        }
-
-        if (storedConsent) {
-            setConsent(storedConsent)
-            setShowBanner(false)
-        } else {
-            // Small delay before showing banner for better UX
-            const timer = setTimeout(() => setShowBanner(true), 1000)
-            return () => clearTimeout(timer)
-        }
-    }, [gpcEnabled])
-
-    const handleAccept = () => {
-        localStorage.setItem(CONSENT_KEY, 'accepted')
-        localStorage.setItem(CONSENT_TIMESTAMP_KEY, new Date().toISOString())
-        setConsent('accepted')
-        setShowBanner(false)
-    }
-
-    const handleDecline = () => {
-        localStorage.setItem(CONSENT_KEY, 'declined')
-        localStorage.setItem(CONSENT_TIMESTAMP_KEY, new Date().toISOString())
-        setConsent('declined')
-=======
     // Use useSyncExternalStore to read localStorage without causing cascading renders
     const storedConsent = useSyncExternalStore(
         subscribeToStoredConsent,
@@ -106,18 +59,20 @@ export function ConsentBanner() {
     const shouldShowBanner = !storedConsent && gpcEnabled !== true && !showConfirmation
 
     // Show banner after delay on initial mount if no consent stored
-    useState(() => {
+    useEffect(() => {
         if (typeof window === 'undefined') return
         if (storedConsent || gpcEnabled === true) return
 
         const timer = setTimeout(() => setShowBanner(true), 1000)
         return () => clearTimeout(timer)
-    })
+    }, [storedConsent, gpcEnabled])
 
     // Auto-decline for GPC users (save to localStorage, no state update needed)
-    if (gpcEnabled === true && !storedConsent) {
-        saveConsent('declined')
-    }
+    useEffect(() => {
+        if (gpcEnabled === true && !storedConsent) {
+            saveConsent('declined')
+        }
+    }, [gpcEnabled, storedConsent])
 
     const handleAccept = useCallback(() => {
         saveConsent('accepted')
@@ -126,17 +81,12 @@ export function ConsentBanner() {
 
     const handleDecline = useCallback(() => {
         saveConsent('declined')
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
         setShowBanner(false)
         setShowConfirmation(true)
 
         // Hide confirmation after 5 seconds
         setTimeout(() => setShowConfirmation(false), 5000)
-<<<<<<< HEAD
-    }
-=======
     }, [])
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 
     // Opt-Out Confirmation (required by 2026 regulations)
     if (showConfirmation) {
@@ -165,11 +115,7 @@ export function ConsentBanner() {
         )
     }
 
-<<<<<<< HEAD
-    if (!showBanner) return null
-=======
     if (!showBanner || !shouldShowBanner) return null
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 
     return (
         <div className="fixed bottom-0 left-0 right-0 z-50 p-4 md:p-6">

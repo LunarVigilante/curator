@@ -1,26 +1,19 @@
 /**
  * SQL Query Validator for AI-Generated Queries
- * 
+ *
  * Prevents SQL injection and ensures AI queries only access allowed tables/columns.
  * Blocks dangerous operations like DELETE, DROP, UPDATE.
  */
 
 // Allowed tables for AI queries (read-only access)
-<<<<<<< HEAD
-=======
 // Note: profiles table access is controlled via BLOCKED_COLUMNS which excludes
 // sensitive fields (email, api_key, etc). All non-blocked columns are considered public.
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 const ALLOWED_TABLES = new Set([
     'global_items',
     'categories',
     'tags',
     'item_tags',
-<<<<<<< HEAD
-    'profiles',  // Only public fields
-=======
     'profiles',
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 ])
 
 // Blocked columns (sensitive data)

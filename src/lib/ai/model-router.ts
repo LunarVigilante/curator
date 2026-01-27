@@ -1,22 +1,15 @@
 /**
  * Model Router with Fallback Support
- * 
+ *
  * Implements resilience patterns:
  * - Priority-based provider selection
  * - Automatic failover on errors
  * - Cost/complexity routing
-<<<<<<< HEAD
- * - Circuit breaker pattern
- */
-
-import { callLLM, type LLMOptions } from '@/lib/llm'
-=======
  * - Circuit breaker pattern (distributed via Upstash)
  */
 
 import { callLLM, type LLMOptions } from '@/lib/llm'
 import { Redis } from '@upstash/redis'
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 
 export interface ProviderConfig {
     name: string
@@ -76,10 +69,6 @@ const PROVIDERS: ProviderConfig[] = [
     },
 ]
 
-<<<<<<< HEAD
-// Circuit breaker state (in-memory, consider Upstash for distributed)
-const circuitState = new Map<string, {
-=======
 const CIRCUIT_THRESHOLD = 3 // failures before opening
 const CIRCUIT_RESET_MS = 60000 // 1 minute reset
 const CIRCUIT_KEY_PREFIX = 'circuit:'
@@ -104,48 +93,11 @@ function getRedis(): Redis | null {
 
 // In-memory fallback when Upstash not available
 const inMemoryCircuitState = new Map<string, {
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
     failures: number
     lastFailure: number
     isOpen: boolean
 }>()
 
-<<<<<<< HEAD
-const CIRCUIT_THRESHOLD = 3 // failures before opening
-const CIRCUIT_RESET_MS = 60000 // 1 minute reset
-
-/**
- * Check if circuit breaker is open for a provider
- */
-function isCircuitOpen(provider: string): boolean {
-    const state = circuitState.get(provider)
-    if (!state) return false
-
-    // Check if we should reset
-    if (state.isOpen && Date.now() - state.lastFailure > CIRCUIT_RESET_MS) {
-        state.isOpen = false
-        state.failures = 0
-        return false
-    }
-
-    return state.isOpen
-}
-
-/**
- * Record a failure for circuit breaker
- */
-function recordFailure(provider: string): void {
-    const state = circuitState.get(provider) || { failures: 0, lastFailure: 0, isOpen: false }
-    state.failures++
-    state.lastFailure = Date.now()
-
-    if (state.failures >= CIRCUIT_THRESHOLD) {
-        state.isOpen = true
-        console.warn(`[ModelRouter] Circuit opened for ${provider}`)
-    }
-
-    circuitState.set(provider, state)
-=======
 /**
  * Check if circuit breaker is open for a provider (distributed)
  */
@@ -223,16 +175,11 @@ async function recordFailure(provider: string): Promise<void> {
     } catch (error) {
         console.warn('[ModelRouter] Redis error recording failure:', error)
     }
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 }
 
 /**
  * Record a success (resets circuit breaker)
  */
-<<<<<<< HEAD
-function recordSuccess(provider: string): void {
-    circuitState.delete(provider)
-=======
 async function recordSuccess(provider: string): Promise<void> {
     const client = getRedis()
 
@@ -246,7 +193,6 @@ async function recordSuccess(provider: string): Promise<void> {
     } catch (error) {
         console.warn('[ModelRouter] Redis error recording success:', error)
     }
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 }
 
 /**
@@ -293,11 +239,6 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
         maxRetries = 3
     } = options
 
-<<<<<<< HEAD
-    // Sort by priority
-    const sortedProviders = [...PROVIDERS]
-        .filter(p => p.isAvailable && !isCircuitOpen(p.name))
-=======
     // Filter available providers (check circuits in parallel)
     const circuitChecks = await Promise.all(
         PROVIDERS.map(async p => ({
@@ -309,7 +250,6 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
     const sortedProviders = circuitChecks
         .filter(c => c.provider.isAvailable && !c.isOpen)
         .map(c => c.provider)
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
         .sort((a, b) => a.priority - b.priority)
 
     if (sortedProviders.length === 0) {
@@ -343,11 +283,7 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
                 const response = await callLLM(llmOptions)
 
                 // Success - reset circuit
-<<<<<<< HEAD
-                recordSuccess(provider.name)
-=======
                 await recordSuccess(provider.name)
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 
                 return {
                     response,
@@ -363,42 +299,24 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
                 const isRetryable = isRetryableError(lastError)
 
                 if (!isRetryable) {
-<<<<<<< HEAD
-                    recordFailure(provider.name)
-                    break // Try next provider
-                }
-
-                // Exponential backoff
-=======
                     // Non-retryable error - break and move to next provider
-                    // Failure will be recorded after the retry loop
                     break
                 }
 
                 // Exponential backoff for retryable errors
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
                 await sleep(Math.pow(2, retry) * 1000)
             }
         }
 
-<<<<<<< HEAD
-        // Provider exhausted, try next
-        recordFailure(provider.name)
-=======
         // Provider exhausted after all retries, record failure and try next
         await recordFailure(provider.name)
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
     }
 
     // All providers failed - return static fallback
     console.error('[ModelRouter] All providers failed:', lastError?.message)
 
     return {
-<<<<<<< HEAD
-        response: getStaticFallback(prompt),
-=======
         response: getStaticFallback(),
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
         provider: 'static',
         model: 'none',
         fallbackUsed: true,
@@ -421,11 +339,7 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-<<<<<<< HEAD
-function getStaticFallback(prompt: string): string {
-=======
 function getStaticFallback(): string {
->>>>>>> 01839eabdfee0806ce680f33018afe84833551be
     // Return a safe static response when all AI providers fail
     return JSON.stringify({
         error: false,
