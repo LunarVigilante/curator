@@ -1,0 +1,101 @@
+title = "Curator Secret Scan Configuration"
+
+[extend]
+# Use the default gitleaks rules as a base
+useDefault = true
+
+# Custom rules for Curator-specific patterns
+[[rules]]
+id = "supabase-service-role"
+description = "Supabase Service Role Key"
+regex = '''eyJ[A-Za-z0-9-_]{100,}\.eyJ[A-Za-z0-9-_]{50,}'''
+keywords = ["supabase", "service_role", "SUPABASE_SERVICE_ROLE"]
+entropy = 4.5
+
+[[rules]]
+id = "supabase-anon-key"
+description = "Supabase Anonymous Key"
+regex = '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9-_]{50,}'''
+keywords = ["supabase", "anon", "SUPABASE_ANON"]
+
+[[rules]]
+id = "upstash-token"
+description = "Upstash Redis Token"
+regex = '''AX[a-zA-Z0-9_-]{30,}'''
+keywords = ["upstash", "redis"]
+
+[[rules]]
+id = "axiom-token"
+description = "Axiom API Token"
+regex = '''xaat-[a-zA-Z0-9]{32,}'''
+keywords = ["axiom"]
+
+[[rules]]
+id = "openrouter-key"
+description = "OpenRouter API Key"
+regex = '''sk-or-v1-[a-zA-Z0-9]{64}'''
+keywords = ["openrouter"]
+
+[[rules]]
+id = "openai-key"
+description = "OpenAI API Key"
+regex = '''sk-[a-zA-Z0-9]{48}'''
+keywords = ["openai", "OPENAI_API_KEY"]
+
+[[rules]]
+id = "anthropic-key"
+description = "Anthropic API Key"
+regex = '''sk-ant-[a-zA-Z0-9-_]{95}'''
+keywords = ["anthropic", "ANTHROPIC_API_KEY"]
+
+[[rules]]
+id = "voyage-key"
+description = "Voyage AI API Key"
+regex = '''pa-[A-Za-z0-9]{32,}'''
+keywords = ["voyage"]
+
+[[rules]]
+id = "sentry-dsn"
+description = "Sentry DSN"
+regex = '''https://[a-f0-9]{32}@[a-z0-9]+\.ingest\.sentry\.io/[0-9]+'''
+keywords = ["sentry", "dsn"]
+
+[[rules]]
+id = "tmdb-key"
+description = "TMDB API Key"
+regex = '''[a-f0-9]{32}'''
+keywords = ["tmdb", "TMDB_API_KEY"]
+entropy = 3.5
+
+[[rules]]
+id = "spotify-secret"
+description = "Spotify Client Secret"
+regex = '''[a-f0-9]{32}'''
+keywords = ["spotify", "SPOTIFY_CLIENT_SECRET"]
+entropy = 3.5
+
+# Allowlist - files and patterns to ignore
+[allowlist]
+description = "Global allowlist"
+
+paths = [
+    '''\.env\.example''',
+    '''node_modules''',
+    '''\.next''',
+    '''package-lock\.json''',
+    '''\.git''',
+    '''dist''',
+    '''build''',
+    '''\.vercel''',
+    '''supabase/migrations'''
+]
+
+regexes = [
+    # Placeholder patterns in .env.example
+    '''eyJhbG\.\.\.''',
+    '''your-.*-here''',
+    '''your-project''',
+    '''\[project-ref\]''',
+    '''\[password\]''',
+    '''\[region\]'''
+]

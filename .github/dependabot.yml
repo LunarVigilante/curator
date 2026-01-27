@@ -4,10 +4,31 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+    groups:
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      dnd-kit:
+        patterns:
+          - "@dnd-kit/*"
+      supabase:
+        patterns:
+          - "@supabase/*"
+      upstash:
+        patterns:
+          - "@upstash/*"
+      dev-dependencies:
+        dependency-type: "development"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 10
+    
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+      
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

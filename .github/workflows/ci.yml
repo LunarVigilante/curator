@@ -35,6 +35,10 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Security Audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       # Note: 'prisma generate' is not needed as we use Drizzle ORM (schema.ts).
       # If we were using Drizzle Introspection, we might run 'npx drizzle-kit push' or 'generate',
       # but for type checking, the static schema file is sufficient.
@@ -51,3 +55,15 @@ jobs:
             # Supabase credentials from GitHub Secrets
             NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Generate SBOM
+        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.json
+        continue-on-error: true
+        
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          if-no-files-found: ignore
+
