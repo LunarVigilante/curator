@@ -1,0 +1,3 @@
+-- Migration: fix_notifications_rls_policy
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.

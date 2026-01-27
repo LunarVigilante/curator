@@ -1,0 +1,3 @@
+-- Migration: fix_get_short_description_items_search_path
+-- This migration was applied directly to the remote database.
+-- Stub file created for local tracking.
