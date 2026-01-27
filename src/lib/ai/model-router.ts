@@ -214,16 +214,17 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
                 const isRetryable = isRetryableError(lastError)
 
                 if (!isRetryable) {
-                    recordFailure(provider.name)
-                    break // Try next provider
+                    // Non-retryable error - break and move to next provider
+                    // Failure will be recorded after the retry loop
+                    break
                 }
 
-                // Exponential backoff
+                // Exponential backoff for retryable errors
                 await sleep(Math.pow(2, retry) * 1000)
             }
         }
 
-        // Provider exhausted, try next
+        // Provider exhausted after all retries, record failure and try next
         recordFailure(provider.name)
     }
 
