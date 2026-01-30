@@ -49,7 +49,7 @@ export function ItemDetailSidebar({
     const metadata = item.metadata as Record<string, any> || {}
 
     return (
-        <div className="w-full md:w-[400px] flex-shrink-0 flex flex-col gap-6 md:sticky md:top-0 max-h-[85vh] overflow-hidden">
+        <div className="w-full md:w-[20vw] lg:w-[17vw] xl:w-[15vw] flex-shrink-0 flex flex-col gap-6 sticky top-0 max-h-[85vh] overflow-hidden">
             {/* Main Poster/Image with Dashed Border */}
             <div className="relative p-1.5 border border-dashed border-zinc-800 rounded-2xl group">
                 <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl shadow-black/80 ring-1 ring-white/10">
@@ -217,6 +217,7 @@ export function ItemDetailSidebar({
                         sourceItemId={item.id}
                         variant="compact"
                         onItemClick={onSimilarItemClick}
+                        initialCategory={item.category_type}
                     />
                 </ScrollArea>
             </div>

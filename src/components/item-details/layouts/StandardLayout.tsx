@@ -55,7 +55,7 @@ export function StandardLayout({
     const isTV = category === 'TV' || category === 'TV_SHOW'
 
     return (
-        <div className="relative z-10 flex flex-col md:flex-row w-full h-full">
+        <div className="relative z-10 flex flex-wrap items-start content-start w-full h-full overflow-y-auto md:overflow-hidden">
             {/* Backdrop */}
             {item.backdrop_path && (
                 <>
@@ -69,7 +69,7 @@ export function StandardLayout({
 
             {/* --- LEFT COLUMN: Sidebar --- */}
             <motion.div
-                className="relative z-10 p-6 md:p-8 md:pr-0"
+                className="relative z-10 p-6 md:p-8 md:pr-0 flex-shrink-0"
                 variants={sidebarVariants}
                 initial="hidden"
                 animate="visible"
@@ -88,7 +88,7 @@ export function StandardLayout({
             </motion.div>
 
             {/* --- RIGHT COLUMN: Content with fixed header/footer and scrollable description --- */}
-            <div className="relative z-10 flex-1 flex flex-col p-6 md:p-8 overflow-hidden">
+            <div className="relative z-10 flex-[1_1_45ch] flex flex-col p-6 md:p-8 overflow-hidden h-full">
                 <motion.div
                     className="flex flex-col h-full"
                     variants={containerVariants}

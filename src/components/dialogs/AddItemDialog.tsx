@@ -14,6 +14,7 @@ import ImageCropper from '@/components/ImageCropper'
 import { toast } from 'sonner'
 import { MediaResult } from '@/lib/services/media/types'
 import { useDebounce } from '@/hooks/useDebounce'
+import { SearchResultItem, SearchResultsContainer } from './add-item/SearchResultComponents'
 
 export default function AddItemDialog({
     categoryId,
@@ -433,109 +434,52 @@ export default function AddItemDialog({
 
                             {/* Media Results Selection */}
                             {mediaResults.length > 0 && (
-                                <div className="mt-2 grid grid-cols-1 gap-2 p-2 bg-zinc-900/50 rounded-lg border border-white/5">
-                                    <div className="flex items-center justify-between px-2">
-                                        <span className="text-xs font-medium text-muted-foreground">Select to Auto-fill:</span>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-6 text-[10px]"
-                                            onClick={() => setMediaResults([])}
-                                            aria-label="Clear search results"
-                                        >
-                                            <X className="h-3 w-3 mr-1" aria-hidden="true" /> Clear
-                                        </Button>
-                                    </div>
-                                    <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                        {mediaResults.map((result, idx) => (
-                                            <button
-                                                key={idx}
-                                                type="button"
-                                                aria-label={`Select ${result.title}`}
-                                                className={`flex items-start gap-3 p-2 rounded hover:bg-white/5 transition-colors text-left w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${selectedResultId === result.id
-                                                    ? 'bg-blue-500/10 ring-1 ring-blue-500/50'
-                                                    : ''
-                                                    }`}
-                                                onClick={() => selectResult(result, true)}
-                                            >
-                                                {result.imageUrl ? (
-                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden relative">
-                                                        <Image src={result.imageUrl} alt={result.title} fill className="object-cover" />
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 flex items-center justify-center">
-                                                        <ImageIcon className="w-4 h-4 text-zinc-600" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0 py-0.5">
-                                                    <div className="flex items-baseline justify-between gap-2">
-                                                        <span className={`font-medium text-sm truncate transition-colors ${selectedResultId === result.id ? 'text-blue-400' : 'text-zinc-200'
-                                                            }`}>{result.title}</span>
-                                                        {result.year && <span className="text-[10px] text-zinc-500 font-mono">{result.year}</span>}
-                                                    </div>
-                                                    <p className="text-[10px] text-zinc-400 line-clamp-2 mt-0.5 leading-relaxed">{result.description}</p>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                                <SearchResultsContainer
+                                    title="Select to Auto-fill:"
+                                    variant="media"
+                                    onClear={() => setMediaResults([])}
+                                >
+                                    {mediaResults.map((result, idx) => (
+                                        <SearchResultItem
+                                            key={idx}
+                                            title={result.title}
+                                            imageUrl={result.imageUrl}
+                                            year={result.year}
+                                            description={result.description}
+                                            isSelected={selectedResultId === result.id}
+                                            variant="media"
+                                            onClick={() => selectResult(result, true)}
+                                        />
+                                    ))}
+                                </SearchResultsContainer>
                             )}
 
                             {/* Vector Search Results (Describe It mode) */}
                             {vectorResults.length > 0 && (
-                                <div className="mt-2 grid grid-cols-1 gap-2 p-2 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-lg border border-purple-500/20">
-                                    <div className="flex items-center justify-between px-2">
-                                        <span className="text-xs font-medium text-purple-300 flex items-center gap-1.5">
-                                            <Sparkles className="h-3 w-3" /> AI Matches
-                                        </span>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-6 text-[10px]"
-                                            onClick={() => setVectorResults([])}
-                                        >
-                                            <X className="h-3 w-3 mr-1" /> Clear
-                                        </Button>
-                                    </div>
-                                    <div className="max-h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                        {vectorResults.map((result, idx) => (
-                                            <button
-                                                key={idx}
-                                                type="button"
-                                                className="flex items-start gap-3 p-2 rounded hover:bg-white/5 transition-colors text-left w-full"
-                                                onClick={() => {
-                                                    // Fill form with vector result
-                                                    setFormData(prev => ({
-                                                        ...prev,
-                                                        name: result.title,
-                                                        image: result.posterUrl || prev.image,
-                                                    }))
-                                                    setVectorResults([])
-                                                    toast.success(`Selected: ${result.title}`)
-                                                }}
-                                            >
-                                                {result.posterUrl ? (
-                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 overflow-hidden relative">
-                                                        <Image src={result.posterUrl} alt={result.title} fill className="object-cover" />
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-10 h-14 shrink-0 rounded bg-zinc-800 flex items-center justify-center">
-                                                        <ImageIcon className="w-4 h-4 text-zinc-600" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0 py-0.5">
-                                                    <div className="flex items-baseline justify-between gap-2">
-                                                        <span className="font-medium text-sm truncate text-zinc-200">{result.title}</span>
-                                                        <span className="text-[10px] text-purple-400 bg-purple-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
-                                                            <Sparkles className="h-2.5 w-2.5" />
-                                                            {Math.round(result.similarity * 100)}%
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                                <SearchResultsContainer
+                                    title="AI Matches"
+                                    variant="vector"
+                                    onClear={() => setVectorResults([])}
+                                >
+                                    {vectorResults.map((result, idx) => (
+                                        <SearchResultItem
+                                            key={idx}
+                                            title={result.title}
+                                            imageUrl={result.posterUrl}
+                                            similarity={result.similarity}
+                                            variant="vector"
+                                            onClick={() => {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    name: result.title,
+                                                    image: result.posterUrl || prev.image,
+                                                }))
+                                                setVectorResults([])
+                                                toast.success(`Selected: ${result.title}`)
+                                            }}
+                                        />
+                                    ))}
+                                </SearchResultsContainer>
                             )}
 
                             {/* No Vector Results Message */}

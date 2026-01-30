@@ -1,10 +1,25 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Film, Sparkles } from 'lucide-react'
+import { Film, Sparkles, Loader2 } from 'lucide-react'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from '@/components/ui/select'
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger
+} from '@/components/ui/tooltip'
+import { CATEGORY_LABELS } from '@/lib/constants'
+import { getBatchSimilarityExplanations, type SimilarityExplanation } from '@/lib/actions/similarity-explanations'
 
 interface RelatedItem {
     id: string
@@ -12,6 +27,8 @@ interface RelatedItem {
     image_url: string | null
     category_type: string | null
     similarity: number
+    shared_genres: string[] | null
+    shared_tags: string[] | null
 }
 
 interface RelatedItemsRowProps {
@@ -23,21 +40,59 @@ interface RelatedItemsRowProps {
     className?: string
     /** Optional callback when an item is clicked. If provided, prevents navigation and calls this instead. */
     onItemClick?: (itemId: string) => void
+    /** Enable internal category filter dropdown */
+    showCategoryFilter?: boolean
+    /** Initial category to filter by (defaults to source item's category) */
+    initialCategory?: string | null
 }
 
 export function RelatedItemsRow({
     sourceItemId,
-    matchCount = 12, // Default initial batch
+    matchCount = 24, // Fetch more initially to cover filtered views
     categoryFilter = null,
     variant = 'standard',
     className = '',
-    onItemClick
+    onItemClick,
+    showCategoryFilter = true,
+    initialCategory = null
 }: RelatedItemsRowProps) {
     const [items, setItems] = useState<RelatedItem[]>([])
+    const [allItems, setAllItems] = useState<RelatedItem[]>([]) // Store all fetched items for filtering
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
-    const [visibleCount, setVisibleCount] = useState(6)
+    const [visibleCount, setVisibleCount] = useState(5) // Show at least 5 initially
     const [fetchLimit, setFetchLimit] = useState(matchCount)
+    const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'all')
+    const [explanations, setExplanations] = useState<Map<string, SimilarityExplanation>>(new Map())
+    const [loadingExplanations, setLoadingExplanations] = useState(false)
+
+    // Compute available categories from fetched items
+    const availableCategories = useMemo(() => {
+        const categorySet = new Set<string>()
+        allItems.forEach(item => {
+            if (item.category_type) {
+                categorySet.add(item.category_type)
+            }
+        })
+        return Array.from(categorySet).sort()
+    }, [allItems])
+
+    // Filter items based on selected category
+    const filteredItems = useMemo(() => {
+        if (selectedCategory === 'all') {
+            return allItems
+        }
+        return allItems.filter(item => item.category_type === selectedCategory)
+    }, [allItems, selectedCategory])
+
+    // Auto-fetch more items if the filtered category has fewer than 5 items
+    useEffect(() => {
+        const minItems = 5
+        if (!loading && filteredItems.length < minItems && filteredItems.length > 0 && allItems.length === fetchLimit) {
+            // Try fetching more to get at least 5 items for this category
+            setFetchLimit(prev => prev + 12)
+        }
+    }, [filteredItems.length, allItems.length, fetchLimit, loading])
 
     useEffect(() => {
         async function fetchRelatedItems() {
@@ -49,11 +104,38 @@ export function RelatedItemsRow({
                 const { createClient } = await import('@/lib/supabase/client')
                 const supabase = createClient()
 
-                const { data, error: rpcError } = await supabase.rpc('find_similar_items', {
+                // When using internal filter, fetch all categories; otherwise use provided filter
+                const effectiveCategoryFilter = showCategoryFilter ? null : categoryFilter
+
+                // Try the enhanced RPC first, fallback to basic if it fails
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                let data: any[] | null = null
+                let rpcError: { message: string } | null = null
+
+                // Try enhanced RPC with reasons
+                const enhancedResult = await (supabase.rpc as any)('find_similar_items_with_reasons', {
                     source_item_id: sourceItemId,
-                    match_count: fetchLimit, // Use dynamic limit
-                    category_filter: categoryFilter
+                    match_count: fetchLimit,
+                    category_filter: effectiveCategoryFilter
                 })
+
+                if (enhancedResult.error) {
+                    // Fallback to basic RPC
+                    console.warn('Enhanced RPC failed, falling back to basic:', enhancedResult.error)
+                    const basicResult = await (supabase.rpc as any)('find_similar_items', {
+                        source_item_id: sourceItemId,
+                        match_count: fetchLimit,
+                        category_filter: effectiveCategoryFilter
+                    })
+                    data = basicResult.data?.map((item: RelatedItem) => ({
+                        ...item,
+                        shared_genres: null,
+                        shared_tags: null
+                    })) || null
+                    rpcError = basicResult.error
+                } else {
+                    data = enhancedResult.data
+                }
 
                 if (rpcError) {
                     console.error('Error fetching related items:', rpcError)
@@ -61,7 +143,7 @@ export function RelatedItemsRow({
                     return
                 }
 
-                setItems(data || [])
+                setAllItems(data || [])
             } catch (err) {
                 console.error('Unexpected error:', err)
                 setError('Failed to load related items')
@@ -75,7 +157,39 @@ export function RelatedItemsRow({
         } else {
             setLoading(false)
         }
-    }, [sourceItemId, fetchLimit, categoryFilter])
+    }, [sourceItemId, fetchLimit, categoryFilter, showCategoryFilter])
+
+    // Fetch LLM-generated explanations for visible items
+    useEffect(() => {
+        async function fetchExplanations() {
+            if (allItems.length === 0 || !sourceItemId) return
+
+            // Get IDs of visible items that don't have explanations yet
+            const visibleIds = allItems
+                .slice(0, visibleCount)
+                .map(item => item.id)
+                .filter(id => !explanations.has(id))
+
+            if (visibleIds.length === 0) return
+
+            setLoadingExplanations(true)
+            try {
+                const newExplanations = await getBatchSimilarityExplanations(sourceItemId, visibleIds)
+                setExplanations(prev => {
+                    const merged = new Map(prev)
+                    newExplanations.forEach((value, key) => merged.set(key, value))
+                    return merged
+                })
+            } catch (err) {
+                console.error('Failed to fetch similarity explanations:', err)
+            } finally {
+                setLoadingExplanations(false)
+            }
+        }
+
+        fetchExplanations()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [allItems, visibleCount, sourceItemId])
 
     const handleLoadMore = () => {
         const nextStep = 6
@@ -83,7 +197,7 @@ export function RelatedItemsRow({
 
         // precise "has more in DB" check isn't easy without count, 
         // effectively if we showed everything we fetched, try fetching more
-        if (nextVisible > items.length) {
+        if (nextVisible > filteredItems.length) {
             setFetchLimit(prev => prev + 12)
         }
         setVisibleCount(nextVisible)
@@ -95,24 +209,46 @@ export function RelatedItemsRow({
         }
     }
 
-    const visibleItems = items.slice(0, visibleCount)
-    // Show "Load More" if we have more locally OR if we reached our fetch limit (implying there might be more in DB)
-    const showLoadMore = items.length > visibleCount || (items.length === fetchLimit && items.length > 0)
+    const visibleItems = filteredItems.slice(0, visibleCount)
+    // Always show "Load More" when there are items - allows user to request more even if we think there aren't
+    const showLoadMore = filteredItems.length > 0
 
     // Don't render anything if no items and not loading
-    if (!loading && items.length === 0) {
+    if (!loading && allItems.length === 0) {
         return null
+    }
+
+    // Helper to get category label
+    const getCategoryLabel = (categoryType: string): string => {
+        return CATEGORY_LABELS[categoryType] || categoryType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     }
 
     // Compact variant: Vertical list with small horizontal cards (for sidebar)
     if (variant === 'compact') {
         return (
             <div className={`pt-6 border-t border-white/5 ${className}`}>
-                <h5 className="text-[10px] uppercase tracking-widest text-zinc-500 font-black mb-4 flex items-center gap-2">
-                    <Sparkles className="w-3 h-3" /> Similar Items
-                </h5>
+                <div className="flex items-center justify-between mb-4">
+                    <h5 className="text-[10px] uppercase tracking-widest text-zinc-500 font-black flex items-center gap-2">
+                        <Sparkles className="w-3 h-3" /> Similar Items
+                    </h5>
+                    {showCategoryFilter && availableCategories.length > 1 && (
+                        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                            <SelectTrigger size="sm" className="h-6 w-auto min-w-[80px] text-[10px] border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-white">
+                                <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-zinc-900 border-zinc-700">
+                                <SelectItem value="all" className="text-xs text-zinc-300">All</SelectItem>
+                                {availableCategories.map((cat) => (
+                                    <SelectItem key={cat} value={cat} className="text-xs text-zinc-300">
+                                        {getCategoryLabel(cat)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    )}
+                </div>
 
-                {loading && items.length === 0 ? (
+                {loading && allItems.length === 0 ? (
                     // Skeleton loading state - vertical stack (initial load only)
                     <div className="flex flex-col gap-2">
                         {Array.from({ length: 4 }).map((_, i) => (
@@ -161,27 +297,101 @@ export function RelatedItemsRow({
                                 </>
                             )
 
+                            // Build tooltip content showing why it's similar
+                            const sharedGenres = item.shared_genres?.filter(Boolean) || []
+                            const sharedTags = item.shared_tags?.filter(Boolean) || []
+                            const hasReasons = sharedGenres.length > 0 || sharedTags.length > 0
+                            const explanation = explanations.get(item.id)
+                            const isLoadingExplanation = loadingExplanations && !explanation
+
+                            const tooltipContent = (
+                                <div className="max-w-xs space-y-2">
+                                    <p className="font-medium text-cyan-400">
+                                        {Math.round(item.similarity * 100)}% similar
+                                        {item.category_type ? ` • ${getCategoryLabel(item.category_type)}` : ''}
+                                    </p>
+
+                                    {/* LLM-generated explanation */}
+                                    {explanation && (
+                                        <div className="text-xs space-y-1.5 border-t border-zinc-700/50 pt-2">
+                                            <p className="text-zinc-300 leading-relaxed italic">
+                                                &ldquo;{explanation.commonalities}&rdquo;
+                                            </p>
+                                            {explanation.differences && (
+                                                <p className="text-zinc-500 leading-relaxed text-[11px]">
+                                                    <span className="text-amber-500/80">Differs:</span> {explanation.differences}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Loading state */}
+                                    {isLoadingExplanation && (
+                                        <div className="flex items-center gap-1.5 text-xs text-zinc-500 pt-1">
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                            <span>Analyzing similarity...</span>
+                                        </div>
+                                    )}
+
+                                    {/* Fallback to genres/tags if no explanation yet */}
+                                    {!explanation && !isLoadingExplanation && hasReasons && (
+                                        <div className="text-xs text-zinc-400 space-y-1">
+                                            {sharedGenres.length > 0 && (
+                                                <p>
+                                                    <span className="text-zinc-500">Genres:</span>{' '}
+                                                    {sharedGenres.slice(0, 3).join(', ')}
+                                                    {sharedGenres.length > 3 && ` +${sharedGenres.length - 3} more`}
+                                                </p>
+                                            )}
+                                            {sharedTags.length > 0 && (
+                                                <p>
+                                                    <span className="text-zinc-500">Tags:</span>{' '}
+                                                    {sharedTags.slice(0, 3).join(', ')}
+                                                    {sharedTags.length > 3 && ` +${sharedTags.length - 3} more`}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )
+
                             // Use button if onItemClick is provided, otherwise use Link
                             if (onItemClick) {
                                 return (
-                                    <button
-                                        key={item.id}
-                                        onClick={() => handleItemClick(item.id)}
-                                        className="flex gap-2.5 items-center group cursor-pointer p-1.5 -mx-1.5 rounded-lg hover:bg-white/5 transition-colors text-left w-full"
-                                    >
-                                        {content}
-                                    </button>
+                                    <TooltipProvider key={item.id} delayDuration={300}>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <button
+                                                    onClick={() => handleItemClick(item.id)}
+                                                    className="flex gap-2.5 items-center group cursor-pointer p-1.5 -mx-1.5 rounded-lg hover:bg-white/5 transition-colors text-left w-full"
+                                                >
+                                                    {content}
+                                                </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="bg-zinc-900 border-zinc-700 text-zinc-200 p-2 z-[100]">
+                                                {tooltipContent}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
                                 )
                             }
 
                             return (
-                                <Link
-                                    key={item.id}
-                                    href={`/admin/data-browser?id=${item.id}`}
-                                    className="flex gap-2.5 items-center group cursor-pointer p-1.5 -mx-1.5 rounded-lg hover:bg-white/5 transition-colors"
-                                >
-                                    {content}
-                                </Link>
+                                <TooltipProvider key={item.id} delayDuration={300}>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Link
+                                                href={`/admin/data-browser?id=${item.id}`}
+                                                className="flex gap-2.5 items-center group cursor-pointer p-1.5 -mx-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                                            >
+                                                {content}
+                                            </Link>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="bg-zinc-900 border-zinc-700 text-zinc-200 p-2 z-[100]">
+                                            {tooltipContent}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                             )
                         })}
 
@@ -206,11 +416,28 @@ export function RelatedItemsRow({
     // Standard variant: Horizontal scroll with vertical poster cards (for mobile/bottom)
     return (
         <div className={`space-y-3 ${className}`}>
-            <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3" /> Similar Items
-            </h5>
+            <div className="flex items-center justify-between">
+                <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> Similar Items
+                </h5>
+                {showCategoryFilter && availableCategories.length > 1 && (
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                        <SelectTrigger size="sm" className="h-6 w-auto min-w-[80px] text-[10px] border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-white">
+                            <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-900 border-zinc-700">
+                            <SelectItem value="all" className="text-xs text-zinc-300">All</SelectItem>
+                            {availableCategories.map((cat) => (
+                                <SelectItem key={cat} value={cat} className="text-xs text-zinc-300">
+                                    {getCategoryLabel(cat)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+            </div>
 
-            {loading && items.length === 0 ? (
+            {loading && allItems.length === 0 ? (
                 // Skeleton loading state - horizontal
                 <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
                     {Array.from({ length: 5 }).map((_, i) => (
