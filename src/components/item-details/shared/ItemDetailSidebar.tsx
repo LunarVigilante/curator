@@ -50,8 +50,8 @@ export function ItemDetailSidebar({
 
     return (
         <div className="w-full md:w-[20vw] lg:w-[17vw] xl:w-[15vw] flex-shrink-0 flex flex-col gap-6 sticky top-0 max-h-[85vh] overflow-hidden">
-            {/* Main Poster/Image with Dashed Border */}
-            <div className="relative p-1.5 border border-dashed border-zinc-800 rounded-2xl group">
+            {/* Main Poster/Image with Dashed Border (hidden when image present) */}
+            <div className={`relative p-1.5 rounded-2xl group ${item.image_url ? '' : 'border border-dashed border-zinc-800'}`}>
                 <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl shadow-black/80 ring-1 ring-white/10">
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity z-10" />
                     {item.image_url ? (
@@ -93,7 +93,7 @@ export function ItemDetailSidebar({
             <div className="flex flex-wrap gap-2">
                 {/* IMDb Link */}
                 {item.external_ids?.imdb && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#F5C518]/10 text-[#F5C518] border-[#F5C518]/20 hover:bg-[#F5C518]/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-[#F5C518]/10 text-[#F5C518] border-[#F5C518]/20 hover:!bg-[#C49A13] hover:!text-white hover:!border-[#C49A13] h-8 transition-colors">
                         <Link href={`https://www.imdb.com/title/${item.external_ids.imdb}`} target="_blank">
                             <Film className="w-3 h-3 mr-1.5" /> IMDb
                         </Link>
@@ -102,7 +102,7 @@ export function ItemDetailSidebar({
 
                 {/* TMDB Link */}
                 {item.external_ids?.tmdb && (isMovie || isTV) && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#01b4e4]/10 text-[#01b4e4] border-[#01b4e4]/20 hover:bg-[#01b4e4]/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-[#01b4e4]/10 text-[#01b4e4] border-[#01b4e4]/20 hover:!bg-[#018AB0] hover:!text-white hover:!border-[#018AB0] h-8 transition-colors">
                         <Link href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.external_ids.tmdb}`} target="_blank">
                             <Clapperboard className="w-3 h-3 mr-1.5" /> TMDB
                         </Link>
@@ -111,7 +111,7 @@ export function ItemDetailSidebar({
 
                 {/* Rotten Tomatoes Link (constructed from title) */}
                 {item.rotten_tomatoes_rating && (isMovie || isTV) && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#FA320A]/10 text-[#FA320A] border-[#FA320A]/20 hover:bg-[#FA320A]/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-[#FA320A]/10 text-[#FA320A] border-[#FA320A]/20 hover:!bg-[#C02808] hover:!text-white hover:!border-[#C02808] h-8 transition-colors">
                         <Link href={`https://www.rottentomatoes.com/search?search=${encodeURIComponent(item.title)}`} target="_blank">
                             🍅 RT
                         </Link>
@@ -120,7 +120,7 @@ export function ItemDetailSidebar({
 
                 {/* BGG Link */}
                 {category === 'BOARD_GAME' && item.external_ids?.bgg && (
-                    <Button asChild variant="outline" size="sm" className="bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-orange-500/10 text-orange-400 border-orange-500/20 hover:!bg-orange-600 hover:!text-white hover:!border-orange-600 h-8 transition-colors">
                         <Link href={`https://boardgamegeek.com/boardgame/${item.external_ids.bgg}`} target="_blank">
                             <ExternalLink className="w-3 h-3 mr-1.5" /> BGG
                         </Link>
@@ -129,7 +129,7 @@ export function ItemDetailSidebar({
 
                 {/* Spotify Link */}
                 {item.external_ids?.spotify && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#1DB954]/10 text-[#1DB954] border-[#1DB954]/20 hover:bg-[#1DB954]/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-[#1DB954]/10 text-[#1DB954] border-[#1DB954]/20 hover:!bg-[#168D40] hover:!text-white hover:!border-[#168D40] h-8 transition-colors">
                         <Link href={`https://open.spotify.com/${isMusicArtist ? 'artist' : 'album'}/${item.external_ids.spotify}`} target="_blank">
                             <Music className="w-3 h-3 mr-1.5" /> Spotify
                         </Link>
@@ -138,7 +138,7 @@ export function ItemDetailSidebar({
 
                 {/* AniList Link */}
                 {item.external_ids?.anilist && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#02A9FF]/10 text-[#02A9FF] border-[#02A9FF]/20 hover:bg-[#02A9FF]/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-[#02A9FF]/10 text-[#02A9FF] border-[#02A9FF]/20 hover:!bg-[#0287CC] hover:!text-white hover:!border-[#0287CC] h-8 transition-colors">
                         <Link href={`https://anilist.co/anime/${item.external_ids.anilist}`} target="_blank">
                             <Sparkles className="w-3 h-3 mr-1.5" /> AniList
                         </Link>
@@ -147,7 +147,7 @@ export function ItemDetailSidebar({
 
                 {/* IGDB Link */}
                 {item.external_ids?.igdb && isVideoGame && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#9147FF]/10 text-[#9147FF] border-[#9147FF]/20 hover:bg-[#9147FF]/20 h-8">
+                    <Button asChild variant="outline" size="sm" className="bg-[#9147FF]/10 text-[#9147FF] border-[#9147FF]/20 hover:!bg-[#7338CC] hover:!text-white hover:!border-[#7338CC] h-8 transition-colors">
                         <Link href={`https://www.igdb.com/games/${item.external_ids.igdb}`} target="_blank">
                             <Gamepad2 className="w-3 h-3 mr-1.5" /> IGDB
                         </Link>
@@ -211,7 +211,7 @@ export function ItemDetailSidebar({
 
             {/* Related Items (Scrollable Vertical List) */}
             <div className="flex-1 min-h-0 overflow-hidden">
-                <ScrollArea className="h-[280px]">
+                <ScrollArea className="h-full">
                     {/* RelatedItemsRow handles its own header and visibility */}
                     <RelatedItemsRow
                         sourceItemId={item.id}

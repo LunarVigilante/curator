@@ -59,6 +59,7 @@ export function RelatedItemsRow({
     const [items, setItems] = useState<RelatedItem[]>([])
     const [allItems, setAllItems] = useState<RelatedItem[]>([]) // Store all fetched items for filtering
     const [loading, setLoading] = useState(true)
+    const [loadingMore, setLoadingMore] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [visibleCount, setVisibleCount] = useState(5) // Show at least 5 initially
     const [fetchLimit, setFetchLimit] = useState(matchCount)
@@ -149,6 +150,7 @@ export function RelatedItemsRow({
                 setError('Failed to load related items')
             } finally {
                 setLoading(false)
+                setLoadingMore(false)
             }
         }
 
@@ -195,12 +197,15 @@ export function RelatedItemsRow({
         const nextStep = 6
         const nextVisible = visibleCount + nextStep
 
-        // precise "has more in DB" check isn't easy without count, 
-        // effectively if we showed everything we fetched, try fetching more
-        if (nextVisible > filteredItems.length) {
+        // Always show more items if we have them cached
+        setVisibleCount(nextVisible)
+
+        // If requesting more than we have, fetch more from DB
+        if (nextVisible > allItems.length) {
+            console.log('[RelatedItems] Fetching more items, current:', allItems.length, 'requested:', nextVisible, 'new limit:', fetchLimit + 12)
+            setLoadingMore(true)
             setFetchLimit(prev => prev + 12)
         }
-        setVisibleCount(nextVisible)
     }
 
     const handleItemClick = (itemId: string) => {
@@ -368,7 +373,7 @@ export function RelatedItemsRow({
                                                     {content}
                                                 </button>
                                             </TooltipTrigger>
-                                            <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="bg-zinc-900 border-zinc-700 text-zinc-200 p-2 z-[100]">
+                                            <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="!bg-black !border !border-zinc-700 text-zinc-200 p-3 z-[100] shadow-2xl">
                                                 {tooltipContent}
                                             </TooltipContent>
                                         </Tooltip>
@@ -387,7 +392,7 @@ export function RelatedItemsRow({
                                                 {content}
                                             </Link>
                                         </TooltipTrigger>
-                                        <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="bg-zinc-900 border-zinc-700 text-zinc-200 p-2 z-[100]">
+                                        <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="!bg-black !border !border-zinc-700 text-zinc-200 p-3 z-[100] shadow-2xl">
                                             {tooltipContent}
                                         </TooltipContent>
                                     </Tooltip>
@@ -401,10 +406,11 @@ export function RelatedItemsRow({
                                     e.preventDefault()
                                     handleLoadMore()
                                 }}
-                                disabled={loading}
-                                className="w-full text-xs text-cyan-500 hover:text-cyan-400 hover:underline py-2 transition-colors text-left mt-1 disabled:opacity-50"
+                                disabled={loadingMore}
+                                className="w-full text-xs text-cyan-500 hover:text-cyan-400 hover:underline py-2 transition-colors text-left mt-1 disabled:opacity-50 flex items-center gap-1.5"
                             >
-                                {loading ? 'Loading...' : 'Load more items...'}
+                                {loadingMore && <Loader2 className="w-3 h-3 animate-spin" />}
+                                {loadingMore ? 'Loading...' : 'Load more items...'}
                             </button>
                         )}
                     </div>

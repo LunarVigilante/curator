@@ -151,7 +151,7 @@ export async function generateEmbeddingsBatch(
         return texts.map(() => null);
     }
 
-    const validTexts = texts.map(t => t?.slice(0, 32000) || '');
+    const validTexts = texts.map(t => t?.slice(0, 120000) || ''); // Voyage-4 max input (120k context)
 
     try {
         const response = await fetch(VOYAGE_API_URL, {

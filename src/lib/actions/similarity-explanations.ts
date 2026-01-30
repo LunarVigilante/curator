@@ -192,19 +192,24 @@ export async function getSimilarityExplanation(
 ): Promise<SimilarityExplanation | null> {
     const supabase = await createServiceRoleClient()
 
-    // Check cache first
-    const { data: cached } = await supabase
-        .from('similarity_explanations')
-        .select('commonalities, differences')
-        .eq('source_item_id', sourceItemId)
-        .eq('similar_item_id', similarItemId)
-        .single()
+    // Check cache first (gracefully handle missing table)
+    try {
+        const { data: cached } = await supabase
+            .from('similarity_explanations')
+            .select('commonalities, differences')
+            .eq('source_item_id', sourceItemId)
+            .eq('similar_item_id', similarItemId)
+            .single()
 
-    if (cached) {
-        return {
-            commonalities: cached.commonalities,
-            differences: cached.differences
+        if (cached) {
+            return {
+                commonalities: cached.commonalities,
+                differences: cached.differences
+            }
         }
+    } catch (cacheError) {
+        // Table may not exist yet - continue to generate
+        console.warn('Cache lookup failed, generating fresh:', cacheError)
     }
 
     // Fetch both items' metadata
@@ -233,14 +238,41 @@ export async function getSimilarityExplanation(
         // Call LLM
         const response = await callLLMForJSON(userPrompt, SYSTEM_PROMPT, { maxTokens: 300 })
 
-        // Clean up response (strip markdown code blocks if present)
+        console.log('[Similarity] Raw LLM response length:', response?.length, 'first 200 chars:', response?.substring(0, 200))
+
+        // Clean up response - extract JSON from various wrappers
         let cleanResponse = response.trim()
-        if (cleanResponse.startsWith('```')) {
-            cleanResponse = cleanResponse.replace(/^```(json)?\n?/, '').replace(/\n?```$/, '')
+
+        // Remove markdown code blocks if present
+        cleanResponse = cleanResponse.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
+
+        // Try to find JSON object using regex (handles text before/after)
+        const jsonMatch = cleanResponse.match(/\{[\s\S]*"commonalities"[\s\S]*"differences"[\s\S]*\}/)
+        if (jsonMatch) {
+            cleanResponse = jsonMatch[0]
+        } else {
+            // Fallback: find first { and last }
+            const firstBrace = cleanResponse.indexOf('{')
+            const lastBrace = cleanResponse.lastIndexOf('}')
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                cleanResponse = cleanResponse.substring(firstBrace, lastBrace + 1)
+            }
         }
 
-        // Parse response
-        const parsed = JSON.parse(cleanResponse) as SimilarityExplanation
+        // Normalize whitespace (replace newlines/tabs with spaces, collapse multiple spaces)
+        cleanResponse = cleanResponse
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/\s{2,}/g, ' ')
+
+        // Try to parse
+        let parsed: SimilarityExplanation
+        try {
+            parsed = JSON.parse(cleanResponse) as SimilarityExplanation
+        } catch (parseErr) {
+            console.error('Failed to parse LLM response:', parseErr)
+            console.error('Cleaned response was:', cleanResponse.substring(0, 400))
+            return null
+        }
 
         // Validate response
         if (!parsed.commonalities || typeof parsed.commonalities !== 'string') {
@@ -282,23 +314,28 @@ export async function getBatchSimilarityExplanations(
 
     if (similarItemIds.length === 0) return results
 
-    // Fetch all cached explanations
-    const { data: cached } = await supabase
-        .from('similarity_explanations')
-        .select('similar_item_id, commonalities, differences')
-        .eq('source_item_id', sourceItemId)
-        .in('similar_item_id', similarItemIds)
-
-    // Add cached results
+    // Fetch all cached explanations (gracefully handle missing table)
     const cachedIds = new Set<string>()
-    if (cached) {
-        for (const item of cached) {
-            results.set(item.similar_item_id, {
-                commonalities: item.commonalities,
-                differences: item.differences
-            })
-            cachedIds.add(item.similar_item_id)
+    try {
+        const { data: cached } = await supabase
+            .from('similarity_explanations')
+            .select('similar_item_id, commonalities, differences')
+            .eq('source_item_id', sourceItemId)
+            .in('similar_item_id', similarItemIds)
+
+        // Add cached results
+        if (cached) {
+            for (const item of cached) {
+                results.set(item.similar_item_id, {
+                    commonalities: item.commonalities,
+                    differences: item.differences
+                })
+                cachedIds.add(item.similar_item_id)
+            }
         }
+    } catch (cacheError) {
+        // Table may not exist yet - all items will be generated fresh
+        console.warn('Batch cache lookup failed:', cacheError)
     }
 
     // Generate missing explanations (limit to first 5 to control costs)

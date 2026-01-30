@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import type { LangfuseSpan } from "@langfuse/otel";
 
 /**
  * Next.js Instrumentation for Sentry + Langfuse
@@ -24,7 +25,7 @@ export async function register() {
       );
 
       // Filter out Next.js infrastructure spans to reduce noise
-      const shouldExportSpan = (span: { otelSpan: { instrumentationScope: { name: string } } }) => {
+      const shouldExportSpan = (span: LangfuseSpan) => {
         return span.otelSpan.instrumentationScope.name !== "next.js";
       };
 
