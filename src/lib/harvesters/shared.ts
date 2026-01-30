@@ -498,9 +498,11 @@ export async function upsertItem(
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
+const VOYAGE_MODEL = "voyage-4";
 
 export async function generateEmbedding(text: string): Promise<number[] | null> {
     if (!VOYAGE_API_KEY) return null;
+    const startTime = Date.now();
 
     try {
         const response = await fetch(VOYAGE_API_URL, {
@@ -510,16 +512,37 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
                 "Authorization": `Bearer ${VOYAGE_API_KEY}`,
             },
             body: JSON.stringify({
-                model: "voyage-3",
-                input: [text],
+                model: VOYAGE_MODEL,
+                input: [text.slice(0, 120000)], // Voyage-4 supports 120k context
             }),
         });
 
-        if (!response.ok) return null;
+        const latencyMs = Date.now() - startTime;
+
+        if (!response.ok) {
+            console.error(`[Harvester] Voyage API error: ${response.status}`, {
+                model: VOYAGE_MODEL,
+                latencyMs,
+            });
+            return null;
+        }
 
         const data = await response.json();
-        return data.data?.[0]?.embedding || null;
-    } catch {
+        const embedding = data.data?.[0]?.embedding || null;
+
+        if (embedding) {
+            console.log(`[Harvester] Embedding generated`, {
+                model: VOYAGE_MODEL,
+                dimensions: embedding.length,
+                tokens: data.usage?.total_tokens,
+                latencyMs,
+            });
+        }
+
+        return embedding;
+    } catch (error) {
+        console.error(`[Harvester] Voyage exception:`, error);
         return null;
     }
 }
+

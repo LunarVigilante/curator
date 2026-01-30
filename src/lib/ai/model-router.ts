@@ -1,6 +1,6 @@
 /**
  * Model Router with Fallback Support
- * 
+ *
  * Implements resilience patterns:
  * - Priority-based provider selection
  * - Automatic failover on errors
@@ -300,7 +300,6 @@ export async function routeWithFallback(options: RouterOptions): Promise<RouterR
 
                 if (!isRetryable) {
                     // Non-retryable error - break and move to next provider
-                    // Failure will be recorded after the retry loop
                     break
                 }
 

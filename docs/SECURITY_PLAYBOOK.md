@@ -194,7 +194,11 @@ If a vulnerability is found:
    - PR: #123
 
 ## Recommendations
+<<<<<<< HEAD
+- [Future improvements]
+=======
 - Review and update RLS policies quarterly
 - Rotate API keys as per schedule (Section 5.3)
 - Enable Supabase audit logging
+>>>>>>> 01839eabdfee0806ce680f33018afe84833551be
 ```

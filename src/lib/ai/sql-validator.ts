@@ -1,6 +1,6 @@
 /**
  * SQL Query Validator for AI-Generated Queries
- * 
+ *
  * Prevents SQL injection and ensures AI queries only access allowed tables/columns.
  * Blocks dangerous operations like DELETE, DROP, UPDATE.
  */

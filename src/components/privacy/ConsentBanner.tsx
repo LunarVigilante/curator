@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useSyncExternalStore } from 'react'
+import { useState, useCallback, useSyncExternalStore, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useGlobalPrivacyControl } from '@/lib/hooks/useGlobalPrivacyControl'
 
@@ -36,7 +36,7 @@ function subscribeToStoredConsent(callback: () => void): () => void {
 
 /**
  * CCPA/CPRA 2026 Compliant Consent Banner
- * 
+ *
  * Features:
  * - Symmetry in Choice: Accept/Decline buttons have equal prominence
  * - GPC Signal Detection: Honors navigator.globalPrivacyControl
@@ -59,18 +59,20 @@ export function ConsentBanner() {
     const shouldShowBanner = !storedConsent && gpcEnabled !== true && !showConfirmation
 
     // Show banner after delay on initial mount if no consent stored
-    useState(() => {
+    useEffect(() => {
         if (typeof window === 'undefined') return
         if (storedConsent || gpcEnabled === true) return
 
         const timer = setTimeout(() => setShowBanner(true), 1000)
         return () => clearTimeout(timer)
-    })
+    }, [storedConsent, gpcEnabled])
 
     // Auto-decline for GPC users (save to localStorage, no state update needed)
-    if (gpcEnabled === true && !storedConsent) {
-        saveConsent('declined')
-    }
+    useEffect(() => {
+        if (gpcEnabled === true && !storedConsent) {
+            saveConsent('declined')
+        }
+    }, [gpcEnabled, storedConsent])
 
     const handleAccept = useCallback(() => {
         saveConsent('accepted')

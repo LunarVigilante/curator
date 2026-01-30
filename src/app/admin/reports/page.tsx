@@ -11,31 +11,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
-    Flag, CheckCircle2, XCircle, RefreshCw,
-    Clock, User, FileText, ExternalLink, Loader2, Eye, Save
+    Flag, CheckCircle2, RefreshCw, XCircle,
+    Loader2, Save, FileText
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
-import Link from 'next/link'
 import { getReports, getReportStats, resolveReport, type Report, type ReportStats, type ReportStatus } from '@/lib/actions/reports'
 import { createClient } from '@/lib/supabase/client'
+import { ReportStatsCards } from './components/ReportStatsCards'
+import { ReportListItem, REASON_LABELS } from './components/ReportListItem'
 
-// ============================================================================
-// CONFIG
-// ============================================================================
 
-const STATUS_CONFIG: Record<ReportStatus, { label: string; color: string; icon: React.ElementType }> = {
-    pending: { label: 'Pending', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20', icon: Clock },
-    resolved: { label: 'Resolved', color: 'bg-green-500/10 text-green-500 border-green-500/20', icon: CheckCircle2 },
-    dismissed: { label: 'Dismissed', color: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20', icon: XCircle },
-}
-
-const REASON_LABELS: Record<string, string> = {
-    inaccurate_data: 'Inaccurate Data',
-    duplicate: 'Duplicate Entry',
-    inappropriate: 'Inappropriate Content',
-    other: 'Other Issue',
-}
 
 // ============================================================================
 // TYPES
@@ -245,52 +231,7 @@ export default function AdminReportsPage() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <Card className="bg-zinc-900/50 border-zinc-800">
-                    <CardContent className="pt-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-zinc-500 uppercase tracking-wider">Total</p>
-                                <p className="text-2xl font-bold text-white">{stats.total}</p>
-                            </div>
-                            <FileText className="w-8 h-8 text-zinc-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-amber-950/20 border-amber-900/30">
-                    <CardContent className="pt-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-amber-500/80 uppercase tracking-wider">Pending</p>
-                                <p className="text-2xl font-bold text-amber-400">{stats.pending}</p>
-                            </div>
-                            <Clock className="w-8 h-8 text-amber-500/50" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-green-950/20 border-green-900/30">
-                    <CardContent className="pt-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-green-500/80 uppercase tracking-wider">Resolved</p>
-                                <p className="text-2xl font-bold text-green-400">{stats.resolved}</p>
-                            </div>
-                            <CheckCircle2 className="w-8 h-8 text-green-500/50" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-zinc-900/50 border-zinc-800">
-                    <CardContent className="pt-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-zinc-500 uppercase tracking-wider">Dismissed</p>
-                                <p className="text-2xl font-bold text-zinc-400">{stats.dismissed}</p>
-                            </div>
-                            <XCircle className="w-8 h-8 text-zinc-600" />
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+            <ReportStatsCards stats={stats} />
 
             {/* Reports List */}
             <Card className="bg-zinc-900/50 border-zinc-800">
@@ -331,88 +272,14 @@ export default function AdminReportsPage() {
                         </div>
                     ) : (
                         <div className="divide-y divide-zinc-800/50">
-                            {reports.map((report) => {
-                                const statusConfig = STATUS_CONFIG[report.status]
-                                const StatusIcon = statusConfig.icon
-
-                                return (
-                                    <div key={report.id} className="p-4 hover:bg-zinc-800/30 transition-colors">
-                                        <div className="flex gap-4">
-                                            {/* Item Image */}
-                                            <div className="w-16 h-24 rounded bg-zinc-800 overflow-hidden shrink-0 relative">
-                                                {report.itemImage ? (
-                                                    <Image src={report.itemImage} alt="" fill className="object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center">
-                                                        <FileText className="w-6 h-6 text-zinc-700" />
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Report Details */}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-start justify-between gap-4">
-                                                    <div>
-                                                        <h3 className="font-medium text-white truncate">
-                                                            {report.itemTitle || 'Unknown Item'}
-                                                        </h3>
-                                                        <div className="flex items-center gap-2 mt-1">
-                                                            <Badge className={`${statusConfig.color} border text-xs`}>
-                                                                <StatusIcon className="w-3 h-3 mr-1" />
-                                                                {statusConfig.label}
-                                                            </Badge>
-                                                            <Badge variant="outline" className="text-xs border-zinc-700 text-zinc-400">
-                                                                {REASON_LABELS[report.reason] || report.reason}
-                                                            </Badge>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Single Review Button */}
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="h-8 text-cyan-400 border-cyan-900/50 hover:bg-cyan-950/50 shrink-0"
-                                                        onClick={() => openReview(report)}
-                                                    >
-                                                        <Eye className="w-3.5 h-3.5 mr-1" />
-                                                        Review
-                                                    </Button>
-                                                </div>
-
-                                                {/* Details */}
-                                                {report.details && (
-                                                    <p className="text-sm text-zinc-400 mt-2 line-clamp-2">
-                                                        {report.details}
-                                                    </p>
-                                                )}
-
-                                                {/* Meta */}
-                                                <div className="flex items-center gap-4 mt-3 text-xs text-zinc-500">
-                                                    <span className="flex items-center gap-1">
-                                                        <User className="w-3 h-3" />
-                                                        {report.reporterName || 'Anonymous'}
-                                                    </span>
-                                                    <span>{formatDate(report.createdAt)}</span>
-                                                    <Link
-                                                        href={`/admin/data-browser?id=${report.globalItemId}`}
-                                                        className="text-cyan-500 hover:text-cyan-400 flex items-center gap-1"
-                                                    >
-                                                        <ExternalLink className="w-3 h-3" />
-                                                        View Item
-                                                    </Link>
-                                                </div>
-
-                                                {/* Resolution Notes */}
-                                                {report.resolutionNotes && (
-                                                    <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 border border-zinc-700/50">
-                                                        <span className="text-zinc-500">Resolution notes:</span> {report.resolutionNotes}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })}
+                            {reports.map((report) => (
+                                <ReportListItem
+                                    key={report.id}
+                                    report={report}
+                                    onReview={openReview}
+                                    formatDate={formatDate}
+                                />
+                            ))}
                         </div>
                     )}
                 </CardContent>

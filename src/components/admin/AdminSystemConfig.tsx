@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Zap, Database, Brain, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
 import { updateSystemConfig, getSystemConfig, testLLMConnectionAction, testServiceConnection } from '@/lib/actions/admin';
 import { useEffect } from 'react';
+import { ApiKeyInput } from '@/components/admin/settings/ApiKeyInput';
 
 interface AdminSystemConfigProps {
     settings: Record<string, string>;
@@ -474,279 +475,111 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 </CardHeader>
                 <form onSubmit={handleSaveConfig}>
                     <CardContent className="space-y-4">
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>TMDB API Key (Movies & TV)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('tmdb', tmdbApiKey)}
-                                    disabled={serviceStatuses.tmdb.status === 'loading' || !tmdbApiKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.tmdb.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.tmdb.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.tmdb.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test TMDB
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={tmdbApiKey}
-                                onChange={e => { setTmdbApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, tmdb: { status: 'idle' } })); }}
-                                placeholder="The Movie Database API Key"
-                                className={serviceStatuses.tmdb.status === 'success' ? 'border-green-500/50' : serviceStatuses.tmdb.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.tmdb.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.tmdb.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://www.themoviedb.org/settings/api" target="_blank" className="underline hover:text-white">themoviedb.org</a></p>
-                        </div>
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>Twitch API (IGDB / Video Games)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('twitch', twitchClientId, twitchClientSecret)}
-                                    disabled={serviceStatuses.twitch?.status === 'loading' || !twitchClientId || !twitchClientSecret}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.twitch?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.twitch?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.twitch?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test Twitch
-                                </Button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <Input
-                                    type="password"
-                                    value={twitchClientId}
-                                    onChange={e => { setTwitchClientId(e.target.value); setServiceStatuses(prev => ({ ...prev, twitch: { status: 'idle' } })); }}
-                                    placeholder="Client ID"
-                                    className={serviceStatuses.twitch?.status === 'success' ? 'border-green-500/50' : serviceStatuses.twitch?.status === 'error' ? 'border-red-500/50' : ''}
-                                />
-                                <Input
-                                    type="password"
-                                    value={twitchClientSecret}
-                                    onChange={e => { setTwitchClientSecret(e.target.value); setServiceStatuses(prev => ({ ...prev, twitch: { status: 'idle' } })); }}
-                                    placeholder="Client Secret"
-                                />
-                            </div>
-                            {serviceStatuses.twitch?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.twitch.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Required for game metadata. Get credentials from <a href="https://dev.twitch.tv/console" target="_blank" className="underline hover:text-white">Twitch Console</a></p>
-                        </div>
+                        <ApiKeyInput
+                            label="TMDB API Key (Movies & TV)"
+                            value={tmdbApiKey}
+                            onChange={(v) => { setTmdbApiKey(v); setServiceStatuses(prev => ({ ...prev, tmdb: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.tmdb}
+                            onTest={() => handleTestService('tmdb', tmdbApiKey)}
+                            testLabel="TMDB"
+                            placeholder="The Movie Database API Key"
+                            helpText={<>Get your key from <a href="https://www.themoviedb.org/settings/api" target="_blank" className="underline hover:text-white">themoviedb.org</a></>}
+                        />
+                        <ApiKeyInput
+                            label="Twitch API (IGDB / Video Games)"
+                            value={twitchClientId}
+                            onChange={(v) => { setTwitchClientId(v); setServiceStatuses(prev => ({ ...prev, twitch: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.twitch || { status: 'idle' }}
+                            onTest={() => handleTestService('twitch', twitchClientId, twitchClientSecret)}
+                            testLabel="Twitch"
+                            placeholder="Client ID"
+                            secondaryValue={twitchClientSecret}
+                            secondaryOnChange={(v) => { setTwitchClientSecret(v); setServiceStatuses(prev => ({ ...prev, twitch: { status: 'idle' } })); }}
+                            secondaryPlaceholder="Client Secret"
+                            helpText={<>Required for game metadata. Get credentials from <a href="https://dev.twitch.tv/console" target="_blank" className="underline hover:text-white">Twitch Console</a></>}
+                        />
 
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>SteamGridDB API Key (Game Covers)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('steamgrid', steamGridApiKey)}
-                                    disabled={serviceStatuses.steamgrid?.status === 'loading' || !steamGridApiKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.steamgrid?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.steamgrid?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.steamgrid?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test SteamGridDB
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={steamGridApiKey}
-                                onChange={e => { setSteamGridApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, steamgrid: { status: 'idle' } })); }}
-                                placeholder="SteamGridDB API Key"
-                                className={serviceStatuses.steamgrid?.status === 'success' ? 'border-green-500/50' : serviceStatuses.steamgrid?.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.steamgrid?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.steamgrid.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Required for high-quality vertical game covers. Get key from <a href="https://www.steamgriddb.com/profile/preferences" target="_blank" className="underline hover:text-white">SteamGridDB Preferences</a></p>
-                        </div>
+                        <ApiKeyInput
+                            label="SteamGridDB API Key (Game Covers)"
+                            value={steamGridApiKey}
+                            onChange={(v) => { setSteamGridApiKey(v); setServiceStatuses(prev => ({ ...prev, steamgrid: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.steamgrid || { status: 'idle' }}
+                            onTest={() => handleTestService('steamgrid', steamGridApiKey)}
+                            testLabel="SteamGridDB"
+                            placeholder="SteamGridDB API Key"
+                            helpText={<>Required for high-quality vertical game covers. Get key from <a href="https://www.steamgriddb.com/profile/preferences" target="_blank" className="underline hover:text-white">SteamGridDB Preferences</a></>}
+                        />
 
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>Google Books API Key (Books)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('googlebooks', googleBooksApiKey)}
-                                    disabled={serviceStatuses.googlebooks?.status === 'loading' || !googleBooksApiKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.googlebooks?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.googlebooks?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.googlebooks?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test Google Books
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={googleBooksApiKey}
-                                onChange={e => { setGoogleBooksApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, googlebooks: { status: 'idle' } })); }}
-                                placeholder="Google Books API Key"
-                                className={serviceStatuses.googlebooks?.status === 'success' ? 'border-green-500/50' : serviceStatuses.googlebooks?.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.googlebooks?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.googlebooks.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline hover:text-white">Google Cloud Console</a></p>
-                        </div>
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>Spotify Client ID (Music)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('spotify', spotifyClientId, spotifyClientSecret)}
-                                    disabled={serviceStatuses.spotify?.status === 'loading' || !spotifyClientId || !spotifyClientSecret}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.spotify?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.spotify?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.spotify?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test Spotify
-                                </Button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <Input
-                                    type="password"
-                                    value={spotifyClientId}
-                                    onChange={e => { setSpotifyClientId(e.target.value); setServiceStatuses(prev => ({ ...prev, spotify: { status: 'idle' } })); }}
-                                    placeholder="Client ID"
-                                    className={serviceStatuses.spotify?.status === 'success' ? 'border-green-500/50' : serviceStatuses.spotify?.status === 'error' ? 'border-red-500/50' : ''}
-                                />
-                                <Input
-                                    type="password"
-                                    value={spotifyClientSecret}
-                                    onChange={e => { setSpotifyClientSecret(e.target.value); setServiceStatuses(prev => ({ ...prev, spotify: { status: 'idle' } })); }}
-                                    placeholder="Client Secret"
-                                />
-                            </div>
-                            {serviceStatuses.spotify?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.spotify.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Get your credentials from <a href="https://developer.spotify.com/dashboard" target="_blank" className="underline hover:text-white">Spotify Developer Dashboard</a></p>
-                        </div>
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>ComicVine API Key (Comics)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('comicvine', comicVineApiKey)}
-                                    disabled={serviceStatuses.comicvine?.status === 'loading' || !comicVineApiKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.comicvine?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.comicvine?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.comicvine?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test ComicVine
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={comicVineApiKey}
-                                onChange={e => { setComicVineApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, comicvine: { status: 'idle' } })); }}
-                                placeholder="ComicVine API Key"
-                                className={serviceStatuses.comicvine?.status === 'success' ? 'border-green-500/50' : serviceStatuses.comicvine?.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.comicvine?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.comicvine.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Get your key from <a href="https://comicvine.gamespot.com/api/" target="_blank" className="underline hover:text-white">ComicVine API</a></p>
-                        </div>
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>BoardGameGeek API Key (Board Games)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('bgg', bggApiKey)}
-                                    disabled={serviceStatuses.bgg?.status === 'loading' || !bggApiKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.bgg?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.bgg?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.bgg?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test BGG
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={bggApiKey}
-                                onChange={e => { setBggApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, bgg: { status: 'idle' } })); }}
-                                placeholder="BGG API Key"
-                                className={serviceStatuses.bgg?.status === 'success' ? 'border-green-500/50' : serviceStatuses.bgg?.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.bgg?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.bgg.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Register at <a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" className="underline hover:text-white">BGG API Terms</a> to get access</p>
-                        </div>
+                        <ApiKeyInput
+                            label="Google Books API Key (Books)"
+                            value={googleBooksApiKey}
+                            onChange={(v) => { setGoogleBooksApiKey(v); setServiceStatuses(prev => ({ ...prev, googlebooks: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.googlebooks || { status: 'idle' }}
+                            onTest={() => handleTestService('googlebooks', googleBooksApiKey)}
+                            testLabel="Google Books"
+                            placeholder="Google Books API Key"
+                            helpText={<>Get your key from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline hover:text-white">Google Cloud Console</a></>}
+                        />
+                        <ApiKeyInput
+                            label="Spotify Client ID (Music)"
+                            value={spotifyClientId}
+                            onChange={(v) => { setSpotifyClientId(v); setServiceStatuses(prev => ({ ...prev, spotify: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.spotify || { status: 'idle' }}
+                            onTest={() => handleTestService('spotify', spotifyClientId, spotifyClientSecret)}
+                            testLabel="Spotify"
+                            placeholder="Client ID"
+                            secondaryValue={spotifyClientSecret}
+                            secondaryOnChange={(v) => { setSpotifyClientSecret(v); setServiceStatuses(prev => ({ ...prev, spotify: { status: 'idle' } })); }}
+                            secondaryPlaceholder="Client Secret"
+                            helpText={<>Get your credentials from <a href="https://developer.spotify.com/dashboard" target="_blank" className="underline hover:text-white">Spotify Developer Dashboard</a></>}
+                        />
+                        <ApiKeyInput
+                            label="ComicVine API Key (Comics)"
+                            value={comicVineApiKey}
+                            onChange={(v) => { setComicVineApiKey(v); setServiceStatuses(prev => ({ ...prev, comicvine: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.comicvine || { status: 'idle' }}
+                            onTest={() => handleTestService('comicvine', comicVineApiKey)}
+                            testLabel="ComicVine"
+                            placeholder="ComicVine API Key"
+                            helpText={<>Get your key from <a href="https://comicvine.gamespot.com/api/" target="_blank" className="underline hover:text-white">ComicVine API</a></>}
+                        />
+                        <ApiKeyInput
+                            label="BoardGameGeek API Key (Board Games)"
+                            value={bggApiKey}
+                            onChange={(v) => { setBggApiKey(v); setServiceStatuses(prev => ({ ...prev, bgg: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.bgg || { status: 'idle' }}
+                            onTest={() => handleTestService('bgg', bggApiKey)}
+                            testLabel="BGG"
+                            placeholder="BGG API Key"
+                            helpText={<>Register at <a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" className="underline hover:text-white">BGG API Terms</a> to get access</>}
+                        />
 
                         {/* OMDB (Ratings) */}
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>OMDB API Key (Global Ratings)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('omdb', omdbApiKey)}
-                                    disabled={serviceStatuses.omdb?.status === 'loading' || !omdbApiKey}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.omdb?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.omdb?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.omdb?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test OMDB
-                                </Button>
-                            </div>
-                            <Input
-                                type="password"
-                                value={omdbApiKey}
-                                onChange={e => { setOmdbApiKey(e.target.value); setServiceStatuses(prev => ({ ...prev, omdb: { status: 'idle' } })); }}
-                                placeholder="OMDB API Key"
-                                className={serviceStatuses.omdb?.status === 'success' ? 'border-green-500/50' : serviceStatuses.omdb?.status === 'error' ? 'border-red-500/50' : ''}
-                            />
-                            {serviceStatuses.omdb?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.omdb.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Required for fetching Rotten Tomatoes & IMDb ratings. Get key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" className="underline hover:text-white">omdbapi.com</a></p>
-                        </div>
+                        <ApiKeyInput
+                            label="OMDB API Key (Global Ratings)"
+                            value={omdbApiKey}
+                            onChange={(v) => { setOmdbApiKey(v); setServiceStatuses(prev => ({ ...prev, omdb: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.omdb || { status: 'idle' }}
+                            onTest={() => handleTestService('omdb', omdbApiKey)}
+                            testLabel="OMDB"
+                            placeholder="OMDB API Key"
+                            helpText={<>Required for fetching Rotten Tomatoes & IMDb ratings. Get key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" className="underline hover:text-white">omdbapi.com</a></>}
+                        />
 
                         {/* Metron (Comic Backup) */}
-                        <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label>Metron (Comic Backup)</Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTestService('metron', metronUsername, metronPassword)}
-                                    disabled={serviceStatuses.metron?.status === 'loading' || !metronUsername || !metronPassword}
-                                    className="h-7 text-[10px] gap-1 shadow-none hover:shadow-none hover:translate-y-0 active:scale-100"
-                                >
-                                    {serviceStatuses.metron?.status === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> :
-                                        serviceStatuses.metron?.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-500" /> :
-                                            serviceStatuses.metron?.status === 'error' ? <AlertCircle className="h-3 w-3 text-red-500" /> : <Zap className="h-3 w-3" />}
-                                    Test Metron
-                                </Button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <Input
-                                    type="text"
-                                    value={metronUsername}
-                                    onChange={e => { setMetronUsername(e.target.value); setServiceStatuses(prev => ({ ...prev, metron: { status: 'idle' } })); }}
-                                    placeholder="Metron Username"
-                                    className={serviceStatuses.metron?.status === 'success' ? 'border-green-500/50' : serviceStatuses.metron?.status === 'error' ? 'border-red-500/50' : ''}
-                                />
-                                <Input
-                                    type="password"
-                                    value={metronPassword}
-                                    onChange={e => { setMetronPassword(e.target.value); setServiceStatuses(prev => ({ ...prev, metron: { status: 'idle' } })); }}
-                                    placeholder="Metron Password"
-                                />
-                            </div>
-                            {serviceStatuses.metron?.status === 'error' && <p className="text-[10px] text-red-500 font-medium">{serviceStatuses.metron.message}</p>}
-                            <p className="text-[10px] text-muted-foreground">Used as a fallback for comics. Register at <a href="https://metron.cloud" target="_blank" className="underline hover:text-white">metron.cloud</a></p>
-                        </div>
+                        <ApiKeyInput
+                            label="Metron (Comic Backup)"
+                            value={metronUsername}
+                            onChange={(v) => { setMetronUsername(v); setServiceStatuses(prev => ({ ...prev, metron: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.metron || { status: 'idle' }}
+                            onTest={() => handleTestService('metron', metronUsername, metronPassword)}
+                            testLabel="Metron"
+                            placeholder="Metron Username"
+                            secondaryValue={metronPassword}
+                            secondaryOnChange={(v) => { setMetronPassword(v); setServiceStatuses(prev => ({ ...prev, metron: { status: 'idle' } })); }}
+                            secondaryPlaceholder="Metron Password"
+                            helpText={<>Used as a fallback for comics. Register at <a href="https://metron.cloud" target="_blank" className="underline hover:text-white">metron.cloud</a></>}
+                        />
 
                         {/* AniList (No API Key Required) */}
 
