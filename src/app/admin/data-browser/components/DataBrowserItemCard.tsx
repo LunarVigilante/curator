@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import Image from 'next/image'
 import {
     MoreHorizontal, Pencil, Wand2, Tag, RefreshCw, FileText,
@@ -19,6 +19,7 @@ import { parseCachedTags } from '../utils'
 
 interface DataBrowserItemCardProps {
     item: GlobalItem
+    index: number
     isSelected: boolean
     gridColsClass?: string
     // Action Callbacks
@@ -38,8 +39,10 @@ interface DataBrowserItemCardProps {
     isTagging: boolean
 }
 
-export function DataBrowserItemCard({
+// Memoized component to prevent re-renders when props haven't changed
+export const DataBrowserItemCard = React.memo(function DataBrowserItemCard({
     item,
+    index,
     isSelected,
     onClick,
     onDoubleClick,
@@ -55,8 +58,15 @@ export function DataBrowserItemCard({
     isRefreshing,
     isTagging
 }: DataBrowserItemCardProps) {
-    const catInfo = CATEGORY_ICONS[item.category_type || ''] || { icon: Film, color: 'text-gray-400', label: 'Item' }
+    // Memoize category info lookup
+    const catInfo = useMemo(() =>
+        CATEGORY_ICONS[item.category_type || ''] || { icon: Film, color: 'text-gray-400', label: 'Item' },
+        [item.category_type]
+    )
     const CategoryIcon = catInfo.icon
+
+    // Memoize tags parsing
+    const tags = useMemo(() => parseCachedTags(item.cached_tags), [item.cached_tags])
 
     return (
         <Card
@@ -71,6 +81,7 @@ export function DataBrowserItemCard({
                         alt={item.title}
                         fill
                         className="object-cover transition-transform duration-500 group-hover:scale-105"
+                        priority={index < 8}
                         unoptimized
                     />
                 ) : (
@@ -188,23 +199,19 @@ export function DataBrowserItemCard({
                 </p>
 
                 {/* Cached Tags Preview */}
-                {(() => {
-                    const tags = parseCachedTags(item.cached_tags)
-                    if (tags.length === 0) return null
-                    return (
-                        <div className="flex flex-wrap gap-1 mt-auto pt-2">
-                            {tags.slice(0, 3).map(tag => (
-                                <Badge key={tag.id} variant="secondary" className="text-[8px] px-1 py-0 h-3.5 bg-zinc-800 text-zinc-500 border-0">
-                                    {tag.name}
-                                </Badge>
-                            ))}
-                            {tags.length > 3 && (
-                                <span className="text-[9px] text-zinc-600 self-center">+{tags.length - 3}</span>
-                            )}
-                        </div>
-                    )
-                })()}
+                {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-auto pt-2">
+                        {tags.slice(0, 3).map(tag => (
+                            <Badge key={tag.id} variant="secondary" className="text-[8px] px-1 py-0 h-3.5 bg-zinc-800 text-zinc-500 border-0">
+                                {tag.name}
+                            </Badge>
+                        ))}
+                        {tags.length > 3 && (
+                            <span className="text-[9px] text-zinc-600 self-center">+{tags.length - 3}</span>
+                        )}
+                    </div>
+                )}
             </CardContent>
         </Card>
     )
-}
+})

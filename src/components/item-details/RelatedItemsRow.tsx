@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Film, Sparkles, Loader2 } from 'lucide-react'
+import { Loader2, Sparkles, Film } from 'lucide-react'
 import {
     Select,
     SelectContent,
@@ -14,12 +14,14 @@ import {
 } from '@/components/ui/select'
 import {
     Tooltip,
+    TooltipArrow,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger
 } from '@/components/ui/tooltip'
 import { CATEGORY_LABELS } from '@/lib/constants'
 import { getBatchSimilarityExplanations, type SimilarityExplanation } from '@/lib/actions/similarity-explanations'
+import { SimilarityTooltipContent } from './SimilarityTooltipContent'
 
 interface RelatedItem {
     id: string
@@ -27,6 +29,9 @@ interface RelatedItem {
     image_url: string | null
     category_type: string | null
     similarity: number
+    release_year: number | null
+    runtime: number | null
+    vote_average: number | null
     shared_genres: string[] | null
     shared_tags: string[] | null
 }
@@ -66,21 +71,18 @@ export function RelatedItemsRow({
     const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'all')
     const [explanations, setExplanations] = useState<Map<string, SimilarityExplanation>>(new Map())
     const [loadingExplanations, setLoadingExplanations] = useState(false)
+    const [noMoreItems, setNoMoreItems] = useState(false)
 
-    // Compute available categories from fetched items
+    // Show all categories from CATEGORY_LABELS, not just those in fetched items
+    // This ensures users can explore all category types
     const availableCategories = useMemo(() => {
-        const categorySet = new Set<string>()
-        allItems.forEach(item => {
-            if (item.category_type) {
-                categorySet.add(item.category_type)
-            }
-        })
-        return Array.from(categorySet).sort()
-    }, [allItems])
+        return Object.keys(CATEGORY_LABELS).sort()
+    }, [])
 
     // Filter items based on selected category
     const filteredItems = useMemo(() => {
         if (selectedCategory === 'all') {
+            // Return all items sorted by similarity
             return allItems
         }
         return allItems.filter(item => item.category_type === selectedCategory)
@@ -113,11 +115,15 @@ export function RelatedItemsRow({
                 let data: any[] | null = null
                 let rpcError: { message: string } | null = null
 
+                // Always fetch all categories to populate the dropdown
+                // Frontend filtering handles category selection
+                const rpcCategoryFilter = showCategoryFilter ? null : categoryFilter
+
                 // Try enhanced RPC with reasons
                 const enhancedResult = await (supabase.rpc as any)('find_similar_items_with_reasons', {
                     source_item_id: sourceItemId,
                     match_count: fetchLimit,
-                    category_filter: effectiveCategoryFilter
+                    category_filter: rpcCategoryFilter
                 })
 
                 if (enhancedResult.error) {
@@ -164,10 +170,10 @@ export function RelatedItemsRow({
     // Fetch LLM-generated explanations for visible items
     useEffect(() => {
         async function fetchExplanations() {
-            if (allItems.length === 0 || !sourceItemId) return
+            if (filteredItems.length === 0 || !sourceItemId) return
 
             // Get IDs of visible items that don't have explanations yet
-            const visibleIds = allItems
+            const visibleIds = filteredItems
                 .slice(0, visibleCount)
                 .map(item => item.id)
                 .filter(id => !explanations.has(id))
@@ -190,8 +196,9 @@ export function RelatedItemsRow({
         }
 
         fetchExplanations()
+        // Note: explanations is intentionally excluded to prevent infinite loops
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [allItems, visibleCount, sourceItemId])
+    }, [filteredItems, visibleCount, sourceItemId, selectedCategory])
 
     const handleLoadMore = () => {
         const nextStep = 6
@@ -215,8 +222,18 @@ export function RelatedItemsRow({
     }
 
     const visibleItems = filteredItems.slice(0, visibleCount)
-    // Always show "Load More" when there are items - allows user to request more even if we think there aren't
-    const showLoadMore = filteredItems.length > 0
+
+    // Show "Load More" only if:
+    // 1. We have more cached items to show, OR
+    // 2. We might be able to fetch more from DB (haven't hit the limit)
+    const hasMoreCached = visibleCount < filteredItems.length
+    const mightHaveMoreInDB = allItems.length >= fetchLimit - 12 // Buffer for filtering
+    const showLoadMore = filteredItems.length > 0 && (hasMoreCached || mightHaveMoreInDB)
+
+    // Reset noMoreItems when category changes or new items load
+    useEffect(() => {
+        setNoMoreItems(false)
+    }, [selectedCategory, allItems.length])
 
     // Don't render anything if no items and not loading
     if (!loading && allItems.length === 0) {
@@ -305,59 +322,22 @@ export function RelatedItemsRow({
                             // Build tooltip content showing why it's similar
                             const sharedGenres = item.shared_genres?.filter(Boolean) || []
                             const sharedTags = item.shared_tags?.filter(Boolean) || []
-                            const hasReasons = sharedGenres.length > 0 || sharedTags.length > 0
                             const explanation = explanations.get(item.id)
                             const isLoadingExplanation = loadingExplanations && !explanation
 
                             const tooltipContent = (
-                                <div className="max-w-xs space-y-2">
-                                    <p className="font-medium text-cyan-400">
-                                        {Math.round(item.similarity * 100)}% similar
-                                        {item.category_type ? ` • ${getCategoryLabel(item.category_type)}` : ''}
-                                    </p>
-
-                                    {/* LLM-generated explanation */}
-                                    {explanation && (
-                                        <div className="text-xs space-y-1.5 border-t border-zinc-700/50 pt-2">
-                                            <p className="text-zinc-300 leading-relaxed italic">
-                                                &ldquo;{explanation.commonalities}&rdquo;
-                                            </p>
-                                            {explanation.differences && (
-                                                <p className="text-zinc-500 leading-relaxed text-[11px]">
-                                                    <span className="text-amber-500/80">Differs:</span> {explanation.differences}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {/* Loading state */}
-                                    {isLoadingExplanation && (
-                                        <div className="flex items-center gap-1.5 text-xs text-zinc-500 pt-1">
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                            <span>Analyzing similarity...</span>
-                                        </div>
-                                    )}
-
-                                    {/* Fallback to genres/tags if no explanation yet */}
-                                    {!explanation && !isLoadingExplanation && hasReasons && (
-                                        <div className="text-xs text-zinc-400 space-y-1">
-                                            {sharedGenres.length > 0 && (
-                                                <p>
-                                                    <span className="text-zinc-500">Genres:</span>{' '}
-                                                    {sharedGenres.slice(0, 3).join(', ')}
-                                                    {sharedGenres.length > 3 && ` +${sharedGenres.length - 3} more`}
-                                                </p>
-                                            )}
-                                            {sharedTags.length > 0 && (
-                                                <p>
-                                                    <span className="text-zinc-500">Tags:</span>{' '}
-                                                    {sharedTags.slice(0, 3).join(', ')}
-                                                    {sharedTags.length > 3 && ` +${sharedTags.length - 3} more`}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
+                                <SimilarityTooltipContent
+                                    title={item.title}
+                                    releaseYear={item.release_year}
+                                    runtime={item.runtime}
+                                    voteAverage={item.vote_average}
+                                    categoryType={item.category_type}
+                                    similarity={item.similarity}
+                                    sharedGenres={sharedGenres}
+                                    sharedTags={sharedTags}
+                                    explanation={explanation}
+                                    isLoading={isLoadingExplanation}
+                                />
                             )
 
                             // Use button if onItemClick is provided, otherwise use Link
@@ -373,7 +353,8 @@ export function RelatedItemsRow({
                                                     {content}
                                                 </button>
                                             </TooltipTrigger>
-                                            <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="!bg-black !border !border-zinc-700 text-zinc-200 p-3 z-[100] shadow-2xl">
+                                            <TooltipContent side="right" align="start" sideOffset={12} collisionPadding={16} className="bg-zinc-900 border border-zinc-700 text-zinc-200 px-4 py-3 z-[9999] shadow-xl shadow-black/50 rounded-lg">
+                                                <TooltipArrow className="fill-zinc-900" />
                                                 {tooltipContent}
                                             </TooltipContent>
                                         </Tooltip>
@@ -392,7 +373,8 @@ export function RelatedItemsRow({
                                                 {content}
                                             </Link>
                                         </TooltipTrigger>
-                                        <TooltipContent side="right" align="center" sideOffset={8} collisionPadding={16} className="!bg-black !border !border-zinc-700 text-zinc-200 p-3 z-[100] shadow-2xl">
+                                        <TooltipContent side="right" align="start" sideOffset={12} collisionPadding={16} className="bg-zinc-900 border border-zinc-700 text-zinc-200 px-4 py-3 z-[9999] shadow-xl shadow-black/50 rounded-lg">
+                                            <TooltipArrow className="fill-zinc-900" />
                                             {tooltipContent}
                                         </TooltipContent>
                                     </Tooltip>

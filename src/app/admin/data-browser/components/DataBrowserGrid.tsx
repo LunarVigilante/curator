@@ -1,9 +1,8 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import { RefreshCw, ImageIcon } from 'lucide-react'
 import { GlobalItem } from '../types'
-// Import direct component, assuming DataBrowserItemCard is created
 import { DataBrowserItemCard } from './DataBrowserItemCard'
 
 interface DataBrowserGridProps {
@@ -28,7 +27,8 @@ interface DataBrowserGridProps {
     regeneratingTagIds: Set<string>
 }
 
-export function DataBrowserGrid({
+// Memoized grid component
+export const DataBrowserGrid = React.memo(function DataBrowserGrid({
     items,
     loading,
     selectedIds,
@@ -48,15 +48,15 @@ export function DataBrowserGrid({
     regeneratingTagIds
 }: DataBrowserGridProps) {
 
-    // Helper to calculate grid columns class based on tile size
-    const getGridCols = () => {
+    // Memoize grid columns class based on tile size
+    const gridColsClass = useMemo(() => {
         if (tileSize <= 15) return 'grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12'
         if (tileSize <= 30) return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10'
         if (tileSize <= 50) return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
         if (tileSize <= 70) return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
         if (tileSize <= 85) return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
         return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-    }
+    }, [tileSize])
 
     if (loading && items.length === 0) {
         return (
@@ -82,11 +82,12 @@ export function DataBrowserGrid({
     }
 
     return (
-        <div className={`grid gap-4 ${getGridCols()} pb-20`}>
-            {items.map(item => (
+        <div className={`grid gap-4 ${gridColsClass} pb-20`}>
+            {items.map((item, index) => (
                 <DataBrowserItemCard
                     key={item.id}
                     item={item}
+                    index={index}
                     isSelected={selectedIds.has(item.id)}
                     onClick={(e) => onItemClick(item.id, e)}
                     onDoubleClick={() => onItemDoubleClick(item)}
@@ -105,4 +106,4 @@ export function DataBrowserGrid({
             ))}
         </div>
     )
-}
+})

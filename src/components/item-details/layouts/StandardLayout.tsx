@@ -55,7 +55,7 @@ export function StandardLayout({
     const isTV = category === 'TV' || category === 'TV_SHOW'
 
     return (
-        <div className="relative z-10 flex flex-wrap items-start content-start w-full h-full overflow-y-auto md:overflow-hidden">
+        <div className="relative z-10 flex flex-wrap md:flex-nowrap items-stretch w-full h-full overflow-hidden">
             {/* Backdrop */}
             {item.backdrop_path && (
                 <>
@@ -67,9 +67,9 @@ export function StandardLayout({
                 </>
             )}
 
-            {/* --- LEFT COLUMN: Sidebar --- */}
+            {/* --- LEFT COLUMN: Sidebar (Full height of container, internal scroll) --- */}
             <motion.div
-                className="relative z-10 p-6 md:p-8 md:pr-0 flex-shrink-0"
+                className="relative z-10 p-6 md:p-8 md:pr-4 flex-[1_1_280px] min-w-[280px] max-w-[350px] overflow-y-auto mx-auto md:mx-0 scrollbar-thin"
                 variants={sidebarVariants}
                 initial="hidden"
                 animate="visible"
@@ -87,8 +87,8 @@ export function StandardLayout({
                 />
             </motion.div>
 
-            {/* --- RIGHT COLUMN: Content with fixed header/footer and scrollable description --- */}
-            <div className="relative z-10 flex-[1_1_45ch] flex flex-col p-6 md:p-8 overflow-hidden h-full">
+            {/* --- RIGHT COLUMN: Content (Fluid with 450px floor, ~70% on wide screens) --- */}
+            <div className="relative z-10 flex-[2.5_1_450px] min-w-[450px] flex flex-col p-6 md:p-8 overflow-hidden">
                 <motion.div
                     className="flex flex-col h-full"
                     variants={containerVariants}
@@ -96,17 +96,15 @@ export function StandardLayout({
                     animate="visible"
                 >
                     {/* === FIXED TOP: Header + Awards + Cast === */}
-                    <div className="flex-shrink-0 space-y-4">
+                    <div className="flex-shrink-0 space-y-4 w-full">
                         {/* Header Section */}
                         <motion.div variants={itemVariants}>
                             <ItemDetailHeader item={item} />
                         </motion.div>
 
-                        {/* Awards Banner */}
+                        {/* Awards Banner - has its own animation, no wrapper needed */}
                         {item.awards_text && (
-                            <motion.div variants={itemVariants}>
-                                <AwardsBanner awards={item.awards_text} />
-                            </motion.div>
+                            <AwardsBanner awards={item.awards_text} />
                         )}
 
                         {/* Cast Row (Pills) - Fixed above description */}

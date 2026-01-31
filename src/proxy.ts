@@ -50,6 +50,7 @@ export default async function middleware(request: NextRequest) {
         "img-src 'self' data: https: blob:",
         "font-src 'self' data:",
         "connect-src 'self' https://*.supabase.co https://*.upstash.io https://*.axiom.co https://*.sentry.io wss://*.supabase.co",
+        "worker-src 'self' blob:", // Allow Web Workers with blob URLs
         "frame-ancestors 'none'",
         "form-action 'self'",
         "base-uri 'self'",

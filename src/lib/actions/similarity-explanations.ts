@@ -5,11 +5,12 @@ import { callLLMForJSON } from '@/lib/llm'
 import { SystemConfigService } from '@/lib/services/SystemConfigService'
 
 /**
- * Similarity explanation with commonalities and differences
+ * Similarity explanation with structured data for glanceable tooltip
  */
 export interface SimilarityExplanation {
-    commonalities: string  // 1-2 sentences explaining shared themes/tones
-    differences: string | null    // 1 sentence noting key difference
+    summary: string           // 1-2 sentences max explaining WHY they're similar
+    sharedDNA: string[]       // 2-3 thematic tags (e.g., "Gothic Horror", "Vampire Romance")
+    keyDifference: string | null  // 1 sentence noting key difference (optional)
 }
 
 /**
@@ -133,22 +134,26 @@ ITEM B: "${similarItem.title}" (${similarItem.release_year || 'Unknown'})
     return prompt
 }
 
-const SYSTEM_PROMPT = `You are an expert at analyzing media similarities. Given two items, explain WHY they are similar in a natural, insightful way.
+const SYSTEM_PROMPT = `You are an expert at analyzing media similarities. Given two items, explain WHY they are similar.
 
-Focus on thematic connections, tone, appeal, and subtle similarities - not just matching genres.
-
-Return ONLY a JSON object with this exact structure:
+CRITICAL: Return ONLY a valid JSON object with EXACTLY this structure:
 {
-  "commonalities": "1-2 sentences explaining shared themes, tones, or appeal",
-  "differences": "1 sentence noting a key difference (or null if very similar)"
+  "summary": "1-2 sentences explaining shared themes, tones, or appeal",
+  "sharedDNA": ["Theme 1", "Theme 2", "Theme 3"],
+  "keyDifference": "1 sentence noting key difference (or null)"
 }
 
-Examples of good explanations:
-- "Both explore themes of found family and redemption through flawed protagonists navigating morally grey worlds."
-- "These share a melancholic yet hopeful tone, using music as a narrative device to express unspoken emotions."
-- "While both are action-heavy thrillers, the first leans into noir aesthetics while the second embraces neon-lit cyberpunk."
+Rules:
+- "summary": MAX 2 sentences. Be punchy and insightful.
+- "sharedDNA": EXACTLY 2-3 short thematic tags (e.g., "Gothic Horror", "Found Family", "Noir Aesthetic")
+- "keyDifference": ONE sentence or null. Focus on contrast in tone, style, or approach.
 
-Be concise, specific, and insightful.`
+Examples of good sharedDNA tags:
+- "Vampire Romance", "90s Aesthetic", "Doomed Love"
+- "Found Family", "Heist Thrills", "Ensemble Cast"
+- "Gothic Horror", "Atmospheric Dread", "Reluctant Hero"
+
+Be concise, specific, and insightful. NO markdown in values.`
 
 /**
  * Get context limit for the configured model
@@ -196,15 +201,16 @@ export async function getSimilarityExplanation(
     try {
         const { data: cached } = await supabase
             .from('similarity_explanations')
-            .select('commonalities, differences')
+            .select('summary, shared_dna, key_difference')
             .eq('source_item_id', sourceItemId)
             .eq('similar_item_id', similarItemId)
             .single()
 
         if (cached) {
             return {
-                commonalities: cached.commonalities,
-                differences: cached.differences
+                summary: cached.summary,
+                sharedDNA: cached.shared_dna || [],
+                keyDifference: cached.key_difference
             }
         }
     } catch (cacheError) {
@@ -247,7 +253,7 @@ export async function getSimilarityExplanation(
         cleanResponse = cleanResponse.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
 
         // Try to find JSON object using regex (handles text before/after)
-        const jsonMatch = cleanResponse.match(/\{[\s\S]*"commonalities"[\s\S]*"differences"[\s\S]*\}/)
+        const jsonMatch = cleanResponse.match(/\{[\s\S]*"commonalities"[\s\S]*\}/)
         if (jsonMatch) {
             cleanResponse = jsonMatch[0]
         } else {
@@ -264,21 +270,83 @@ export async function getSimilarityExplanation(
             .replace(/[\r\n\t]+/g, ' ')
             .replace(/\s{2,}/g, ' ')
 
-        // Try to parse
-        let parsed: SimilarityExplanation
+        // Try to parse with multiple repair strategies
+        let parsed: SimilarityExplanation | null = null
+
+        // Strategy 1: Direct parse
         try {
             parsed = JSON.parse(cleanResponse) as SimilarityExplanation
-        } catch (parseErr) {
-            console.error('Failed to parse LLM response:', parseErr)
+        } catch {
+            // Strategy 2: Fix truncated strings by finding unclosed quotes
+            try {
+                // If JSON is truncated mid-string, try to close it
+                let repairedJson = cleanResponse
+
+                // Check if we're missing the closing brace and/or quotes
+                const quoteCount = (repairedJson.match(/"/g) || []).length
+                if (quoteCount % 2 !== 0) {
+                    // Odd number of quotes - add closing quote
+                    repairedJson += '"'
+                }
+
+                // Check for missing differences field
+                if (!repairedJson.includes('"differences"')) {
+                    repairedJson = repairedJson.replace(/"\s*}?\s*$/, '", "differences": null }')
+                }
+
+                // Ensure proper closing
+                if (!repairedJson.endsWith('}')) {
+                    repairedJson += '}'
+                }
+
+                parsed = JSON.parse(repairedJson) as SimilarityExplanation
+            } catch {
+                // Strategy 3: Extract values using regex
+                try {
+                    const summaryMatch = cleanResponse.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)/)
+                    const sharedDNAMatch = cleanResponse.match(/"sharedDNA"\s*:\s*\[(.*?)\]/)
+                    const keyDiffMatch = cleanResponse.match(/"keyDifference"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+
+                    if (summaryMatch) {
+                        let summary = summaryMatch[1]
+                        summary = summary.replace(/\\$/, '').trim()
+
+                        // Parse sharedDNA array
+                        let sharedDNA: string[] = []
+                        if (sharedDNAMatch) {
+                            const matches = sharedDNAMatch[1].match(/"([^"]+)"/g)
+                            sharedDNA = matches ? matches.map(m => m.replace(/"/g, '')) : []
+                        }
+
+                        parsed = {
+                            summary,
+                            sharedDNA,
+                            keyDifference: keyDiffMatch ? keyDiffMatch[1] : null
+                        }
+                    }
+                } catch {
+                    // All strategies failed
+                    console.error('Failed to parse LLM response after all repair strategies')
+                    console.error('Cleaned response was:', cleanResponse.substring(0, 400))
+                    return null
+                }
+            }
+        }
+
+        if (!parsed) {
+            console.error('Failed to extract valid JSON from LLM response')
             console.error('Cleaned response was:', cleanResponse.substring(0, 400))
             return null
         }
 
         // Validate response
-        if (!parsed.commonalities || typeof parsed.commonalities !== 'string') {
+        if (!parsed.summary || typeof parsed.summary !== 'string') {
             console.error('Invalid LLM response format:', parsed)
             return null
         }
+
+        // Ensure sharedDNA is an array
+        const sharedDNA = Array.isArray(parsed.sharedDNA) ? parsed.sharedDNA : []
 
         // Cache the result
         await supabase
@@ -286,14 +354,16 @@ export async function getSimilarityExplanation(
             .upsert({
                 source_item_id: sourceItemId,
                 similar_item_id: similarItemId,
-                commonalities: parsed.commonalities,
-                differences: parsed.differences || null,
+                summary: parsed.summary,
+                shared_dna: sharedDNA,
+                key_difference: parsed.keyDifference || null,
                 created_at: new Date().toISOString()
             })
 
         return {
-            commonalities: parsed.commonalities,
-            differences: parsed.differences || null
+            summary: parsed.summary,
+            sharedDNA,
+            keyDifference: parsed.keyDifference || null
         }
     } catch (err) {
         console.error('Failed to generate similarity explanation:', err)
@@ -319,7 +389,7 @@ export async function getBatchSimilarityExplanations(
     try {
         const { data: cached } = await supabase
             .from('similarity_explanations')
-            .select('similar_item_id, commonalities, differences')
+            .select('similar_item_id, summary, shared_dna, key_difference')
             .eq('source_item_id', sourceItemId)
             .in('similar_item_id', similarItemIds)
 
@@ -327,8 +397,9 @@ export async function getBatchSimilarityExplanations(
         if (cached) {
             for (const item of cached) {
                 results.set(item.similar_item_id, {
-                    commonalities: item.commonalities,
-                    differences: item.differences
+                    summary: item.summary,
+                    sharedDNA: item.shared_dna || [],
+                    keyDifference: item.key_difference
                 })
                 cachedIds.add(item.similar_item_id)
             }

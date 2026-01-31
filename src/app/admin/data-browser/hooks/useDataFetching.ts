@@ -18,30 +18,22 @@ export function useDataFetching(state: BrowserState) {
     const supabase = createClient()
 
     const fetchStats = useCallback(async () => {
-        // Fetch raw count (often fails or returns 0 if RLS is strict on count(*))
-        const { count } = await supabase
-            .from('global_items')
-            .select('*', { count: 'exact', head: true })
-
-        // Fetch category breakdown (Security Definer RPC - reliable)
+        // Use the Security Definer RPC which is reliable and fast
         const { data: catStats } = await (supabase.rpc('get_category_stats') as any)
 
         // Group by normalized category to merge variations
         const byCategory: Record<string, number> = {}
-        let sumFromCategories = 0
+        let totalCount = 0
 
         if (catStats) {
             catStats.forEach((item: any) => {
                 const key = normalizeCategory(item.category)
                 byCategory[key] = (byCategory[key] || 0) + item.count
-                sumFromCategories += item.count
+                totalCount += item.count
             })
         }
 
-        // Fallback: If count is 0 but we have category stats, use the sum
-        const effectiveTotal = (count && count > 0) ? count : sumFromCategories
-
-        setStats({ total: effectiveTotal || 0, byCategory })
+        setStats({ total: totalCount, byCategory })
     }, [supabase])
 
     const fetchItems = useCallback(async () => {

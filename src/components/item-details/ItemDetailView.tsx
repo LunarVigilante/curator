@@ -112,10 +112,23 @@ export default function ItemDetailView({
         }
     }, [])
 
+    // Use a ref to store onItemChange to avoid triggering effect on callback changes
+    const onItemChangeRef = useRef(onItemChange)
+    useEffect(() => {
+        onItemChangeRef.current = onItemChange
+    }, [onItemChange])
+
+    // Track if we've already fetched for the current item to prevent loops
+    const lastFetchedIdRef = useRef<string | null>(null)
+
     // CRITICAL: Fetch fresh data from database when modal opens
     // This ensures we always have the latest data from DB, not cached/stale data
     useEffect(() => {
         if (!isOpen || !item?.id) return
+
+        // Prevent re-fetching for the same item
+        if (lastFetchedIdRef.current === item.id) return
+        lastFetchedIdRef.current = item.id
 
         const fetchFreshData = async () => {
             setIsLoadingFreshData(true)
@@ -135,9 +148,9 @@ export default function ItemDetailView({
                     return
                 }
 
-                if (data && onItemChange) {
+                if (data && onItemChangeRef.current) {
                     console.log('[ItemDetailView] ✅ Loaded fresh data from DB')
-                    onItemChange(data as GlobalItem)
+                    onItemChangeRef.current(data as GlobalItem)
                 }
             } catch (err) {
                 console.error('[ItemDetailView] Error fetching fresh data:', err)
@@ -147,7 +160,14 @@ export default function ItemDetailView({
         }
 
         fetchFreshData()
-    }, [isOpen, item?.id, onItemChange]) // Only re-fetch when modal opens or item ID changes
+    }, [isOpen, item?.id]) // Removed onItemChange - using ref instead
+
+    // Reset fetch tracking when modal closes
+    useEffect(() => {
+        if (!isOpen) {
+            lastFetchedIdRef.current = null
+        }
+    }, [isOpen])
 
     // Reset states on item change
     useEffect(() => {

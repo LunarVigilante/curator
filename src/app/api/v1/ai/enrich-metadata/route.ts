@@ -19,80 +19,112 @@ import { log } from 'next-axiom'
  */
 export const POST = withAiApi(async (request: NextRequest) => {
     const startTime = Date.now()
+    console.error('[DEBUG] enrich-metadata: Handler started')
 
-    // Validate request body with Zod schema
-    const validation = await parseRequestBody(request, enrichMetadataSchema)
-    if (!validation.success) {
-        return validationError(validation.error)
-    }
+    try {
+        // Validate request body with Zod schema
+        console.error('[DEBUG] enrich-metadata: Parsing request body...')
+        const validation = await parseRequestBody(request, enrichMetadataSchema)
+        if (!validation.success) {
+            console.error('[DEBUG] enrich-metadata: Validation failed:', validation.error)
+            return validationError(validation.error)
+        }
 
-    const { itemId, title, force } = validation.data
+        const { itemId, title, force } = validation.data
+        console.error('[DEBUG] enrich-metadata: Validated -', { itemId, title, force })
 
-    // Use service role client to bypass RLS
-    const supabase = createServiceRoleClient()
+        // Use service role client to bypass RLS
+        console.error('[DEBUG] enrich-metadata: Creating service role client...')
+        const supabase = createServiceRoleClient()
+        console.error('[DEBUG] enrich-metadata: Service role client created')
 
-    log.info('[Enrich] Starting metadata refresh', { itemId, title })
+        log.info('[Enrich] Starting metadata refresh', { itemId, title })
 
-    // Step 1: Refresh metadata from external providers (fast)
-    const metadataResult = await refreshMetadata(supabase, itemId, { force })
+        // Step 1: Refresh metadata from external providers (fast)
+        console.error('[DEBUG] enrich-metadata: Calling refreshMetadata...')
+        const metadataResult = await refreshMetadata(supabase, itemId, { force })
+        console.error('[DEBUG] enrich-metadata: refreshMetadata result:', metadataResult.success, metadataResult.error || 'no error')
 
-    if (!metadataResult.success) {
-        return internalError(metadataResult.error || 'Failed to refresh metadata')
-    }
+        if (!metadataResult.success) {
+            return internalError(metadataResult.error || 'Failed to refresh metadata')
+        }
 
-    // Step 2: Update the item with enriched metadata
-    if (Object.keys(metadataResult.enrichedData).length > 0) {
-        log.info('[Enrich] Updating item', {
+        // Step 2: Update the item with enriched metadata
+        console.error('[DEBUG] enrich-metadata: Step 2 - checking enrichedData count:', Object.keys(metadataResult.enrichedData).length)
+        if (Object.keys(metadataResult.enrichedData).length > 0) {
+            console.error('[DEBUG] enrich-metadata: Updating item in database...')
+            log.info('[Enrich] Updating item', {
+                itemId,
+                fieldsCount: Object.keys(metadataResult.enrichedData).length
+            })
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: updateError } = await (supabase as any)
+                .from('global_items')
+                .update(metadataResult.enrichedData)
+                .eq('id', itemId)
+
+            if (updateError) {
+                console.error('[DEBUG] enrich-metadata: Database update failed:', updateError.message)
+                log.error('[Enrich] Database update failed', { error: updateError.message })
+                return internalError(updateError.message)
+            }
+            console.error('[DEBUG] enrich-metadata: Database update succeeded')
+        }
+
+        // Step 3: Regenerate embedding with new metadata
+        console.error('[DEBUG] enrich-metadata: Step 3 - fetching updated item...')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: updatedItem, error: fetchError } = await (supabase as any)
+            .from('global_items')
+            .select('*')
+            .eq('id', itemId)
+            .single()
+
+        console.error('[DEBUG] enrich-metadata: Fetched item:', updatedItem ? 'got item' : 'no item', fetchError ? fetchError.message : 'no fetch error')
+
+        if (updatedItem) {
+            console.error('[DEBUG] enrich-metadata: Building embedding text...')
+            try {
+                const embeddingText = buildEmbeddingText(updatedItem)
+                const embedding = await generateEmbedding(embeddingText)
+
+                if (embedding) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    await (supabase as any)
+                        .from('global_items')
+                        .update({ embedding })
+                        .eq('id', itemId)
+                }
+            } catch (embeddingError) {
+                // Log but don't fail the request if embedding fails
+                log.warn('[Enrich] Embedding generation failed', {
+                    itemId,
+                    error: embeddingError instanceof Error ? embeddingError.message : 'Unknown error'
+                })
+            }
+        }
+
+        const duration = Date.now() - startTime
+        log.info('[Enrich] Completed', {
             itemId,
-            fieldsCount: Object.keys(metadataResult.enrichedData).length
+            duration,
+            fieldsUpdated: metadataResult.fieldsUpdated.length
         })
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: updateError } = await (supabase as any)
-            .from('global_items')
-            .update(metadataResult.enrichedData)
-            .eq('id', itemId)
-
-        if (updateError) {
-            log.error('[Enrich] Database update failed', { error: updateError.message })
-            return internalError(updateError.message)
-        }
+        return NextResponse.json({
+            success: true,
+            enriched: metadataResult.fieldsUpdated.length > 0,
+            fieldsUpdated: metadataResult.fieldsUpdated,
+            enrichedData: metadataResult.enrichedData,
+            providerName: metadataResult.providerName,
+            duration
+        })
+    } catch (error) {
+        log.error('[Enrich] Unexpected error', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined
+        })
+        return internalError(error instanceof Error ? error.message : 'An unexpected error occurred')
     }
-
-    // Step 3: Regenerate embedding with new metadata
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: updatedItem } = await (supabase as any)
-        .from('global_items')
-        .select('*')
-        .eq('id', itemId)
-        .single()
-
-    if (updatedItem) {
-        const embeddingText = buildEmbeddingText(updatedItem)
-        const embedding = await generateEmbedding(embeddingText)
-
-        if (embedding) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await (supabase as any)
-                .from('global_items')
-                .update({ embedding })
-                .eq('id', itemId)
-        }
-    }
-
-    const duration = Date.now() - startTime
-    log.info('[Enrich] Completed', {
-        itemId,
-        duration,
-        fieldsUpdated: metadataResult.fieldsUpdated.length
-    })
-
-    return NextResponse.json({
-        success: true,
-        enriched: metadataResult.fieldsUpdated.length > 0,
-        fieldsUpdated: metadataResult.fieldsUpdated,
-        enrichedData: metadataResult.enrichedData,
-        providerName: metadataResult.providerName,
-        duration
-    })
 })
