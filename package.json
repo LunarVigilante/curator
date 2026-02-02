@@ -17,7 +17,7 @@
     "harvest:all": "npx tsx src/scripts/harvest-all.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^3.0.15",
+    "@ai-sdk/google": "^3.0.20",
     "@ai-sdk/openai": "^3.0.21",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
