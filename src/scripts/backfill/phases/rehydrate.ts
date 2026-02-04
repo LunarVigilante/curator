@@ -11,7 +11,7 @@
  */
 
 import { generateEmbedding, sleep } from '@/lib/harvesters/shared';
-import { buildTvShowEmbeddingText } from '@/lib/ai/tv-show-description';
+import { buildTvShowVectorText } from '@/lib/ai/tv-show-description';
 import { CLIOptions, PhaseStats, createStats, DELAY_BETWEEN_ITEMS } from '../config';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -183,21 +183,15 @@ export async function runRehydratePhase(
                 networks: fresh.networks?.map((n: any) => n.name) || item.metadata?.networks
             };
 
-            // 4. Build embedding text using CACHED description_parts + FRESH stats
-            const embeddingText = buildTvShowEmbeddingText({
+            // 4. Build embedding text using CACHED description_parts + FRESH stats (Prefix Fusion)
+            const embeddingText = buildTvShowVectorText({
                 title: item.title,
-                category_type: item.category_type,
                 description_parts: item.description_parts, // CACHED - no LLM call!
                 genres: item.genres || fresh.genres?.map((g: any) => g.name),
-                cast: item.cast,
-                keywords: item.keywords,
-                metadata: {
-                    ...updates.metadata,
-                    number_of_seasons: fresh.number_of_seasons,
-                    number_of_episodes: fresh.number_of_episodes,
-                    status: fresh.status,
-                    vote_average: fresh.vote_average
-                }
+                keywords: item.keywords || item.cached_tags,  // Keywords for vector text
+                semanticSummary: item.description_parts?.semanticSummary,
+                bucketType: item.bucket_type,   // Use stored classification
+                genreLens: item.genre_lens
             });
 
             // 5. Generate new embedding (Voyage-4 only, ~$0.001)

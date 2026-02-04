@@ -18,8 +18,11 @@ import { log } from 'next-axiom';
 // ============================================================================
 
 const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
+const VOYAGE_RERANK_URL = 'https://api.voyageai.com/v1/rerank';
 const VOYAGE_MODEL = 'voyage-4';
+const VOYAGE_RERANK_MODEL = 'rerank-2';
 // Voyage-4 is the latest model with improved performance
+// Voyage rerank-2 is the cross-encoder for result re-ranking
 
 // RRF parameters
 const RRF_K = 60; // Constant for RRF formula (typically 60)
@@ -42,9 +45,15 @@ export interface SearchResult {
 
 export interface HybridSearchOptions {
     categoryFilter?: string;
+    /** Hard partition filter by bucket type (NARRATIVE, FORMAT, OBSERVATIONAL) */
+    bucketFilter?: string[];
     limit?: number;
     semanticWeight?: number; // 0-1, default 0.5
     keywordWeight?: number;  // 0-1, default 0.5
+    /** Enable cross-encoder re-ranking for top results (more accurate but slower) */
+    rerank?: boolean;
+    /** Number of candidates to fetch before re-ranking (default: 50) */
+    rerankCandidates?: number;
 }
 
 interface VoyageEmbeddingResponse {
@@ -186,6 +195,86 @@ export async function generateEmbeddingsBatch(
 }
 
 // ============================================================================
+// CROSS-ENCODER RE-RANKING (Voyage rerank-2)
+// ============================================================================
+
+interface RerankResult {
+    index: number;
+    relevance_score: number;
+}
+
+/**
+ * Re-rank search results using Voyage rerank-2 cross-encoder.
+ * Cross-encoders process query and document together for higher accuracy.
+ * 
+ * @param query - User search query
+ * @param results - Results to re-rank
+ * @param topK - Number of top results to return (default: limit from original search)
+ * @returns Re-ranked results sorted by relevance score
+ */
+export async function rerankResults(
+    query: string,
+    results: SearchResult[],
+    topK?: number
+): Promise<SearchResult[]> {
+    const apiKey = process.env.VOYAGE_API_KEY;
+    if (!apiKey) {
+        console.warn('[Search] VOYAGE_API_KEY not configured, skipping rerank');
+        return results;
+    }
+
+    if (results.length === 0) return results;
+
+    const startTime = Date.now();
+
+    try {
+        // Prepare documents for reranking (title + description)
+        const documents = results.map(r =>
+            `${r.title}${r.description ? ': ' + r.description.slice(0, 500) : ''}`
+        );
+
+        const response = await fetch(VOYAGE_RERANK_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: VOYAGE_RERANK_MODEL,
+                query: query,
+                documents: documents,
+                top_k: topK || results.length,
+                return_documents: false,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Search] Voyage rerank API error ${response.status}: ${errorText}`);
+            return results;
+        }
+
+        const data: { data: RerankResult[] } = await response.json();
+        const latencyMs = Date.now() - startTime;
+
+        console.log(`[Search] Reranked ${results.length} results in ${latencyMs}ms`);
+
+        // Map reranked indices back to original results
+        const rerankedResults = data.data.map(item => ({
+            ...results[item.index],
+            score: item.relevance_score,
+            source: 'hybrid' as const, // Mark as hybrid since reranking enhances hybrid search
+        }));
+
+        return rerankedResults;
+
+    } catch (error) {
+        console.error('[Search] Error re-ranking results:', error);
+        return results;
+    }
+}
+
+// ============================================================================
 // KEYWORD SEARCH
 // ============================================================================
 
@@ -197,7 +286,7 @@ async function keywordSearch(
     options: HybridSearchOptions = {}
 ): Promise<SearchResult[]> {
     const supabase = await createClient();
-    const { categoryFilter, limit = DEFAULT_RESULT_COUNT } = options;
+    const { categoryFilter, bucketFilter, limit = DEFAULT_RESULT_COUNT } = options;
 
     try {
         // Build query - using textSearch on title and description
@@ -210,6 +299,11 @@ async function keywordSearch(
 
         if (categoryFilter) {
             dbQuery = dbQuery.eq('category_type', categoryFilter);
+        }
+
+        // Hard partition filter by bucket type (NARRATIVE, FORMAT, OBSERVATIONAL)
+        if (bucketFilter && bucketFilter.length > 0) {
+            dbQuery = dbQuery.in('bucket_type', bucketFilter);
         }
 
         const { data, error } = await dbQuery;
@@ -249,7 +343,7 @@ async function semanticSearch(
     options: HybridSearchOptions = {}
 ): Promise<SearchResult[]> {
     const supabase = await createClient();
-    const { categoryFilter, limit = DEFAULT_RESULT_COUNT } = options;
+    const { categoryFilter, bucketFilter, limit = DEFAULT_RESULT_COUNT } = options;
 
     // Generate query embedding
     const queryEmbedding = await generateEmbedding(query, 'query');
@@ -265,6 +359,8 @@ async function semanticSearch(
             match_threshold: DEFAULT_MATCH_THRESHOLD,
             match_count: limit * 2,
             category_filter: categoryFilter || null,
+            // Hard partition filter by bucket type (NARRATIVE, FORMAT, OBSERVATIONAL)
+            bucket_filter: bucketFilter && bucketFilter.length > 0 ? bucketFilter : null,
         });
 
         if (error) {
@@ -367,12 +463,19 @@ export async function searchItems(
         limit = DEFAULT_RESULT_COUNT,
         semanticWeight = 0.5,
         keywordWeight = 0.5,
+        rerank = false,
+        rerankCandidates = 50,
     } = options;
+
+    // Determine how many candidates to fetch
+    // If reranking, fetch more candidates then narrow down
+    const fetchLimit = rerank ? Math.max(rerankCandidates, limit) : limit;
+    const fetchOptions = { ...options, limit: fetchLimit };
 
     // Run keyword and semantic search in parallel
     const [keywordResults, semanticResults] = await Promise.all([
-        keywordSearch(query, options),
-        semanticSearch(query, options),
+        keywordSearch(query, fetchOptions),
+        semanticSearch(query, fetchOptions),
     ]);
 
     // Merge using RRF
@@ -381,9 +484,17 @@ export async function searchItems(
         [keywordWeight, semanticWeight]
     );
 
+    // Apply cross-encoder re-ranking if enabled
+    if (rerank && fusedResults.length > 0) {
+        const candidates = fusedResults.slice(0, rerankCandidates);
+        const reranked = await rerankResults(query, candidates, limit);
+        return reranked.slice(0, limit);
+    }
+
     // Return top N results
     return fusedResults.slice(0, limit);
 }
+
 
 /**
  * Find similar items to a given item ID.

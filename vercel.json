@@ -37,5 +37,15 @@
     ],
     "buildCommand": "npm run build",
     "installCommand": "npm ci",
-    "framework": "nextjs"
+    "framework": "nextjs",
+    "crons": [
+        {
+            "path": "/api/cron/bulk-export",
+            "schedule": "0 9 * * *"
+        },
+        {
+            "path": "/api/cron/delta-sync",
+            "schedule": "0 */6 * * *"
+        }
+    ]
 }

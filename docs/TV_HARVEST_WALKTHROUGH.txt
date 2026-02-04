@@ -1,0 +1,359 @@
+================================================================================
+                    TV SHOW HARVEST & BACKFILL WALKTHROUGH
+                    (with Semantic Density Optimizations)
+                         Last Updated: 2026-02-03
+================================================================================
+
+This document describes the complete TV show pipeline from initial harvest
+through embedding generation, including all classification, enrichment, 
+rehydration workflows, and the new Semantic Density Optimizations.
+
+================================================================================
+                              FILE INVENTORY
+================================================================================
+
+Core Files (Ordered by Data Flow):
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FILE                                                   │ LINES │ PURPOSE    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ src/scripts/harvest-tmdb.ts                            │  117  │ CLI Entry  │
+│ src/lib/harvesters/tmdb.ts                             │  870  │ Harvester  │
+│ src/lib/harvesters/shared.ts                           │  518  │ Utilities  │
+│ src/lib/ai/tv-show-description.ts                      │ 1488  │ Semantic   │
+│ src/lib/ai/structured-description.ts                   │  251  │ AI Core    │
+│ src/lib/enrichment/categories/tv-show.ts               │  130  │ Re-exports │
+│ src/lib/services/search.ts                             │  443  │ Vector     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ src/scripts/backfill/index.ts                          │  150  │ Backfill   │
+│ src/scripts/backfill/config.ts                         │   48  │ Config     │
+│ src/scripts/backfill/phases/smart.ts                   │  211  │ Smart Fill │
+│ src/scripts/backfill/phases/rehydrate.ts               │  187  │ Rehydrate  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Total: ~4,400+ lines across 11 core files
+
+================================================================================
+                           PHASE 1: HARVEST
+================================================================================
+
+Entry Point: npx tsx src/scripts/harvest-tmdb.ts --type tv --query "Breaking Bad"
+
+Data Flow:
+  harvest-tmdb.ts → tmdb.ts:startHarvest() → tmdb.ts:processHarvestTask()
+
+What Gets Fetched from TMDB:
+  - Basic info: title, overview, first_air_date, status, vote_average
+  - Credits: cast (with characters), created_by, crew
+  - Genres & Keywords: ALL keywords (no limit - vital for classification)
+  - Media: poster_path, backdrop_path, logo_path, trailer
+  - Metadata: type ("Scripted", "Miniseries", "Documentary"), networks
+
+Key Function: fetchAndNormalizeTmdbData() [tmdb.ts:180-320]
+  - Calls TMDB API with append_to_response for batch fetching
+  - Normalizes response into TmdbMetadata interface
+
+================================================================================
+                        PHASE 2: CLASSIFICATION
+================================================================================
+
+3-Bucket System: detectTvBucket() [tv-show-description.ts:180-260]
+
+Purpose: Route shows to correct AI prompt template
+
+Detection Priority (CRITICAL - prevents misclassification):
+
+    0a. TMDB TYPE FIELD (Strongest Signal) - FIRST CHECK
+        TMDB's metadata.type field: "Scripted", "Miniseries", "Documentary"
+        → "Scripted" = NARRATIVE (source of truth)
+        → "Miniseries" + Documentary genre = OBSERVATIONAL (e.g., Planet Earth)
+        → "Miniseries" without Documentary = NARRATIVE (e.g., Band of Brothers)
+    
+    0b. SCRIPTED FORCE (Negative Constraint) - SECOND CHECK
+        Keywords: mockumentary, sitcom, comedy-drama, dramedy, scripted,
+                  workplace comedy, single-camera, multi-camera
+        → If ANY present = NARRATIVE (prevents The Office → Documentary)
+    
+    1. FORMAT DETECTION
+        Keywords: competition, elimination, contestant, game show, host
+        Genres: Game Show, Talk
+        → FORMAT bucket
+    
+    2. OBSERVATIONAL DETECTION  
+        Genres: Documentary, News
+        Keywords (non-competition): following, access, behind-the-scenes
+        → OBSERVATIONAL bucket
+    
+    3. DEFAULT → NARRATIVE
+
+================================================================================
+            NEW: 6-LABEL FORMAT TAXONOMY (Semantic Density Enhancement)
+================================================================================
+
+TvFormat Type: detectTvFormat() [tv-show-description.ts:285-340]
+
+Purpose: Granular format classification for vector differentiation
+
+Format Labels (Extensible - add new labels in FORMAT_DETECTION object):
+
+┌────────────────────────────┬────────────────────────────────────────────────┐
+│ Format Label               │ Description                                    │
+├────────────────────────────┼────────────────────────────────────────────────┤
+│ SCRIPTED_SINGLE_CAM        │ Cinematic, no laugh track (The Bear, Succession)│
+│ SCRIPTED_MULTI_CAM         │ Stage-like, laugh track (Friends, Big Bang)    │
+│ SCRIPTED_MOCKUMENTARY      │ Fictional doc style (The Office, Abbott Elem)  │
+│ UNSCRIPTED_COMPETITION     │ Game mechanics, elimination (Survivor, Top Chef)│
+│ UNSCRIPTED_DOCUSOAP        │ Constructed reality (Real Housewives)          │
+│ UNSCRIPTED_DOCUSERIES      │ Educational, archival (Planet Earth, Last Dance)│
+│ UNKNOWN                    │ Fallback                                       │
+└────────────────────────────┴────────────────────────────────────────────────┘
+
+Detection Keywords (Extensible - add to FORMAT_DETECTION constant):
+  - SINGLE_CAM_KEYWORDS: single-camera, cinematic, prestige, cable drama...
+  - MULTI_CAM_KEYWORDS: multi-camera, laugh track, studio audience...
+  - MOCKUMENTARY_KEYWORDS: mockumentary, docu-style, confessional...
+  - COMPETITION_KEYWORDS: competition, elimination, contestant...
+  - DOCUSOAP_KEYWORDS: reality show, interpersonal, lifestyle...
+  - DOCUSERIES_KEYWORDS: documentary, archival footage, narrator...
+
+================================================================================
+          NEW: CHARACTER ARCHETYPE TRANSLATION (Semantic Density)
+================================================================================
+
+Function: translateToArchetypes() [tv-show-description.ts:360-420]
+
+Purpose: Replace character names with universal archetypes for cross-show
+         similarity matching (e.g., "Walter White" → "Anti-Hero")
+
+Available Archetypes (Extensible - add to CHARACTER_ARCHETYPES array):
+
+  Protagonist Archetypes:
+    - Anti-Hero: Morally ambiguous, driven by vice (Walter White, Tony Soprano)
+    - Byronic Hero: Brooding, isolated, code of honor (The Witcher, Mandalorian)
+    - Chosen One: Destined for greatness (Jon Snow)
+    - Everyman: Ordinary person, extraordinary circumstances
+    - Cynical Genius: Brilliant but abrasive (House, Sherlock)
+
+  Supporting Archetypes:
+    - Mentor, Caregiver, Trickster, Rebel, Sage
+    - Straight Man vs The Fool (Jim/Michael, Abed/Troy)
+    - Chaos Agent: Eccentric, disruptive (Fleabag)
+    - Found Family: Ensemble dynamics (Community, Brooklyn 99)
+    - Incompetent Leader: Authority desperate for validation
+
+Example Output:
+  "Features Anti-Hero protagonist who descends into crime,
+   balanced by Caregiver who serves as moral compass."
+
+LLM Call: Uses same model as description generation (configured in database)
+
+================================================================================
+                     PHASE 3: DESCRIPTION GENERATION
+================================================================================
+
+Entry: generateTvShowDescription() [tv-show-description.ts:680-980]
+
+What Gets Generated (4-Part Structure):
+  1. Premise      → Plot + protagonist + central conflict
+  2. Themes       → Core themes + motifs (2-3 sentences)
+  3. Tone         → Atmosphere + emotional register
+  4. Style        → Visual/structural qualities
+  5. SemanticSummary → Dense 2-sentence elevator pitch for embeddings
+
+Bucket-Specific Prompts:
+
+  NARRATIVE → Focus: Protagonist, inciting incident, dramatic arc
+  FORMAT    → Focus: Competition mechanics, prize, uniqueness
+  OBSERVATIONAL → Focus: Subject matter, access level, perspective
+
+Output: StructuredDescription object stored in description_parts column
+
+================================================================================
+                        PHASE 4: TAG GENERATION
+================================================================================
+
+Entry: generateTvShowTags() [tv-show.ts:44-120]
+
+4-Bucket Taxonomy:
+  1. sub_genres (3-5)  → Niche classification: "nordic noir", "workplace sitcom"
+  2. tropes (4-6)      → TV Tropes terminology: "found family", "slow burn"
+  3. mood (3-5)        → Emotional signature: "cerebral", "cozy", "bleak"
+  4. format (2-4)      → Structure: "anthology", "binge-worthy", "procedural"
+
+Output: 15-20 high-density tags stored in cached_tags column
+
+================================================================================
+           PHASE 5: EMBEDDING GENERATION (Semantic Density Optimized)
+================================================================================
+
+Vector Text Builder: buildTvShowVectorText() [tv-show-description.ts:1383-1488]
+
+"Prefix Fusion" Strategy + Token Limit Enforcement:
+  1. Structural tokens FIRST (for transformer attention bias)
+  2. Semantic summary SECOND
+  3. 750 TOKEN LIMIT enforced (prevents "Vector Dilution")
+
+Token Limit Constants:
+  - MAX_VECTOR_TOKENS = 750
+  - WORDS_TO_TOKENS_RATIO = 1.3 (English approximation)
+  - Truncation at sentence boundary when exceeded
+
+Prefix Order (Highest Signal First):
+  1. Format: SCRIPTED_SINGLE_CAM (6-label taxonomy - MOST SPECIFIC)
+  2. Type: NARRATIVE (3-bucket)
+  3. Lens: CRIME (genre lens)
+  4. Archetypes: "Features Anti-Hero protagonist..." (NEW)
+  5. Pacing: serialized, binge-worthy
+  6. Tone: cerebral, bleak
+  7. Genre: nordic noir, crime drama
+  8. Tropes: found family, slow burn
+  9. Summary: [semanticSummary from description_parts]
+  10. Keywords: [unique TMDB keywords not in tags]
+
+Example Vector Text:
+    Format: SCRIPTED_SINGLE_CAM | Type: NARRATIVE | Lens: CRIME | 
+    Archetypes: Features Anti-Hero protagonist who descends into crime |
+    Pacing: serialized, binge-worthy | Tone: cerebral, bleak |
+    Genre: crime drama, prestige drama | Tropes: moral decay, transformation |
+    Summary: A chemistry teacher's descent into methamphetamine manufacturing...
+
+Embedding: Voyage-4 (1024 dimensions) via generateEmbedding() [shared.ts:280-320]
+
+================================================================================
+                          PHASE 6: BACKFILL
+================================================================================
+
+CLI: npx tsx src/scripts/backfill --category TV_SHOW --phase smart
+
+Available Phases [config.ts:15-17]:
+  - smart        → Conditional (only what's missing)
+  - rehydrate    → Fresh TMDB + cached descriptions
+  - full         → All phases
+
+Smart Phase Logic [smart.ts:80-220]:
+  1. Check for missing metadata → calls refreshMetadata()
+  2. Check for incomplete description_parts → calls generateTvShowDescription()
+  3. Check for missing tags → calls generateTags()
+  4. Check for missing archetypes → calls translateToArchetypes()
+  5. If ANYTHING updated → regenerates embedding via buildTvShowVectorText()
+
+Rehydrate Phase Logic [rehydrate.ts:70-195]:
+  Purpose: Update ongoing/returning series with fresh stats (no LLM cost)
+  
+  1. Fetch fresh TMDB data (seasons, episodes, status, ratings)
+  2. Use CACHED description_parts (no AI call!)
+  3. Rebuild embedding text with buildTvShowVectorText() (Prefix Fusion)
+  4. Re-embed with Voyage-4 only (~$0.001 per item)
+
+================================================================================
+                          PHASE 7: VECTOR SEARCH
+================================================================================
+
+Hard Filtering: bucketFilter in match_documents RPC [search.ts:240-280]
+
+RPC Call with Bucket Filter:
+    const { data } = await supabase.rpc('match_documents', {
+        query_embedding: embedding,
+        match_threshold: 0.5,
+        match_count: 20,
+        category_filter: 'TV_SHOW',
+        bucket_filter: ['NARRATIVE', 'FORMAT']  // Hard partition
+    });
+
+================================================================================
+                       DATABASE SCHEMA ADDITIONS
+================================================================================
+
+New Columns (via migration: add_semantic_density_columns):
+
+┌─────────────────┬──────────────────────────────────────────────────────────┐
+│ Column          │ Description                                              │
+├─────────────────┼──────────────────────────────────────────────────────────┤
+│ bucket_type     │ 3-bucket: NARRATIVE | FORMAT | OBSERVATIONAL             │
+│ genre_lens      │ CRIME | SCIFI | COMEDY | DRAMA | GENERAL                 │
+│ is_anthology    │ Boolean                                                  │
+│ format_type     │ NEW: 6-label format taxonomy                             │
+│ lifecycle_state │ NEW: FSM state (MINISERIES → SERIALIZED_DRAMA, etc.)     │
+│ archetypes      │ NEW: LLM-translated character archetypes                 │
+└─────────────────┴──────────────────────────────────────────────────────────┘
+
+Indexes:
+  - idx_global_items_format_type (partial, WHERE format_type IS NOT NULL)
+  - idx_global_items_lifecycle_state (partial, WHERE lifecycle_state NOT NULL)
+
+================================================================================
+                         EXTENSIBILITY GUIDE
+================================================================================
+
+All new features are designed for easy extension:
+
+1. ADD NEW FORMAT LABELS:
+   → Edit FORMAT_DETECTION constant in tv-show-description.ts
+   → Add detection keywords to appropriate category array
+   → Add new value to TvFormat type
+
+2. ADD NEW ARCHETYPES:
+   → Add object to CHARACTER_ARCHETYPES array in tv-show-description.ts
+   → Format: { id: 'NEW_ID', label: 'Display Label', description: '...' }
+   → LLM prompt automatically picks up new archetypes
+
+3. ADD NEW LIFECYCLE STATES:
+   → Add new value to LifecycleState type in tv-show-description.ts
+   → Implement transition logic in rehydrate.ts if needed
+
+4. ADJUST TOKEN LIMIT:
+   → Edit MAX_VECTOR_TOKENS constant in tv-show-description.ts
+   → Current: 750 tokens (user-specified)
+
+================================================================================
+                           DATA FLOW SUMMARY
+================================================================================
+
+HARVEST PATH (new items):
+  harvest-tmdb.ts
+    → tmdb.ts:startHarvest()
+      → fetchAndNormalizeTmdbData()    # TMDB API
+      → detectTvBucket()               # 3-bucket classification
+      → detectTvFormat()               # NEW: 6-label format
+      → detectGenreLens()              # Genre lens
+      → isAnthology()                  # Anthology flag
+      → translateToArchetypes()        # NEW: LLM archetypes
+      → generateTvShowDescription()    # AI: 4-part description
+      → generateTvShowTags()           # AI: 4-bucket tags
+      → buildTvShowVectorText()        # Prefix Fusion (750 token limit)
+      → generateEmbedding()            # Voyage-4 1024d vector
+      → INSERT to global_items (with format_type, archetypes)
+
+BACKFILL PATH (existing items):
+  backfill/index.ts → phases/smart.ts
+    → Check missing fields (including archetypes)
+    → generateTvShowDescription() if needed
+    → translateToArchetypes() if needed
+    → generateTags() if needed
+    → buildTvShowVectorText()
+    → generateEmbedding()
+
+================================================================================
+                         CONSOLIDATION STATUS
+================================================================================
+
+✅ Single Source of Truth:
+   - detectTvBucket()         → tv-show-description.ts ONLY
+   - detectTvFormat()         → tv-show-description.ts ONLY (NEW)
+   - detectGenreLens()        → tv-show-description.ts ONLY  
+   - buildTvShowVectorText()  → tv-show-description.ts ONLY
+   - translateToArchetypes()  → tv-show-description.ts ONLY (NEW)
+
+✅ All Callers Use Canonical Functions:
+   - tmdb.ts                  → imports from tv-show.ts (barrel)
+   - smart.ts                 → dynamic imports tv-show.ts
+   - rehydrate.ts             → imports from tv-show.ts
+
+✅ Extensible Design:
+   - FORMAT_DETECTION         → Add keywords without code changes
+   - CHARACTER_ARCHETYPES     → Add archetypes without code changes
+   - LifecycleState           → Add states without code changes
+
+================================================================================
+                               END OF DOCUMENT
+================================================================================

@@ -5,6 +5,7 @@
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { callLLM } from '@/lib/llm';
 import { decrypt } from '@/lib/encryption';
+import crypto from 'crypto';
 import type { StructuredDescription } from '@/lib/ai/structured-description';
 
 // ============================================================================
@@ -136,6 +137,56 @@ export function createLimiter(concurrency: number) {
 
 // Global limiter for AI rewrites (5 concurrent)
 export const aiLimiter = createLimiter(5);
+
+// ============================================================================
+// SEMANTIC HASH (Change Detection for Rehydration)
+// ============================================================================
+
+/**
+ * Compute SHA-256 hash of semantic fields for change detection.
+ * 
+ * Only re-embed content when semantic fields change:
+ * - title, overview, cast, genres
+ * 
+ * Non-semantic fields (vote_count, poster_url, etc.) should NOT trigger re-embedding.
+ * This saves Voyage-4 API costs during rehydration.
+ * 
+ * @param title - Content title
+ * @param overview - Content description/overview
+ * @param cast - Array of cast member names
+ * @param genres - Array of genre names
+ * @returns SHA-256 hash as hex string
+ */
+export function computeSemanticHash(
+    title: string,
+    overview: string,
+    cast?: string[],
+    genres?: string[]
+): string {
+    // Normalize inputs for consistent hashing
+    const normalizedTitle = (title || '').toLowerCase().trim();
+    const normalizedOverview = (overview || '').toLowerCase().trim();
+    const normalizedCast = (cast || []).slice(0, 8).map(c => c.toLowerCase().trim()).sort().join('|');
+    const normalizedGenres = (genres || []).map(g => g.toLowerCase().trim()).sort().join('|');
+
+    // Combine into single string with delimiters
+    const combined = `${normalizedTitle}##${normalizedOverview}##${normalizedCast}##${normalizedGenres}`;
+
+    // Generate SHA-256 hash
+    return crypto.createHash('sha256').update(combined).digest('hex');
+}
+
+/**
+ * Check if semantic fields have changed (requires re-embedding)
+ * 
+ * @param existingHash - Hash stored in database
+ * @param newHash - Hash computed from new content
+ * @returns true if content has semantic changes
+ */
+export function hasSemanticChanges(existingHash: string | null, newHash: string): boolean {
+    if (!existingHash) return true;  // No hash means always re-embed
+    return existingHash !== newHash;
+}
 
 // ============================================================================
 // LLM CONFIG (fetched directly from database)

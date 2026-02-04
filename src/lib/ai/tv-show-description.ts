@@ -31,6 +31,108 @@ import type { StructuredDescription, GenerationContext } from './structured-desc
 
 export type TvBucket = 'NARRATIVE' | 'FORMAT' | 'OBSERVATIONAL';
 
+// ============================================================================
+// 6-LABEL FORMAT TAXONOMY (Extensible - add new formats here)
+// Provides granular format classification for vector differentiation
+// ============================================================================
+
+export type TvFormat =
+    | 'SCRIPTED_SINGLE_CAM'      // Cinematic, no laugh track (The Bear, Succession)
+    | 'SCRIPTED_MULTI_CAM'       // Stage-like, laugh track (Friends, Big Bang Theory)
+    | 'SCRIPTED_MOCKUMENTARY'    // Fictional documentary style (The Office, Abbott Elementary)
+    | 'UNSCRIPTED_COMPETITION'   // Game mechanics, elimination (Survivor, Top Chef)
+    | 'UNSCRIPTED_DOCUSOAP'      // Constructed reality, interpersonal (Real Housewives)
+    | 'UNSCRIPTED_DOCUSERIES'    // Educational, archival, narrator-led (Planet Earth)
+    | 'UNKNOWN';                 // Fallback
+
+// Extensible keyword arrays for format detection
+// Add new detection patterns here without modifying core logic
+const FORMAT_DETECTION = {
+    // Single-camera scripted indicators
+    SINGLE_CAM_KEYWORDS: [
+        'single-camera', 'cinematic', 'prestige', 'cable drama', 'streaming original',
+        'hour-long drama', 'serialized drama', 'premium cable'
+    ],
+
+    // Multi-camera scripted indicators  
+    MULTI_CAM_KEYWORDS: [
+        'multi-camera', 'laugh track', 'studio audience', 'three-camera',
+        'traditional sitcom', 'network sitcom'
+    ],
+
+    // Mockumentary indicators (highest priority for scripted)
+    MOCKUMENTARY_KEYWORDS: [
+        'mockumentary', 'docu-style', 'fake documentary', 'mock-doc',
+        'confessional', 'talking head', 'breaking the fourth wall',
+        'documentary-style comedy'
+    ],
+
+    // Competition/game show indicators
+    COMPETITION_KEYWORDS: [
+        'competition', 'elimination', 'contestant', 'contestants compete',
+        'game show', 'host', 'judges', 'prize', 'winner', 'challenge',
+        'audition', 'talent show', 'cooking competition', 'dating show'
+    ],
+
+    // Docusoap/reality drama indicators
+    DOCUSOAP_KEYWORDS: [
+        'reality show', 'real housewives', 'drama series', 'interpersonal',
+        'confessional interviews', 'constructed reality', 'lifestyle',
+        'celebrity', 'follows the lives'
+    ],
+
+    // Documentary/educational indicators
+    DOCUSERIES_KEYWORDS: [
+        'documentary', 'docuseries', 'archival footage', 'narrator',
+        'educational', 'nature documentary', 'true crime', 'investigation',
+        'historical', 'science series'
+    ]
+} as const;
+
+// ============================================================================
+// CHARACTER ARCHETYPES (Extensible - add new archetypes here)
+// Used for LLM translation of cast to universal character functions
+// ============================================================================
+
+export const CHARACTER_ARCHETYPES = [
+    // Protagonist Archetypes
+    { id: 'ANTI_HERO', label: 'Anti-Hero', description: 'Morally ambiguous, driven by vice, justifies means' },
+    { id: 'BYRONIC_HERO', label: 'Byronic Hero', description: 'Brooding, isolated, code of honor, reluctant savior' },
+    { id: 'CHOSEN_ONE', label: 'Chosen One', description: 'Destined for greatness, special powers or role' },
+    { id: 'EVERYMAN', label: 'Everyman', description: 'Relatable ordinary person thrust into extraordinary circumstances' },
+    { id: 'CYNICAL_GENIUS', label: 'Cynical Genius', description: 'Brilliant but abrasive, prioritizes logic over social norms' },
+
+    // Supporting Archetypes
+    { id: 'MENTOR', label: 'Mentor', description: 'Wise guide, provides training and wisdom' },
+    { id: 'CAREGIVER', label: 'Caregiver', description: 'Moral compass, empathetic support figure' },
+    { id: 'TRICKSTER', label: 'Trickster', description: 'Comic relief, subverts expectations, clever mischief' },
+    { id: 'REBEL', label: 'Rebel', description: 'Challenges authority, fights the system' },
+    { id: 'SAGE', label: 'Sage', description: 'Keeper of knowledge, provides insight' },
+
+    // Dynamic Pair Archetypes
+    { id: 'STRAIGHT_MAN', label: 'Straight Man', description: 'Reactive observer, grounding element in chaos' },
+    { id: 'THE_FOOL', label: 'The Fool', description: 'Absurdist, lacks self-awareness, comedic catalyst' },
+    { id: 'CHAOS_AGENT', label: 'Chaos Agent', description: 'Eccentric, disruptive, impulsive, transformative' },
+
+    // Ensemble Archetypes
+    { id: 'FOUND_FAMILY', label: 'Found Family', description: 'Diverse group, loyalty, dysfunctional dynamics' },
+    { id: 'INCOMPETENT_LEADER', label: 'Incompetent Leader', description: 'Authority figure desperate for validation' }
+] as const;
+
+export type ArchetypeId = typeof CHARACTER_ARCHETYPES[number]['id'];
+
+// ============================================================================
+// LIFECYCLE STATES (Extensible - add new states here)
+// Tracks show evolution for FSM-based metadata management
+// ============================================================================
+
+export type LifecycleState =
+    | 'MINISERIES'         // Single season, closed narrative
+    | 'SERIALIZED_DRAMA'   // Multi-season with recurring cast
+    | 'ANTHOLOGY_SERIES'   // Rotating cast/stories per season
+    | 'STANDARD'           // Typical ongoing series
+    | 'UNKNOWN';           // Default/unclassified
+
 // Keywords that indicate FORMAT bucket (Game/Competition)
 const FORMAT_KEYWORDS = [
     'game show', 'competition', 'elimination', 'quiz', 'contest',
@@ -55,19 +157,70 @@ const OBSERVATIONAL_KEYWORDS = [
     'behind the scenes', 'real life', 'follows', 'chronicles'
 ];
 
+// SCRIPTED FORCE keywords - these ALWAYS route to NARRATIVE regardless of Documentary tag
+// Prevents mockumentaries like The Office or What We Do in the Shadows from being misclassified
+const SCRIPTED_FORCE_KEYWORDS = [
+    'mockumentary', 'sitcom', 'comedy-drama', 'dramedy', 'scripted',
+    'fictional', 'satire', 'parody', 'workplace comedy', 'single-camera',
+    'laugh track', 'multi-camera', 'animated series', 'anime'
+];
+
 /**
  * Determine which structural bucket a TV show belongs to
+ * 
+ * Priority Order (CRITICAL - prevents mockumentary misclassification):
+ * 0a. TMDB TYPE: "Scripted" type → NARRATIVE (strongest signal from source)
+ * 0b. SCRIPTED FORCE: Mockumentary, Sitcom, etc. → NARRATIVE (ignores Documentary tag)
+ * 1. FORMAT: Game Show, Competition → FORMAT
+ * 2. OBSERVATIONAL: Documentary, News → OBSERVATIONAL
+ * 3. DEFAULT: Everything else → NARRATIVE
+ * 
+ * @param genres - Array of genre strings from TMDB
+ * @param keywords - Array of keyword strings from TMDB
+ * @param synopsis - Overview/description text
+ * @param tmdbType - TMDB's "type" field (e.g., "Scripted", "Miniseries", "Documentary")
  */
 export function detectTvBucket(
     genres?: string[],
     keywords?: string[],
-    synopsis?: string
+    synopsis?: string,
+    tmdbType?: string | null
 ): TvBucket {
     const genresLower = genres?.map(g => g.toLowerCase()) || [];
     const keywordsLower = keywords?.map(k => k.toLowerCase()) || [];
     const synopsisLower = synopsis?.toLowerCase() || '';
+    const tmdbTypeLower = tmdbType?.toLowerCase() || '';
 
-    // 1. Check for FORMAT markers first (Competition/Game/Rules)
+    // =========================================================================
+    // 0a. TMDB TYPE CHECK: Strongest signal from source data
+    // "Scripted" is ALWAYS narrative content
+    // "Miniseries" requires genre check (Documentary miniseries like Planet Earth)
+    // =========================================================================
+    if (tmdbTypeLower.includes('scripted')) {
+        return 'NARRATIVE';  // TMDB explicitly marks this as scripted
+    }
+
+    if (tmdbTypeLower.includes('miniseries')) {
+        // Safety check: Is it actually a docu-series? (e.g., Planet Earth, The Jinx)
+        const hasDocumentaryGenre = genresLower.some(g => g.includes('documentary'));
+        if (hasDocumentaryGenre) {
+            return 'OBSERVATIONAL';  // Miniseries with Documentary genre
+        }
+        return 'NARRATIVE';  // Scripted miniseries (e.g., Band of Brothers)
+    }
+
+    // =========================================================================
+    // 0b. NEGATIVE CONSTRAINT: Force NARRATIVE if scripted indicators present
+    // This MUST run before Documentary check to prevent mockumentary misclassification
+    // =========================================================================
+    const hasScriptedForce = SCRIPTED_FORCE_KEYWORDS.some(sf =>
+        keywordsLower.some(k => k.includes(sf)) || synopsisLower.includes(sf)
+    );
+    if (hasScriptedForce) {
+        return 'NARRATIVE';  // Mockumentary, Sitcom, etc. are scripted content
+    }
+
+    // 1. Check for FORMAT markers (Competition/Game/Rules)
     const hasFormatKeyword = FORMAT_KEYWORDS.some(fk =>
         keywordsLower.some(k => k.includes(fk)) || synopsisLower.includes(fk)
     );
@@ -109,10 +262,166 @@ export function detectTvBucket(
 }
 
 // ============================================================================
+// 6-LABEL FORMAT DETECTION (Granular classification for vector differentiation)
+// ============================================================================
+
+/**
+ * Detect the granular format type for a TV show (6-label taxonomy)
+ * 
+ * Priority order:
+ * 1. Mockumentary detection (scripted shows that look like docs)
+ * 2. Multi-camera detection (traditional sitcoms)
+ * 3. Competition detection (game shows, reality competitions)
+ * 4. Docusoap detection (reality drama)
+ * 5. Docuseries detection (educational/investigative docs)
+ * 6. Default to single-camera for scripted, unknown otherwise
+ * 
+ * @param bucket - The 3-bucket classification (NARRATIVE/FORMAT/OBSERVATIONAL)
+ * @param genres - Array of genre strings
+ * @param keywords - Array of keyword strings
+ * @param synopsis - Overview/description text
+ * @param tmdbType - TMDB's type field
+ */
+export function detectTvFormat(
+    bucket: TvBucket,
+    genres?: string[],
+    keywords?: string[],
+    synopsis?: string,
+    tmdbType?: string | null
+): TvFormat {
+    const genresLower = genres?.map(g => g.toLowerCase()) || [];
+    const keywordsLower = keywords?.map(k => k.toLowerCase()) || [];
+    const synopsisLower = synopsis?.toLowerCase() || '';
+    const allText = [...keywordsLower, synopsisLower].join(' ');
+
+    // Helper to check if any pattern matches
+    const hasMatch = (patterns: readonly string[]) =>
+        patterns.some(p => allText.includes(p) || keywordsLower.includes(p));
+
+    // =========================================================================
+    // SCRIPTED SHOWS (NARRATIVE bucket)
+    // =========================================================================
+    if (bucket === 'NARRATIVE') {
+        // 1. Mockumentary is highest priority (scripted but looks like doc)
+        if (hasMatch(FORMAT_DETECTION.MOCKUMENTARY_KEYWORDS)) {
+            return 'SCRIPTED_MOCKUMENTARY';
+        }
+
+        // 2. Multi-camera sitcom detection
+        if (hasMatch(FORMAT_DETECTION.MULTI_CAM_KEYWORDS)) {
+            return 'SCRIPTED_MULTI_CAM';
+        }
+
+        // 3. Default scripted to single-camera (prestige TV default)
+        return 'SCRIPTED_SINGLE_CAM';
+    }
+
+    // =========================================================================
+    // COMPETITION/GAME SHOWS (FORMAT bucket)
+    // =========================================================================
+    if (bucket === 'FORMAT') {
+        return 'UNSCRIPTED_COMPETITION';
+    }
+
+    // =========================================================================
+    // OBSERVATIONAL SHOWS (OBSERVATIONAL bucket)
+    // =========================================================================
+    if (bucket === 'OBSERVATIONAL') {
+        // Docusoap vs Docuseries detection
+        if (hasMatch(FORMAT_DETECTION.DOCUSOAP_KEYWORDS)) {
+            return 'UNSCRIPTED_DOCUSOAP';
+        }
+
+        // Default observational to docuseries (educational/investigative)
+        return 'UNSCRIPTED_DOCUSERIES';
+    }
+
+    return 'UNKNOWN';
+}
+
+// ============================================================================
+// ARCHETYPE TRANSLATION (LLM-based character function mapping)
+// ============================================================================
+
+// Note: callLLM is imported at the top of the file
+
+/**
+ * Translate cast characters into universal archetypes using LLM
+ * 
+ * This enables cross-show similarity matching based on character dynamics
+ * rather than specific names (e.g., "Anti-Hero" matches across genres)
+ * 
+ * @param config - LLM configuration (same as description generation)
+ * @param title - Show title
+ * @param synopsis - Show overview
+ * @param castWithCharacters - Array of cast members with character names
+ * @returns Archetype description string for vector injection
+ */
+export async function translateToArchetypes(
+    config: { apiKey: string; provider: string; model?: string; endpoint?: string },
+    title: string,
+    synopsis: string,
+    castWithCharacters: { name: string; character: string }[]
+): Promise<string> {
+    const archetypeList = CHARACTER_ARCHETYPES
+        .map(a => `- ${a.label}: ${a.description}`)
+        .join('\n');
+
+    const castList = castWithCharacters
+        .slice(0, 6)  // Limit to main cast
+        .map(c => `${c.name} as "${c.character}"`)
+        .join(', ');
+
+    const systemPrompt = `You are a narrative analyst. Your task is to map TV show characters to universal archetypes.
+
+Available archetypes:
+${archetypeList}
+
+Output a SINGLE sentence (max 40 words) describing the main character dynamics using archetype labels.
+Format: "Features [archetype] protagonist who [function], balanced by [archetype] who [function]."
+
+Do NOT use character names. Use ONLY archetype labels.
+If ensemble show, say "An ensemble of [archetype]+[archetype] forming a Found Family."`;
+
+    const userPrompt = `Map the characters to archetypes:
+
+Show: ${title}
+Synopsis: ${synopsis}
+Cast: ${castList}
+
+Output archetype sentence:`;
+
+    try {
+        const response = await callLLM({
+            userPrompt,
+            systemPrompt,
+            apiKey: config.apiKey,
+            provider: config.provider,
+            model: config.model,
+            endpoint: config.endpoint,
+            maxTokens: 100
+        });
+
+        // Clean and validate response
+        const cleaned = response.trim().replace(/^["']|["']$/g, '');
+
+        // Ensure it's a reasonable archetype sentence
+        if (cleaned.length > 20 && cleaned.length < 200) {
+            return cleaned;
+        }
+
+        return '';  // Return empty if invalid
+    } catch (error) {
+        console.warn(`⚠️ Archetype translation failed for "${title}":`, error);
+        return '';
+    }
+}
+
+// ============================================================================
 // GENRE LENS DETECTION (NARRATIVE Sub-Classification)
 // ============================================================================
 
-export type GenreLens = 'SCI_FI_FANTASY' | 'CRIME_THRILLER' | 'DRAMA_ROMANCE' | 'GENERAL';
+export type GenreLens = 'SCI_FI_FANTASY' | 'CRIME_THRILLER' | 'DRAMA_ROMANCE' | 'COMEDY' | 'GENERAL';
 
 // Genre clusters for lens detection
 const SCI_FI_FANTASY_GENRES = [
@@ -127,22 +436,39 @@ const CRIME_THRILLER_GENRES = [
 
 const DRAMA_ROMANCE_GENRES = [
     'drama', 'romance', 'family', 'soap', 'melodrama',
-    'coming of age', 'slice of life'
+    'coming of age', 'slice of life', 'history', 'western'
 ];
+
+const COMEDY_GENRES = [
+    'comedy', 'sitcom', 'satire', 'parody', 'sketch', 'stand-up'
+];
+
+// Keywords that override genre detection (for waterfall logic)
+const SCI_FI_KEYWORDS = ['space', 'alien', 'robot', 'future', 'dystopia', 'cyberpunk', 'time travel'];
+const COMEDY_KEYWORDS = ['sitcom', 'laugh', 'funny', 'humor', 'parody', 'mockumentary'];
 
 /**
  * Detect the genre lens for NARRATIVE shows
- * Used to select genre-specific premise prompts
+ * Uses waterfall logic per TV Blueprint:
+ * 1. Check keywords first (for Animation + Space -> SCI_FI)
+ * 2. Check genre matches
+ * 3. Fallback to GENERAL for variety/unclassified
  */
-export function detectGenreLens(genres?: string[]): GenreLens {
+export function detectGenreLens(genres?: string[], keywords?: string[]): GenreLens {
     if (!genres?.length) return 'GENERAL';
 
     const genresLower = genres.map(g => g.toLowerCase());
+    const keywordsLower = keywords?.map(k => k.toLowerCase()) || [];
 
-    // Count matches for each cluster
+    // WATERFALL STEP 1: Check keywords for overrides
+    // e.g., "Animation" + "Space" -> SCI_FI_FANTASY
+    const hasSciFiKeyword = SCI_FI_KEYWORDS.some(k => keywordsLower.some(kw => kw.includes(k)));
+    const hasComedyKeyword = COMEDY_KEYWORDS.some(k => keywordsLower.some(kw => kw.includes(k)));
+
+    // WATERFALL STEP 2: Count genre matches
     const sciFiCount = SCI_FI_FANTASY_GENRES.filter(sg =>
         genresLower.some(g => g.includes(sg))
-    ).length;
+    ).length + (hasSciFiKeyword ? 2 : 0);
 
     const crimeCount = CRIME_THRILLER_GENRES.filter(cg =>
         genresLower.some(g => g.includes(cg))
@@ -152,20 +478,75 @@ export function detectGenreLens(genres?: string[]): GenreLens {
         genresLower.some(g => g.includes(dg))
     ).length;
 
+    const comedyCount = COMEDY_GENRES.filter(cg =>
+        genresLower.some(g => g.includes(cg))
+    ).length + (hasComedyKeyword ? 2 : 0);
+
     // Return the cluster with most matches
-    if (sciFiCount > crimeCount && sciFiCount > dramaCount) {
-        return 'SCI_FI_FANTASY';
-    }
-    if (crimeCount > sciFiCount && crimeCount > dramaCount) {
-        return 'CRIME_THRILLER';
-    }
-    if (dramaCount > 0) {
-        return 'DRAMA_ROMANCE';
+    const counts = [
+        { lens: 'SCI_FI_FANTASY' as GenreLens, count: sciFiCount },
+        { lens: 'CRIME_THRILLER' as GenreLens, count: crimeCount },
+        { lens: 'DRAMA_ROMANCE' as GenreLens, count: dramaCount },
+        { lens: 'COMEDY' as GenreLens, count: comedyCount },
+    ];
+
+    const best = counts.reduce((a, b) => b.count > a.count ? b : a);
+
+    if (best.count > 0) {
+        return best.lens;
     }
 
-    // Catchall for Comedy, Western, etc.
+    // WATERFALL STEP 3: Universal fallback for unclassified
     return 'GENERAL';
 }
+
+// Anthology detection keywords
+const ANTHOLOGY_KEYWORDS = ['anthology', 'anthology series', 'standalone episodes', 'anthology show'];
+
+/**
+ * Detect if a show is an anthology series
+ * Anthologies need special handling - premise about thematic link, not protagonist
+ */
+export function isAnthology(keywords?: string[], overview?: string): boolean {
+    const keywordsLower = keywords?.map(k => k.toLowerCase()) || [];
+    const overviewLower = overview?.toLowerCase() || '';
+
+    return ANTHOLOGY_KEYWORDS.some(ak =>
+        keywordsLower.some(k => k.includes(ak)) || overviewLower.includes(ak)
+    );
+}
+
+/**
+ * Infer showrunner when 'creators' field is empty
+ * Checks directors/writers for recurring names
+ */
+export function inferShowrunner(metadata: {
+    created_by?: string[];
+    directors?: string[];
+    writers?: string[];
+}): string | null {
+    if (metadata.created_by?.length) {
+        return metadata.created_by[0];
+    }
+
+    // Fallback: Check directors/writers for recurring names
+    const allCrew = [...(metadata.directors || []), ...(metadata.writers || [])];
+    if (allCrew.length === 0) return null;
+
+    const counts = new Map<string, number>();
+    allCrew.forEach(name => counts.set(name, (counts.get(name) || 0) + 1));
+
+    // If one name appears 3+ times, treat as showrunner
+    for (const [name, count] of counts) {
+        if (count >= 3) return name;
+    }
+
+    // If no recurring name, return first writer if available
+    if (metadata.writers?.length) return metadata.writers[0];
+
+    return null;
+}
+
 
 /**
  * @deprecated Use detectTvBucket instead
@@ -284,7 +665,23 @@ Target Length: 70-110 words.`,
     user: buildGroundingContext(ctx)
 });
 
-// Lens 1D: General (Comedy, Western, Period, etc.)
+// Lens 1D: Comedy (Sitcom, Satire, Farce)
+const PREMISE_NARRATIVE_COMEDY = (ctx: TvPromptContext) => ({
+    system: `You are a comedy writer and sitcom analyst specializing in comedic structure and timing. Write a high-density, spoiler-free premise for this comedy series.
+
+Instructions:
+- THE SETTING (Vector Anchor): Open with a 5-10 word phrase establishing the comedic world (e.g., "In the chaotic open-plan of a failing paper company..." or "Across the dysfunctional dynamics of a blended family...").
+- THE SETUP: Define the core comedic engine. What is the "fish out of water" situation, the incompetence, or the social friction that generates laughs? (e.g., "Where an overly eager boss mistakes awkwardness for friendship" or "Where stubborn parents clash over parenting philosophies").
+- THE PROTAGONIST: Identify the lead by name and their comedic archetype (e.g., "Michael, a well-meaning but oblivious boss" or "Phil, the goofy dad desperate for cool points").
+- THE FORMULA: What recurring comedic beats does this show deliver? (e.g., "Cringe comedy from workplace boundaries" or "Wholesome family chaos").
+
+CRITICAL CONSTRAINT: Do NOT invent characters. Use only the provided cast data. Focus on the comedic premise and recurring joke structure, not dramatic stakes.
+
+Target Length: 60-100 words.`,
+    user: buildGroundingContext(ctx)
+});
+
+// Lens 1E: General (Western, Period, Variety, etc.)
 const PREMISE_NARRATIVE_GENERAL = (ctx: TvPromptContext) => ({
     system: `You are an expert media curator. Write a high-density, spoiler-free premise for this scripted series.
 
@@ -311,6 +708,8 @@ function getPremisePromptForLens(lens: GenreLens, ctx: TvPromptContext) {
             return PREMISE_NARRATIVE_CRIME(ctx);
         case 'DRAMA_ROMANCE':
             return PREMISE_NARRATIVE_DRAMA(ctx);
+        case 'COMEDY':
+            return PREMISE_NARRATIVE_COMEDY(ctx);
         case 'GENERAL':
         default:
             return PREMISE_NARRATIVE_GENERAL(ctx);
@@ -712,6 +1111,24 @@ export interface TvShowEmbeddingData {
     // Cast with roles
     cast_with_characters?: Array<{ name: string; character: string }>;
 
+    // Cast (simple string array for backward compatibility)
+    cast?: string[];
+
+    // Category type (for filtering/routing)
+    category_type?: string;
+
+    // Extended metadata for rehydration workflow
+    metadata?: {
+        number_of_seasons?: number;
+        number_of_episodes?: number;
+        status?: string;
+        vote_average?: number;
+        last_air_date?: string;
+        next_episode_to_air?: any;
+        networks?: string[];
+        [key: string]: any;  // Allow additional metadata fields
+    };
+
     // Ratings & Awards
     awards?: string;
     imdb_rating?: number;
@@ -901,3 +1318,182 @@ export function buildTvShowEmbeddingText(item: TvShowEmbeddingData): string {
         return i > 0 && i < lines.length - 1;
     }).join('\n');
 }
+
+// ============================================================================
+// OPTIMIZED VECTOR TEXT BUILDER (For Embedding Only)
+// ============================================================================
+
+/**
+ * Build optimized vector text for TV show embeddings
+ * 
+ * Uses "Prefix Fusion" Strategy:
+ * - Transformer models prioritize beginning of text (attention window bias)
+ * - Put STRUCTURAL TAGS first to anchor the embedding
+ * - Put SEMANTIC SUMMARY after to refine placement within structural cluster
+ * 
+ * Token Limit: 750 tokens max (enforced via word count × 1.3 approximation)
+ * This prevents "Vector Dilution" where generic content washes out key signals.
+ * 
+ * Format: "Format: SCRIPTED_SINGLE_CAM | Type: NARRATIVE | Archetypes: ... | Summary: ..."
+ * 
+ * Excludes: Premise, Tone paragraphs, Style paragraphs (too flowery for vectors)
+ */
+
+// ============================================================================
+// TOKEN LIMIT CONSTANTS (Extensible - adjust limits here)
+// ============================================================================
+
+const MAX_VECTOR_TOKENS = 1024;          // Voyage-4 optimal range for semantic density
+const WORDS_TO_TOKENS_RATIO = 1.3;       // English word → token approximation
+const MAX_WORDS = Math.floor(MAX_VECTOR_TOKENS / WORDS_TO_TOKENS_RATIO);  // ~577 words
+
+/**
+ * Estimate token count from text (word count × 1.3)
+ * More accurate than character count for English text
+ */
+function estimateTokens(text: string): number {
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    return Math.ceil(wordCount * WORDS_TO_TOKENS_RATIO);
+}
+
+/**
+ * Truncate text to fit within token limit (at sentence boundary)
+ */
+function truncateToTokenLimit(text: string, maxTokens: number): string {
+    const currentTokens = estimateTokens(text);
+    if (currentTokens <= maxTokens) {
+        return text;
+    }
+
+    // Truncate at sentence boundary
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    let result = '';
+    let tokenCount = 0;
+
+    for (const sentence of sentences) {
+        const sentenceTokens = estimateTokens(sentence);
+        if (tokenCount + sentenceTokens > maxTokens) {
+            break;
+        }
+        result += (result ? ' ' : '') + sentence;
+        tokenCount += sentenceTokens;
+    }
+
+    return result || text.slice(0, Math.floor(maxTokens / WORDS_TO_TOKENS_RATIO) * 5);
+}
+
+export function buildTvShowVectorText(item: TvShowEmbeddingData & {
+    semanticSummary?: string;
+    bucketType?: TvBucket;
+    genreLens?: GenreLens;
+    formatType?: TvFormat;       // 6-label format taxonomy
+    archetypes?: string;         // LLM-translated archetypes
+    franchiseType?: string;      // NEW: Save the Cat franchise type
+}): string {
+    // =========================================================================
+    // SUPER-DOCUMENT TEMPLATE (Per Semantic Media Intelligence Blueprint)
+    // 
+    // Uses labeled sections instead of pipe-delimited format.
+    // Voyage-4's 32k context captures relationships between fields.
+    // Critical identifiers placed first for attention weight.
+    // =========================================================================
+
+    const sections: string[] = [];
+
+    // 1. TITLE (Most important for identity)
+    if (item.title) {
+        sections.push(`Title: ${item.title}`);
+    }
+
+    // 2. GENRES (Core classification)
+    if (item.genres?.length) {
+        sections.push(`Genre: ${item.genres.join(', ')}`);
+    }
+
+    // 3. FRANCHISE TYPE (Save the Cat narrative engine - NEW, HIGH VALUE)
+    if (item.franchiseType && item.franchiseType !== 'UNKNOWN') {
+        sections.push(`Franchise Type: ${item.franchiseType}`);
+    }
+
+    // 4. FORMAT TYPE (6-label production taxonomy)
+    if (item.formatType && item.formatType !== 'UNKNOWN') {
+        sections.push(`Format: ${item.formatType}`);
+    }
+
+    // 5. BUCKET TYPE (3-bucket classification)
+    if (item.bucketType) {
+        sections.push(`Type: ${item.bucketType}`);
+    }
+
+    // 6. GENRE LENS (Soft routing within NARRATIVE)
+    if (item.genreLens && item.genreLens !== 'GENERAL') {
+        sections.push(`Lens: ${item.genreLens}`);
+    }
+
+    // 7. ARCHETYPES (Character dynamics)
+    if (item.archetypes) {
+        sections.push(`Key Characters: ${item.archetypes}`);
+    }
+
+    // 8. PREMISE/SUMMARY (Semantic core)
+    if (item.semanticSummary) {
+        sections.push(`Premise: ${item.semanticSummary}`);
+    }
+
+    // 9. TROPES (Narrative DNA)
+    if (item.tags?.tropes?.length) {
+        sections.push(`Tropes: ${item.tags.tropes.join(', ')}`);
+    }
+
+    // 10. MOOD (Emotional signature)
+    if (item.tags?.mood?.length) {
+        sections.push(`Mood: ${item.tags.mood.join(', ')}`);
+    }
+
+    // 11. SUB-GENRES (Niche classification)
+    if (item.tags?.sub_genres?.length) {
+        sections.push(`Sub-Genres: ${item.tags.sub_genres.join(', ')}`);
+    }
+
+    // 12. PACING TAGS (Structure descriptors)
+    if (item.tags?.format?.length) {
+        sections.push(`Pacing: ${item.tags.format.join(', ')}`);
+    }
+
+    // 13. KEYWORDS (Topic anchors - deduplicated)
+    if (item.keywords?.length) {
+        const existingTags = new Set([
+            ...(item.tags?.sub_genres || []),
+            ...(item.tags?.tropes || []),
+            ...(item.tags?.mood || []),
+            ...(item.tags?.format || [])
+        ].map(t => t.toLowerCase()));
+
+        const uniqueKeywords = item.keywords
+            .filter(k => !existingTags.has(k.toLowerCase()))
+            .slice(0, 8);
+        if (uniqueKeywords.length) {
+            sections.push(`Keywords: ${uniqueKeywords.join(', ')}`);
+        }
+    }
+
+    // Combine with newlines for clear section separation
+    // This format works better with transformer attention than pipe-delimited
+    const fullText = sections.join('\n');
+
+    // =========================================================================
+    // TOKEN LIMIT ENFORCEMENT (1024 tokens max)
+    // Prevents "Vector Dilution" where generic content obscures key signals
+    // =========================================================================
+    const finalText = truncateToTokenLimit(fullText, MAX_VECTOR_TOKENS);
+
+    // Log if truncation occurred
+    if (fullText.length !== finalText.length) {
+        const originalTokens = estimateTokens(fullText);
+        const finalTokens = estimateTokens(finalText);
+        console.log(`📏 Vector text truncated: ${originalTokens} → ${finalTokens} tokens`);
+    }
+
+    return finalText;
+}
+

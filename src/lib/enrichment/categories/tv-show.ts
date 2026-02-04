@@ -5,6 +5,7 @@
  * - Description generation (Semantic Weaving with scripted/unscripted detection)
  * - Tag generation (4-bucket taxonomy)
  * - Embedding text building
+ * - Franchise classification (Save the Cat methodology)
  * 
  * This module re-exports from tv-show-description.ts and adds tag generation.
  */
@@ -16,12 +17,43 @@ import type { LLMConfig } from '@/lib/harvesters/shared';
 export {
     generateTvShowDescription,
     buildTvShowEmbeddingText,
-    isUnscriptedTvShow
+    buildTvShowVectorText,  // Optimized for embedding (Super-Document template)
+    // isUnscriptedTvShow - DEPRECATED: Use detectTvBucket instead
+    detectTvBucket,
+    detectTvFormat,         // 6-label format taxonomy detection
+    detectGenreLens,
+    isAnthology,
+    inferShowrunner,
+    translateToArchetypes,  // LLM character archetype translation
+    CHARACTER_ARCHETYPES    // Extensible archetype definitions
 } from '@/lib/ai/tv-show-description';
+
+// Re-export franchise classification (Save the Cat methodology)
+export {
+    classifyFranchiseType,      // LLM-based franchise classification
+    detectFranchiseHeuristic,   // Keyword-based fallback
+    extractPilotBeats,          // Pilot beat sheet extraction
+    getFranchiseLabel,          // Human-readable label
+    getFranchiseEngine,         // Franchise engine description
+    FRANCHISE_DEFINITIONS       // Extensible franchise definitions
+} from '@/lib/ai/franchise-classification';
 
 // Re-export types
 export type { StructuredDescription } from '@/lib/ai/structured-description';
-export type { TvShowEmbeddingData } from '@/lib/ai/tv-show-description';
+export type {
+    TvShowEmbeddingData,
+    TvBucket,
+    TvFormat,               // 6-label format type
+    GenreLens,
+    LifecycleState,         // Lifecycle FSM state
+    ArchetypeId             // Archetype identifier type
+} from '@/lib/ai/tv-show-description';
+
+export type {
+    FranchiseType,          // Save the Cat franchise type
+    PilotBeats              // Pilot beat sheet structure
+} from '@/lib/ai/franchise-classification';
+
 
 // ============================================================================
 // TV SHOW TAG GENERATION (4-Bucket Taxonomy)

@@ -25,7 +25,7 @@ const SMART_PHASE_COLUMNS = `
     id, title, description, description_parts, category_type, metadata,
     release_year, director, cast, runtime, genres, vote_average,
     studio, developers, publishers, platforms, designers, mechanics, categories,
-    status, keywords, cached_tags
+    status, keywords, cached_tags, search_vector
 `;
 
 export async function runSmartPhase(supabase: any, options: CLIOptions): Promise<PhaseStats> {
@@ -38,6 +38,7 @@ export async function runSmartPhase(supabase: any, options: CLIOptions): Promise
     console.log('   • Missing metadata fields → refreshes metadata');
     console.log('   • Incomplete description_parts → regenerates description');
     console.log('   • Missing tags → generates tags');
+    console.log('   • Missing search_vector → triggers tsvector backfill');
     console.log('   • Any updates → regenerates embedding');
     console.log('─'.repeat(70));
 
@@ -186,11 +187,40 @@ export async function runSmartPhase(supabase: any, options: CLIOptions): Promise
                     }
                 }
 
-                // 4. Regenerate embedding if anything was updated
+                // 4. Check for missing search_vector (BM25 full-text search)
+                // The trigger will populate it when we update the row
+                if (!item.search_vector && !options.dryRun) {
+                    console.log(`      🔍 Missing search_vector - will be populated via trigger`);
+                    // Set a flag to ensure we do an update (the trigger fires on title/description update)
+                    // If no other updates are pending, we touch updated_at to trigger it
+                    if (Object.keys(updates).length === 0) {
+                        updates.updated_at = new Date().toISOString();
+                    }
+                    needsEmbeddingUpdate = needsEmbeddingUpdate || false; // Don't force embedding update just for search_vector
+                }
+
+                // 5. Regenerate embedding if anything was updated
                 if (needsEmbeddingUpdate && !options.dryRun) {
                     // Merge updates with existing item for embedding text
                     const enrichedItem = { ...item, ...updates };
-                    const embeddingText = buildEmbeddingText(enrichedItem);
+
+                    // Use TV-specific vector builder for TV shows (Prefix Fusion)
+                    let embeddingText: string;
+                    if (enrichedItem.category_type === 'TV_SHOW' || enrichedItem.category_type === 'TV') {
+                        const { buildTvShowVectorText } = await import('@/lib/ai/tv-show-description');
+                        embeddingText = buildTvShowVectorText({
+                            title: enrichedItem.title,
+                            description_parts: enrichedItem.description_parts,
+                            genres: enrichedItem.genres,
+                            keywords: enrichedItem.keywords || enrichedItem.cached_tags,
+                            semanticSummary: enrichedItem.description_parts?.semanticSummary,
+                            bucketType: enrichedItem.bucket_type,
+                            genreLens: enrichedItem.genre_lens
+                        });
+                    } else {
+                        embeddingText = buildEmbeddingText(enrichedItem);
+                    }
+
                     const embedding = await generateEmbedding(embeddingText);
 
                     if (embedding) {
@@ -199,7 +229,7 @@ export async function runSmartPhase(supabase: any, options: CLIOptions): Promise
                     }
                 }
 
-                // 5. Apply all updates
+                // 6. Apply all updates
                 if (Object.keys(updates).length > 0 && !options.dryRun) {
                     updates.last_metadata_update = new Date().toISOString();
 
@@ -209,7 +239,7 @@ export async function runSmartPhase(supabase: any, options: CLIOptions): Promise
 
                     console.log(`      ✅ Applied ${Object.keys(updates).length} updates`);
                     stats.updated++;
-                } else if (options.dryRun && (missingFields.length > 0 || !hasAllDescriptionParts(item) || !hasTags)) {
+                } else if (options.dryRun && (missingFields.length > 0 || !hasAllDescriptionParts(item) || !hasTags || !item.search_vector)) {
                     console.log(`      ⏭️  DRY RUN - Would update item`);
                     stats.skipped++;
                 } else {

@@ -132,7 +132,7 @@ export async function triggerRehydration(
 
         if (error) {
             handleSupabaseError(error, 'triggerRehydration')
-            return { success: false, count: 0, error: error.message }
+            return { success: false, count: 0, error: error?.message ?? 'Unknown error' }
         }
 
         // Note: In a production setup, this would queue a background job.

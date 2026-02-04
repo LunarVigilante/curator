@@ -21,7 +21,7 @@ import 'dotenv/config';
 import { createServiceRoleClient } from '../lib/supabase/service-role';
 import {
     harvestMovies,
-    harvestTvShows,
+    harvestTmdb,
     harvestAnime,
     harvestBoardGames,
     harvestVideoGames,
@@ -44,7 +44,7 @@ const HARVESTERS: Record<HarvesterName, {
     fn: (supabase: ReturnType<typeof createServiceRoleClient>) => Promise<HarvestResult>;
 }> = {
     movies: { name: 'Movies', emoji: '🎬', fn: harvestMovies },
-    tv: { name: 'TV Shows', emoji: '📺', fn: harvestTvShows },
+    tv: { name: 'TV Shows', emoji: '📺', fn: (sb) => harvestTmdb(sb, { type: 'tv', operation: 'harvest' }) },
     anime: { name: 'Anime', emoji: '🎌', fn: harvestAnime },
     boardgames: { name: 'Board Games', emoji: '🎲', fn: harvestBoardGames },
     videogames: { name: 'Video Games', emoji: '🎮', fn: harvestVideoGames },
