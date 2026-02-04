@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { X, Menu, RefreshCw, Wand2, Pencil, Trash2 } from 'lucide-react'
+import { X, Menu, RefreshCw, Wand2, Pencil, Trash2, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useUser } from '@/hooks/useUser'
 import ReportItemDialog from '@/components/dialogs/ReportItemDialog'
+import FixMatchDialog from '@/components/dialogs/FixMatchDialog'
 
 // Types and Utils
 import type { GlobalItem } from './types'
@@ -90,6 +91,7 @@ export default function ItemDetailView({
 }: ItemDetailViewProps) {
     const { isAdmin } = useUser()
     const [reportOpen, setReportOpen] = useState(false)
+    const [fixMatchOpen, setFixMatchOpen] = useState(false)
     const [descriptionExpanded, setDescriptionExpanded] = useState(false)
     const [_isLoadingFreshData, setIsLoadingFreshData] = useState(false)
 
@@ -426,6 +428,14 @@ export default function ItemDetailView({
                                 <DropdownMenuContent align="end" className="w-48 bg-zinc-900 border-zinc-800">
                                     <DropdownMenuLabel className="text-zinc-400">Admin Actions</DropdownMenuLabel>
                                     <DropdownMenuSeparator className="bg-zinc-800" />
+                                    <DropdownMenuSeparator className="bg-zinc-800" />
+                                    <DropdownMenuItem
+                                        onClick={() => setFixMatchOpen(true)}
+                                        className="text-zinc-100 focus:bg-zinc-800 cursor-pointer"
+                                    >
+                                        <Search className="w-4 h-4 mr-2" />
+                                        Fix Match...
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                         onClick={handleRefreshMetadata}
                                         disabled={isRefreshing}
@@ -481,6 +491,18 @@ export default function ItemDetailView({
                     itemTitle={item.title}
                     open={reportOpen}
                     onOpenChange={setReportOpen}
+                />
+            )}
+
+            {/* Fix Match Dialog */}
+            {fixMatchOpen && (
+                <FixMatchDialog
+                    item={item}
+                    isOpen={fixMatchOpen}
+                    onClose={() => setFixMatchOpen(false)}
+                    onSuccess={(updatedItem) => {
+                        if (onItemChange) onItemChange(updatedItem)
+                    }}
                 />
             )}
         </>

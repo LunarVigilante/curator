@@ -21,7 +21,12 @@ async function fetchTmdbDetails(tmdbId: number | string, type: string): Promise<
     if (!TMDB_API_KEY) return null
 
     const endpoint = type === 'MOVIE' ? 'movie' : 'tv'
-    const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords,external_ids`
+    // Movies get release_dates for MPAA certification and descriptors
+    // TV shows get content_ratings for granular rating descriptors
+    const appendToResponse = type === 'MOVIE'
+        ? 'credits,keywords,external_ids,release_dates'
+        : 'credits,keywords,external_ids,content_ratings'
+    const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=${appendToResponse}`
 
     try {
         const res = await fetch(url)
@@ -241,21 +246,45 @@ export const TMDBProvider: MetadataProvider = {
             updateField(enriched, existingItem, 'backdrop_path', fullBackdropUrl, force)
         }
 
+        // Core identity fields - always update on force (Fix Match)
+        const title = rawData.title || rawData.name
+        if (title) {
+            updateField(enriched, existingItem, 'title', title, force)
+        }
+
+        const description = rawData.overview
+        if (description) {
+            updateField(enriched, existingItem, 'description', description, force)
+        }
+
+        // Poster image
+        if (rawData.poster_path) {
+            const fullPosterUrl = `https://image.tmdb.org/t/p/w500${rawData.poster_path}`
+            updateField(enriched, existingItem, 'image_url', fullPosterUrl, force)
+        }
+
         updateField(enriched, existingItem, 'vote_average', rawData.vote_average, force)
         updateField(enriched, existingItem, 'genres', rawData.genres?.map((g: any) => g.name), force)
-        updateField(enriched, existingItem, 'runtime', rawData.runtime || rawData.episode_run_time?.[0], force)
+        updateField(enriched, existingItem, 'runtime', rawData.runtime ? Math.round(rawData.runtime) : (rawData.episode_run_time?.[0] ? Math.round(rawData.episode_run_time[0]) : null), force)
         updateField(enriched, existingItem, 'tagline', rawData.tagline, force)
         updateField(enriched, existingItem, 'status', rawData.status, force)
         updateField(enriched, existingItem, 'original_language', rawData.original_language, force)
         updateField(enriched, existingItem, 'original_title', rawData.original_title || rawData.original_name, force)
-        updateField(enriched, existingItem, 'popularity', rawData.popularity, force)
+        updateField(enriched, existingItem, 'popularity', rawData.popularity ? Math.round(rawData.popularity) : null, force)
         updateField(enriched, existingItem, 'vote_count', rawData.vote_count, force)
         updateField(enriched, existingItem, 'budget', rawData.budget, force)
         updateField(enriched, existingItem, 'revenue', rawData.revenue, force)
 
-        // Release date (extract full date, not just year)
-        if (rawData.release_date) {
-            metadataUpdates.release_date = rawData.release_date
+        // Release date and year
+        if (rawData.release_date || rawData.first_air_date) {
+            const releaseDate = rawData.release_date || rawData.first_air_date
+            metadataUpdates.release_date = releaseDate
+            // Extract year and update the top-level release_year column
+            const year = new Date(releaseDate).getFullYear()
+            if (!isNaN(year)) {
+                updateField(enriched, existingItem, 'release_year', year, force)
+                updateField(enriched, existingItem, 'release_date', releaseDate, force)
+            }
         }
 
         // Adult content flag
@@ -291,11 +320,19 @@ export const TMDBProvider: MetadataProvider = {
         if (producers.length > 0) metadataUpdates.producers = producers
 
         // =====================================================================
-        // CAST
+        // CAST (with character names for AI context)
         // =====================================================================
         if (rawData.credits?.cast) {
+            // Store actor names in top-level column (for display)
             updateField(enriched, existingItem, 'cast', rawData.credits.cast.slice(0, 20).map((c: any) => c.name), force)
-            metadataUpdates.credits = { cast: rawData.credits.cast.slice(0, 20) }
+
+            // Store full cast with characters in metadata (for AI grounding)
+            // Knowing "plays himself" vs "plays The Joker" tells AI if this is reality vs fiction
+            metadataUpdates.cast_with_characters = rawData.credits.cast.slice(0, 20).map((c: any) => ({
+                name: c.name,
+                character: c.character,
+                order: c.order
+            }))
         }
 
         // =====================================================================
@@ -352,6 +389,70 @@ export const TMDBProvider: MetadataProvider = {
         updateField(enriched, existingItem, 'number_of_episodes', rawData.number_of_episodes, force)
         if (rawData.first_air_date) metadataUpdates.first_air_date = rawData.first_air_date
         if (rawData.last_air_date) metadataUpdates.last_air_date = rawData.last_air_date
+
+        // =====================================================================
+        // MOVIE CERTIFICATIONS (MPAA ratings with descriptors)
+        // =====================================================================
+        // release_dates contains certification info by country
+        // Descriptors like "Violence", "Language", "Drug Use" help with content clustering
+        if (rawData.release_dates?.results?.length > 0) {
+            // Prefer US theatrical release, fallback to any US release, then first available
+            const usReleases = rawData.release_dates.results.find((r: any) => r.iso_3166_1 === 'US')
+
+            if (usReleases?.release_dates?.length > 0) {
+                // Prefer theatrical (type 3), then digital (type 4), then any with certification
+                const theatrical = usReleases.release_dates.find((rd: any) => rd.type === 3 && rd.certification)
+                const digital = usReleases.release_dates.find((rd: any) => rd.type === 4 && rd.certification)
+                const anyCertified = usReleases.release_dates.find((rd: any) => rd.certification)
+
+                const releaseInfo = theatrical || digital || anyCertified
+
+                if (releaseInfo?.certification) {
+                    updateField(enriched, existingItem, 'content_rating', releaseInfo.certification, force)
+
+                    // Store descriptors if available (e.g., "Violence", "Language", "Drug Use")
+                    if (releaseInfo.descriptors?.length > 0) {
+                        metadataUpdates.content_descriptors = releaseInfo.descriptors
+                    }
+                }
+            }
+
+            // Store all regional certifications in metadata for completeness
+            metadataUpdates.certifications_by_region = rawData.release_dates.results.reduce((acc: any, r: any) => {
+                const certifiedRelease = r.release_dates?.find((rd: any) => rd.certification)
+                if (certifiedRelease) {
+                    acc[r.iso_3166_1] = {
+                        rating: certifiedRelease.certification,
+                        descriptors: certifiedRelease.descriptors || [],
+                        type: certifiedRelease.type  // 1=Premiere, 2=Theatrical (limited), 3=Theatrical, 4=Digital, 5=Physical, 6=TV
+                    }
+                }
+                return acc
+            }, {})
+        }
+
+        // Content ratings with descriptors (TV-only) - for AI grounding
+        // Descriptors like "Violence", "Language", "Sexual Content" help cluster similar content
+        if (rawData.content_ratings?.results?.length > 0) {
+            // Prefer US rating, fallback to first available
+            const usRating = rawData.content_ratings.results.find((r: any) => r.iso_3166_1 === 'US')
+            const rating = usRating || rawData.content_ratings.results[0]
+
+            if (rating) {
+                updateField(enriched, existingItem, 'content_rating', rating.rating, force)
+
+                // Store descriptors if available (e.g., "Violence", "Language")
+                if (rating.descriptors?.length > 0) {
+                    metadataUpdates.content_descriptors = rating.descriptors
+                }
+            }
+
+            // Store all regional ratings in metadata for completeness
+            metadataUpdates.content_ratings_by_region = rawData.content_ratings.results.reduce((acc: any, r: any) => {
+                acc[r.iso_3166_1] = { rating: r.rating, descriptors: r.descriptors || [] }
+                return acc
+            }, {})
+        }
 
         // =====================================================================
         // OVERVIEW (TMDB's description - useful for embeddings even if we generate our own)

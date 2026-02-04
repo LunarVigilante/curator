@@ -348,6 +348,16 @@ export async function getSimilarityExplanation(
         // Ensure sharedDNA is an array
         const sharedDNA = Array.isArray(parsed.sharedDNA) ? parsed.sharedDNA : []
 
+        // Normalize keyDifference - convert string 'null', 'N/A', etc. to actual null
+        const normalizeKeyDifference = (val: unknown): string | null => {
+            if (!val) return null
+            if (typeof val !== 'string') return null
+            const trimmed = val.trim().toLowerCase()
+            if (trimmed === 'null' || trimmed === 'n/a' || trimmed === 'none' || trimmed === '') return null
+            return val.trim()
+        }
+        const keyDifference = normalizeKeyDifference(parsed.keyDifference)
+
         // Cache the result
         await supabase
             .from('similarity_explanations')
@@ -356,14 +366,14 @@ export async function getSimilarityExplanation(
                 similar_item_id: similarItemId,
                 summary: parsed.summary,
                 shared_dna: sharedDNA,
-                key_difference: parsed.keyDifference || null,
+                key_difference: keyDifference,
                 created_at: new Date().toISOString()
             })
 
         return {
             summary: parsed.summary,
             sharedDNA,
-            keyDifference: parsed.keyDifference || null
+            keyDifference
         }
     } catch (err) {
         console.error('Failed to generate similarity explanation:', err)

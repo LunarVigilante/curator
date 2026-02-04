@@ -21,6 +21,9 @@ export interface StructuredDescription {
     themes: string;    // 80-110 words  
     tone: string;      // 50-70 words
     style: string;     // 40-60 words
+    semanticSummary?: string; // Optional: High-density super-sentence for Vector DB (hidden from UI)
+    productionTags?: string[]; // Optional: Extracted production tags for filtering (e.g., ["Single-Camera", "Prestige"])
+    bucketType?: 'NARRATIVE' | 'FORMAT' | 'OBSERVATIONAL'; // Optional: Content bucket for filtering
 }
 
 export interface GenerationContext {
@@ -163,12 +166,13 @@ export async function generateStructuredDescription(
 }
 
 /**
- * Combine structured description into a single text block for backwards compatibility
+ * Combine structured description into a single text block for human display
+ * NOTE: Excludes 'themes' section as it contains vector-only tags/keywords
  */
 export function combineDescription(parts: StructuredDescription): string {
+    // Human-readable: Premise + Tone + Style (themes is for vector DB only)
     const sections = [
         parts.premise,
-        parts.themes,
         parts.tone,
         parts.style
     ].filter(s => s && s.trim());
@@ -186,6 +190,7 @@ export function buildEmbeddingText(
         description_parts?: StructuredDescription;
         description?: string;
         genres?: string[];
+        keywords?: string[];
         cast?: string[];
         director?: string;
         studio?: string;
@@ -209,19 +214,36 @@ export function buildEmbeddingText(
         parts.push(`Category: ${item.category_type}`);
     }
 
-    // Structured description (preferred) or legacy description
+    // VECTOR DB PRIORITY: semanticSummary + themes (Section 5 + Section 2)
+    // Per checklist: Embed only vector-optimized content, not human display text
     if (item.description_parts) {
-        if (item.description_parts.premise) parts.push(item.description_parts.premise);
-        if (item.description_parts.themes) parts.push(item.description_parts.themes);
-        if (item.description_parts.tone) parts.push(item.description_parts.tone);
-        if (item.description_parts.style) parts.push(item.description_parts.style);
+        // PRIMARY: semanticSummary is the high-density super-sentence
+        if (item.description_parts.semanticSummary) {
+            parts.push(item.description_parts.semanticSummary);
+        }
+        // SECONDARY: themes contain structured tags/keywords optimized for vectors
+        if (item.description_parts.themes) {
+            parts.push(item.description_parts.themes);
+        }
+        // NOTE: premise/tone/style are for human display, NOT embedding
     } else if (item.description) {
+        // Fallback for legacy items without structured parts
         parts.push(item.description);
     }
 
     // Genres
     if (item.genres?.length) {
         parts.push(`Genres: ${item.genres.join(', ')}`);
+    }
+
+    // Keywords (high value for vector search)
+    if (item.keywords?.length) {
+        parts.push(`Keywords: ${item.keywords.join(', ')}`);
+    }
+
+    // Production Tags from description_parts (e.g., Single-Camera, Prestige)
+    if (item.description_parts?.productionTags?.length) {
+        parts.push(`Production: ${item.description_parts.productionTags.join(', ')}`);
     }
 
     // Cast/Crew (Movies, TV)

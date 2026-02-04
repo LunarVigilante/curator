@@ -27,9 +27,12 @@ export interface HarvestItem {
     cached_tags?: { id: string, name: string }[];
     // Additional fields used for rich embeddings
     genres?: string[];
+    keywords?: string[];
     cast?: string[];
     director?: string;
     studio?: string;
+    runtime?: number;
+    status?: string;
     developers?: string[];
     publishers?: string[];
     designers?: string[];
@@ -320,43 +323,9 @@ Additional Context: ${originalDescription}`;
 // AI TAG GENERATION
 // ============================================================================
 
-export async function generateTags(
-    supabase: ReturnType<typeof createServiceRoleClient>,
-    title: string,
-    description: string,
-    type: string
-): Promise<string[]> {
-    try {
-        const config = await getLLMConfig(supabase);
-        if (!config.apiKey) return [];
+// Delegate to category-specific enrichment module
+export { generateTags } from '@/lib/enrichment';
 
-        const systemPrompt = `You are an expert curator. Generate 3-5 relevant tags for the item.
-Return ONLY a comma-separated list of tags. No numbering, no quotes.
-Example: "Cinematic, Dystopian, Sci-Fi, Atmospheric"`;
-
-        const userPrompt = `Generate tags for:
-Title: ${title}
-Type: ${type}
-Description: ${description}`;
-
-        const response = await callLLM({
-            userPrompt,
-            systemPrompt,
-            apiKey: config.apiKey,
-            provider: config.provider,
-            model: config.model,
-            endpoint: config.endpoint
-        });
-
-        return response.split(',')
-            .map(t => t.trim())
-            .filter(t => t.length > 2 && t.length < 30) // Sanity check
-            .slice(0, 8); // Max 8 tags
-    } catch {
-        console.warn(`⚠️ Tag generation failed for "${title}"`);
-        return [];
-    }
-}
 
 /**
  * Ensures tags exist in database and returns their IDs

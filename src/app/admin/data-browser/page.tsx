@@ -17,7 +17,8 @@ import {
     DataBrowserPagination,
     EditItemDialog,
     DeleteConfirmationDialog,
-    MaintenanceDialog
+    MaintenanceDialog,
+    RehydrationStatusPanel
 } from './components'
 import ItemDetailView from '@/components/item-details/ItemDetailView'
 import ReportItemDialog from '@/components/dialogs/ReportItemDialog'
@@ -68,6 +69,9 @@ function DataBrowserContent() {
                 sortOrder={state.sort.sortOrder}
                 setSortOrder={state.sort.setSortOrder}
             />
+
+            {/* Rehydration Status Panel */}
+            <RehydrationStatusPanel />
 
             <div className="flex gap-6 items-start">
                 {/* Sidebar Filters */}

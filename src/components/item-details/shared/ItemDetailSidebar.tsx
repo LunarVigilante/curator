@@ -175,7 +175,7 @@ export function ItemDetailSidebar({
                 </div>
             )}
 
-            {/* Genres (moved ABOVE Tags as requested) */}
+            {/* Genres */}
             {item.genres && item.genres.length > 0 && !isMusicArtist && (
                 <div className="w-full space-y-3">
                     <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
@@ -186,6 +186,40 @@ export function ItemDetailSidebar({
                             <Badge key={genre} variant="outline" className="text-zinc-400 border-zinc-800 bg-zinc-900/50">
                                 {genre}
                             </Badge>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Content Rating & Descriptors */}
+            {(item.content_rating || metadata?.content_descriptors?.length > 0) && (isMovie || isTV) && (
+                <div className="w-full space-y-3">
+                    <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
+                        <Flag className="w-3 h-3" /> Content Info
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                        {/* Main Rating Badge */}
+                        {item.content_rating && (
+                            <Badge
+                                variant="outline"
+                                className={`font-bold ${['R', 'NC-17', 'TV-MA'].includes(item.content_rating)
+                                        ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                                        : ['PG-13', 'TV-14'].includes(item.content_rating)
+                                            ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                                            : 'text-green-400 border-green-500/30 bg-green-500/10'
+                                    }`}
+                            >
+                                {item.content_rating}
+                            </Badge>
+                        )}
+                        {/* Content Descriptors (e.g., Violence, Language) */}
+                        {metadata?.content_descriptors?.map((descriptor: string, idx: number) => (
+                            <span
+                                key={`descriptor-${idx}`}
+                                className="text-[11px] text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-700/50"
+                            >
+                                {descriptor}
+                            </span>
                         ))}
                     </div>
                 </div>

@@ -53,7 +53,7 @@ interface RelatedItemsRowProps {
 
 export function RelatedItemsRow({
     sourceItemId,
-    matchCount = 24, // Fetch more initially to cover filtered views
+    matchCount = 100, // Fetch many items since we filter client-side
     categoryFilter = null,
     variant = 'standard',
     className = '',
@@ -115,9 +115,9 @@ export function RelatedItemsRow({
                 let data: any[] | null = null
                 let rpcError: { message: string } | null = null
 
-                // Always fetch all categories to populate the dropdown
-                // Frontend filtering handles category selection
-                const rpcCategoryFilter = showCategoryFilter ? null : categoryFilter
+                // Pass null to default to same-category (uses partial vector index)
+                // The RPC will use source item's category when null is passed
+                const rpcCategoryFilter = null
 
                 // Try enhanced RPC with reasons
                 const enhancedResult = await (supabase.rpc as any)('find_similar_items_with_reasons', {
@@ -132,7 +132,7 @@ export function RelatedItemsRow({
                     const basicResult = await (supabase.rpc as any)('find_similar_items', {
                         source_item_id: sourceItemId,
                         match_count: fetchLimit,
-                        category_filter: effectiveCategoryFilter
+                        category_filter: rpcCategoryFilter === 'ALL' ? null : rpcCategoryFilter
                     })
                     data = basicResult.data?.map((item: RelatedItem) => ({
                         ...item,
@@ -149,6 +149,11 @@ export function RelatedItemsRow({
                     setError(rpcError.message)
                     return
                 }
+
+                // Debug logging
+                console.log('[RelatedItems] RPC returned', data?.length, 'items')
+                console.log('[RelatedItems] Categories found:', [...new Set(data?.map((i: RelatedItem) => i.category_type) || [])])
+                console.log('[RelatedItems] First 3 items:', data?.slice(0, 3))
 
                 setAllItems(data || [])
             } catch (err) {
