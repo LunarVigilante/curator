@@ -983,7 +983,7 @@ export async function generateTvShowDescription(
         context.originalDescription
     );
 
-    console.log(`[TV Description] "${context.title}" detected as bucket: ${bucket}`);
+    console.log(`   ║    Bucket: ${bucket}`);
 
     const tvContext: TvPromptContext = {
         ...context,
@@ -1003,7 +1003,7 @@ export async function generateTvShowDescription(
         default:
             // Use Genre Lens to select appropriate NARRATIVE sub-prompt
             const lens = detectGenreLens(context.genres);
-            console.log(`[TV Description] NARRATIVE lens: ${lens}`);
+            console.log(`   ║    Genre Lens: ${lens}`);
             premisePrompt = getPremisePromptForLens(lens, tvContext);
             break;
     }

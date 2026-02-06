@@ -33,7 +33,7 @@ import pLimit from 'p-limit';
 // CONFIG
 // ============================================================================
 
-const CONCURRENCY = 2;  // Reduced from 5 to avoid LLM rate limiting
+const CONCURRENCY = 1;  // Reduced from 5 to avoid LLM rate limiting
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const OMDB_BASE_URL = 'https://www.omdbapi.com';
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -409,7 +409,13 @@ async function processItem(item: any) {
                 );
                 if (vibeScores) {
                     console.log(`   ║    ✅ Vibe scores generated in ${Date.now() - startVibe}ms`);
-                    console.log(`   ║    Sample: grit=${vibeScores.grit}, cerebral=${vibeScores.cerebral}, prestige=${vibeScores.prestige}`);
+                    // Show top 5 vibes sorted by score
+                    const sortedVibes = Object.entries(vibeScores)
+                        .sort((a, b) => (b[1] as number) - (a[1] as number))
+                        .slice(0, 5)
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(', ');
+                    console.log(`   ║    Top 5: ${sortedVibes}`);
                 } else {
                     console.log(`   ║    ⚠️  No vibe scores generated`);
                 }

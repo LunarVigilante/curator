@@ -126,14 +126,7 @@ export async function generateEmbedding(
             return null;
         }
 
-        // Log successful embedding generation for observability
-        log.info('[Voyage] Embedding generated', {
-            model: VOYAGE_MODEL,
-            inputType,
-            dimensions: data.data[0].embedding.length,
-            tokens: data.usage?.total_tokens,
-            latencyMs,
-        });
+        // Log successful embedding generation for observability (silent - caller handles output)
 
         return data.data[0].embedding;
     } catch (error) {

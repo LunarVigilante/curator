@@ -46,10 +46,10 @@ Respond with ONLY the description text, no quotes, no prefix, no extra formattin
         })
 
         const description = response.trim()
-        console.log(`[Tag] Generated description for "${tagName}": ${description.substring(0, 50)}...`)
+        console.log(`   ║    🏷️  "${tagName}": ${description.substring(0, 50)}...`)
         return description
     } catch (error) {
-        console.warn(`[Tag] Failed to generate description for "${tagName}":`, error)
+        console.warn(`   ║    ⚠️  Failed tag description for "${tagName}":`, error)
         // Return a fallback description
         return `Describes media with "${tagName}" characteristics.`
     }

@@ -524,7 +524,13 @@ Overview: ${meta.overview || 'N/A'}
                 );
                 if (vibeScores) {
                     console.log(`   ║    ✅ Vibe scores generated in ${Date.now() - startVibe}ms`);
-                    console.log(`   ║    Sample: grit=${vibeScores.grit}, cerebral=${vibeScores.cerebral}, prestige=${vibeScores.prestige}`);
+                    // Show top 5 vibes sorted by score
+                    const sortedVibes = Object.entries(vibeScores)
+                        .sort((a, b) => (b[1] as number) - (a[1] as number))
+                        .slice(0, 5)
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(', ');
+                    console.log(`   ║    Top 5: ${sortedVibes}`);
                 } else {
                     console.log(`   ║    ⚠️  No vibe scores generated`);
                 }
