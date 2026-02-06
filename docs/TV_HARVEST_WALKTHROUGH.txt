@@ -1,12 +1,12 @@
 ================================================================================
                     TV SHOW HARVEST & BACKFILL WALKTHROUGH
-                    (with Semantic Density Optimizations)
-                         Last Updated: 2026-02-03
+                    (Semantic Density + Franchise Integration)
+                         Last Updated: 2026-02-04
 ================================================================================
 
 This document describes the complete TV show pipeline from initial harvest
 through embedding generation, including all classification, enrichment, 
-rehydration workflows, and the new Semantic Density Optimizations.
+franchise detection, and rehydration workflows.
 
 ================================================================================
                               FILE INVENTORY
@@ -18,12 +18,20 @@ Core Files (Ordered by Data Flow):
 │ FILE                                                   │ LINES │ PURPOSE    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ src/scripts/harvest-tmdb.ts                            │  117  │ CLI Entry  │
-│ src/lib/harvesters/tmdb.ts                             │  870  │ Harvester  │
+│ src/lib/harvesters/tmdb.ts                             │ 1050  │ Harvester  │
 │ src/lib/harvesters/shared.ts                           │  518  │ Utilities  │
 │ src/lib/ai/tv-show-description.ts                      │ 1488  │ Semantic   │
-│ src/lib/ai/structured-description.ts                   │  251  │ AI Core    │
+│ src/lib/ai/franchise-classification.ts                 │  353  │ Save/Cat   │
 │ src/lib/enrichment/categories/tv-show.ts               │  130  │ Re-exports │
 │ src/lib/services/search.ts                             │  443  │ Vector     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Franchise Discovery (NEW)                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ src/lib/constants/franchise-keywords.ts                │  129  │ Keywords   │
+│ src/lib/services/franchise/media-graph.ts              │  215  │ Graph BFS  │
+│ src/lib/services/franchise/index.ts                    │   20  │ Exports    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Backfill                                                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ src/scripts/backfill/index.ts                          │  150  │ Backfill   │
 │ src/scripts/backfill/config.ts                         │   48  │ Config     │
@@ -31,16 +39,16 @@ Core Files (Ordered by Data Flow):
 │ src/scripts/backfill/phases/rehydrate.ts               │  187  │ Rehydrate  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-Total: ~4,400+ lines across 11 core files
+Total: ~4,900+ lines across 14 core files
 
 ================================================================================
                            PHASE 1: HARVEST
 ================================================================================
 
-Entry Point: npx tsx src/scripts/harvest-tmdb.ts --type tv --query "Breaking Bad"
+Entry Point: npx tsx src/scripts/harvest-tmdb.ts --type=tv --operation=harvest
 
 Data Flow:
-  harvest-tmdb.ts → tmdb.ts:startHarvest() → tmdb.ts:processHarvestTask()
+  harvest-tmdb.ts → tmdb.ts:harvestTmdb() → tmdb.ts:processHarvestTask()
 
 What Gets Fetched from TMDB:
   - Basic info: title, overview, first_air_date, status, vote_average
@@ -49,7 +57,14 @@ What Gets Fetched from TMDB:
   - Media: poster_path, backdrop_path, logo_path, trailer
   - Metadata: type ("Scripted", "Miniseries", "Documentary"), networks
 
-Key Function: fetchAndNormalizeTmdbData() [tmdb.ts:180-320]
+What Gets Fetched from OMDb:
+  - imdb_rating (more accurate than TMDB)
+  - imdb_votes
+  - rotten_tomatoes_rating
+  - metacritic_rating
+  - awards_text ("Won 2 Emmys. 15 wins & 20 nominations.")
+
+Key Function: fetchTmdbDetails() [tmdb.ts:148-167]
   - Calls TMDB API with append_to_response for batch fetching
   - Normalizes response into TmdbMetadata interface
 
@@ -87,14 +102,14 @@ Detection Priority (CRITICAL - prevents misclassification):
     3. DEFAULT → NARRATIVE
 
 ================================================================================
-            NEW: 6-LABEL FORMAT TAXONOMY (Semantic Density Enhancement)
+            6-LABEL FORMAT TAXONOMY (Semantic Density Enhancement)
 ================================================================================
 
 TvFormat Type: detectTvFormat() [tv-show-description.ts:285-340]
 
 Purpose: Granular format classification for vector differentiation
 
-Format Labels (Extensible - add new labels in FORMAT_DETECTION object):
+Format Labels:
 
 ┌────────────────────────────┬────────────────────────────────────────────────┐
 │ Format Label               │ Description                                    │
@@ -108,16 +123,8 @@ Format Labels (Extensible - add new labels in FORMAT_DETECTION object):
 │ UNKNOWN                    │ Fallback                                       │
 └────────────────────────────┴────────────────────────────────────────────────┘
 
-Detection Keywords (Extensible - add to FORMAT_DETECTION constant):
-  - SINGLE_CAM_KEYWORDS: single-camera, cinematic, prestige, cable drama...
-  - MULTI_CAM_KEYWORDS: multi-camera, laugh track, studio audience...
-  - MOCKUMENTARY_KEYWORDS: mockumentary, docu-style, confessional...
-  - COMPETITION_KEYWORDS: competition, elimination, contestant...
-  - DOCUSOAP_KEYWORDS: reality show, interpersonal, lifestyle...
-  - DOCUSERIES_KEYWORDS: documentary, archival footage, narrator...
-
 ================================================================================
-          NEW: CHARACTER ARCHETYPE TRANSLATION (Semantic Density)
+             CHARACTER ARCHETYPE TRANSLATION (Semantic Density)
 ================================================================================
 
 Function: translateToArchetypes() [tv-show-description.ts:360-420]
@@ -125,7 +132,7 @@ Function: translateToArchetypes() [tv-show-description.ts:360-420]
 Purpose: Replace character names with universal archetypes for cross-show
          similarity matching (e.g., "Walter White" → "Anti-Hero")
 
-Available Archetypes (Extensible - add to CHARACTER_ARCHETYPES array):
+Available Archetypes:
 
   Protagonist Archetypes:
     - Anti-Hero: Morally ambiguous, driven by vice (Walter White, Tony Soprano)
@@ -139,13 +146,88 @@ Available Archetypes (Extensible - add to CHARACTER_ARCHETYPES array):
     - Straight Man vs The Fool (Jim/Michael, Abed/Troy)
     - Chaos Agent: Eccentric, disruptive (Fleabag)
     - Found Family: Ensemble dynamics (Community, Brooklyn 99)
-    - Incompetent Leader: Authority desperate for validation
 
-Example Output:
-  "Features Anti-Hero protagonist who descends into crime,
-   balanced by Caregiver who serves as moral compass."
+================================================================================
+                  SAVE THE CAT FRANCHISE CLASSIFICATION
+================================================================================
 
-LLM Call: Uses same model as description generation (configured in database)
+Function: classifyFranchiseType() [franchise-classification.ts]
+
+Purpose: Identify the narrative engine that makes a show franchisable
+
+┌─────────────────────────────┬───────────────────────────────────────────────┐
+│ Franchise Type              │ Examples                                      │
+├─────────────────────────────┼───────────────────────────────────────────────┤
+│ MONSTER_IN_THE_HOUSE        │ Stranger Things, Walking Dead                 │
+│ GOLDEN_FLEECE               │ Mandalorian, Breaking Bad                     │
+│ OUT_OF_THE_BOTTLE           │ Lucifer, Good Place                           │
+│ DUDE_WITH_A_PROBLEM         │ 24, Prison Break                              │
+│ RITES_OF_PASSAGE            │ Euphoria, Stranger Things                     │
+│ BUDDY_LOVE                  │ Sherlock, Brooklyn Nine-Nine                  │
+│ WHYDUNIT                    │ True Detective, Money Heist                   │
+│ FOOL_TRIUMPHANT             │ Schitt's Creek, Ted Lasso                     │
+└─────────────────────────────┴───────────────────────────────────────────────┘
+
+================================================================================
+               UNIVERSE & SPINOFF DETECTION (NEW in v2.0)
+================================================================================
+
+Purpose: Automatically identify shared universes and spinoff relationships
+
+Universe Detection via TMDB Keywords:
+
+  UNIVERSE_KEYWORD_MAP [franchise-keywords.ts:15-45]:
+    229266 → arrowverse          (DC CW shows)
+    228091 → chicago-verse       (Dick Wolf Chicago franchise)
+    180547 → star-trek           (Star Trek canon)
+    1402   → walking-dead        (Walking Dead universe)
+    268686 → yellowstone-verse   (Taylor Sheridan shows)
+    951    → law-order-universe  (Law & Order franchise)
+    4330   → ncis-verse          (NCIS franchise)
+    14909  → game-of-thrones     (ASOIAF adaptations)
+    234689 → breaking-bad        (Breaking Bad universe)
+    212271 → greys-verse         (Grey's Anatomy universe)
+
+Spinoff Detection via Known Relationships:
+
+  KNOWN_SPINOFFS [franchise-keywords.ts:65-106]:
+    [60059, 1396]   → Better Call Saul ← Breaking Bad
+    [62286, 1402]   → Fear the Walking Dead ← TWD
+    [60735, 1412]   → The Flash ← Arrow
+    [67993, 58841]  → Chicago Med ← Chicago Fire
+    ... 30+ more pairs
+
+Console Output During Harvest:
+    ║ 🌌 Universe detected: arrowverse
+    ║ 👨‍👦 Parent series detected
+
+Storage:
+    global_items.universe_id       → FK to tv_universes table
+    global_items.parent_series_id  → FK to parent show (spinoffs)
+
+================================================================================
+                  GRAPH-BASED DISCOVERY (MediaGraph Class)
+================================================================================
+
+Class: MediaGraph [services/franchise/media-graph.ts]
+
+Purpose: Discover implicit franchise connections via shared creators
+
+Usage:
+    const graph = new MediaGraph();
+    graph.addConnection(1396, 123456, 'Creator');  // Breaking Bad + Gilligan
+    graph.addConnection(60059, 123456, 'Creator'); // Better Call Saul + Gilligan
+    
+    const cluster = graph.findConnectedCluster(1396, 0.5);
+    // Returns: [{ showId: 60059, distance: 1.0 }]
+
+Edge Weights by Role:
+    Creator/Showrunner     1.0
+    Executive Producer     0.5
+    Writer                 0.3
+    Director              0.2
+    Producer              0.2
+    Production Company    0.1
 
 ================================================================================
                      PHASE 3: DESCRIPTION GENERATION
@@ -165,8 +247,6 @@ Bucket-Specific Prompts:
   NARRATIVE → Focus: Protagonist, inciting incident, dramatic arc
   FORMAT    → Focus: Competition mechanics, prize, uniqueness
   OBSERVATIONAL → Focus: Subject matter, access level, perspective
-
-Output: StructuredDescription object stored in description_parts column
 
 ================================================================================
                         PHASE 4: TAG GENERATION
@@ -193,25 +273,22 @@ Vector Text Builder: buildTvShowVectorText() [tv-show-description.ts:1383-1488]
   2. Semantic summary SECOND
   3. 750 TOKEN LIMIT enforced (prevents "Vector Dilution")
 
-Token Limit Constants:
-  - MAX_VECTOR_TOKENS = 750
-  - WORDS_TO_TOKENS_RATIO = 1.3 (English approximation)
-  - Truncation at sentence boundary when exceeded
-
 Prefix Order (Highest Signal First):
   1. Format: SCRIPTED_SINGLE_CAM (6-label taxonomy - MOST SPECIFIC)
   2. Type: NARRATIVE (3-bucket)
   3. Lens: CRIME (genre lens)
-  4. Archetypes: "Features Anti-Hero protagonist..." (NEW)
-  5. Pacing: serialized, binge-worthy
-  6. Tone: cerebral, bleak
-  7. Genre: nordic noir, crime drama
-  8. Tropes: found family, slow burn
-  9. Summary: [semanticSummary from description_parts]
-  10. Keywords: [unique TMDB keywords not in tags]
+  4. Franchise: GOLDEN_FLEECE (Save the Cat)
+  5. Archetypes: "Features Anti-Hero protagonist..." (character dynamics)
+  6. Pacing: serialized, binge-worthy
+  7. Tone: cerebral, bleak
+  8. Genre: nordic noir, crime drama
+  9. Tropes: found family, slow burn
+  10. Summary: [semanticSummary from description_parts]
+  11. Keywords: [unique TMDB keywords not in tags]
 
 Example Vector Text:
     Format: SCRIPTED_SINGLE_CAM | Type: NARRATIVE | Lens: CRIME | 
+    Franchise: GOLDEN_FLEECE |
     Archetypes: Features Anti-Hero protagonist who descends into crime |
     Pacing: serialized, binge-worthy | Tone: cerebral, bleak |
     Genre: crime drama, prestige drama | Tropes: moral decay, transformation |
@@ -235,7 +312,9 @@ Smart Phase Logic [smart.ts:80-220]:
   2. Check for incomplete description_parts → calls generateTvShowDescription()
   3. Check for missing tags → calls generateTags()
   4. Check for missing archetypes → calls translateToArchetypes()
-  5. If ANYTHING updated → regenerates embedding via buildTvShowVectorText()
+  5. Check for missing franchise_type → calls classifyFranchiseType()
+  6. Check for missing universe_id → calls detectAndResolveUniverse()
+  7. If ANYTHING updated → regenerates embedding via buildTvShowVectorText()
 
 Rehydrate Phase Logic [rehydrate.ts:70-195]:
   Purpose: Update ongoing/returning series with fresh stats (no LLM cost)
@@ -260,32 +339,55 @@ RPC Call with Bucket Filter:
         bucket_filter: ['NARRATIVE', 'FORMAT']  // Hard partition
     });
 
+Universe-Aware Recommendations (Future):
+    -- Find shows in same universe
+    SELECT * FROM global_items
+    WHERE category_type = 'TV_SHOW'
+      AND universe_id = $universe_id
+    ORDER BY imdb_rating DESC;
+
 ================================================================================
                        DATABASE SCHEMA ADDITIONS
 ================================================================================
 
-New Columns (via migration: add_semantic_density_columns):
+Columns on global_items:
 
-┌─────────────────┬──────────────────────────────────────────────────────────┐
-│ Column          │ Description                                              │
-├─────────────────┼──────────────────────────────────────────────────────────┤
-│ bucket_type     │ 3-bucket: NARRATIVE | FORMAT | OBSERVATIONAL             │
-│ genre_lens      │ CRIME | SCIFI | COMEDY | DRAMA | GENERAL                 │
-│ is_anthology    │ Boolean                                                  │
-│ format_type     │ NEW: 6-label format taxonomy                             │
-│ lifecycle_state │ NEW: FSM state (MINISERIES → SERIALIZED_DRAMA, etc.)     │
-│ archetypes      │ NEW: LLM-translated character archetypes                 │
-└─────────────────┴──────────────────────────────────────────────────────────┘
+┌─────────────────────┬──────────────────────────────────────────────────────┐
+│ Column              │ Description                                          │
+├─────────────────────┼──────────────────────────────────────────────────────┤
+│ bucket_type         │ 3-bucket: NARRATIVE | FORMAT | OBSERVATIONAL         │
+│ genre_lens          │ CRIME | SCIFI | COMEDY | DRAMA | GENERAL             │
+│ is_anthology        │ Boolean                                              │
+│ format_type         │ 6-label format taxonomy                              │
+│ archetypes          │ LLM-translated character archetypes                  │
+│ franchise_type      │ Save the Cat franchise classification                │
+│ universe_id         │ FK to tv_universes table                             │
+│ parent_series_id    │ FK to parent show (spinoffs)                         │
+│ source_material     │ JSONB - book/comic adaptation info                   │
+└─────────────────────┴──────────────────────────────────────────────────────┘
 
-Indexes:
-  - idx_global_items_format_type (partial, WHERE format_type IS NOT NULL)
-  - idx_global_items_lifecycle_state (partial, WHERE lifecycle_state NOT NULL)
+tv_universes Table:
+    id                    UUID PRIMARY KEY
+    name                  TEXT UNIQUE (e.g., "Arrowverse")
+    slug                  TEXT UNIQUE (e.g., "arrowverse")
+    description           TEXT
+    founding_show_tmdb_id INTEGER
+    keyword_ids           INTEGER[]
+    metadata              JSONB
+
+franchise_links Table (Many-to-Many Crossovers):
+    link_id               BIGSERIAL PRIMARY KEY
+    source_show_id        UUID → global_items(id)
+    target_show_id        UUID → global_items(id)
+    link_type             spinoff | crossover | shared_universe | reboot | revival
+    strength_score        FLOAT (0.0-1.0)
+    confidence_score      FLOAT (0.0-1.0)
+    shared_attribute      keyword | creator | production_company
+    verified              BOOLEAN
 
 ================================================================================
                          EXTENSIBILITY GUIDE
 ================================================================================
-
-All new features are designed for easy extension:
 
 1. ADD NEW FORMAT LABELS:
    → Edit FORMAT_DETECTION constant in tv-show-description.ts
@@ -295,15 +397,18 @@ All new features are designed for easy extension:
 2. ADD NEW ARCHETYPES:
    → Add object to CHARACTER_ARCHETYPES array in tv-show-description.ts
    → Format: { id: 'NEW_ID', label: 'Display Label', description: '...' }
-   → LLM prompt automatically picks up new archetypes
 
-3. ADD NEW LIFECYCLE STATES:
-   → Add new value to LifecycleState type in tv-show-description.ts
-   → Implement transition logic in rehydrate.ts if needed
+3. ADD NEW UNIVERSE MAPPINGS:
+   → Add to UNIVERSE_KEYWORD_MAP in franchise-keywords.ts
+   → Format: TMDB_KEYWORD_ID: 'universe-slug'
 
-4. ADJUST TOKEN LIMIT:
+4. ADD NEW SPINOFF RELATIONSHIPS:
+   → Add to KNOWN_SPINOFFS in franchise-keywords.ts
+   → Format: [SPINOFF_TMDB_ID, PARENT_TMDB_ID]
+
+5. ADJUST TOKEN LIMIT:
    → Edit MAX_VECTOR_TOKENS constant in tv-show-description.ts
-   → Current: 750 tokens (user-specified)
+   → Current: 750 tokens
 
 ================================================================================
                            DATA FLOW SUMMARY
@@ -311,24 +416,30 @@ All new features are designed for easy extension:
 
 HARVEST PATH (new items):
   harvest-tmdb.ts
-    → tmdb.ts:startHarvest()
-      → fetchAndNormalizeTmdbData()    # TMDB API
-      → detectTvBucket()               # 3-bucket classification
-      → detectTvFormat()               # NEW: 6-label format
-      → detectGenreLens()              # Genre lens
-      → isAnthology()                  # Anthology flag
-      → translateToArchetypes()        # NEW: LLM archetypes
-      → generateTvShowDescription()    # AI: 4-part description
-      → generateTvShowTags()           # AI: 4-bucket tags
-      → buildTvShowVectorText()        # Prefix Fusion (750 token limit)
-      → generateEmbedding()            # Voyage-4 1024d vector
-      → INSERT to global_items (with format_type, archetypes)
+    → tmdb.ts:harvestTmdb()
+      → fetchTmdbDetails()               # TMDB API
+      → fetchOmdbData()                  # OMDb ratings
+      → detectTvBucket()                 # 3-bucket classification
+      → detectTvFormat()                 # 6-label format
+      → detectGenreLens()                # Genre lens
+      → isAnthology()                    # Anthology flag
+      → translateToArchetypes()          # LLM archetypes
+      → classifyFranchiseType()          # Save the Cat
+      → detectAndResolveUniverse()       # Universe detection (NEW)
+      → detectParentSeries()             # Spinoff detection (NEW)
+      → generateTvShowDescription()      # AI: 4-part description
+      → generateTvShowTags()             # AI: 4-bucket tags
+      → buildTvShowVectorText()          # Prefix Fusion (750 token limit)
+      → generateEmbedding()              # Voyage-4 1024d vector
+      → INSERT to global_items
 
 BACKFILL PATH (existing items):
   backfill/index.ts → phases/smart.ts
-    → Check missing fields (including archetypes)
+    → Check missing fields (including universe_id, franchise_type)
     → generateTvShowDescription() if needed
     → translateToArchetypes() if needed
+    → classifyFranchiseType() if needed
+    → detectAndResolveUniverse() if needed
     → generateTags() if needed
     → buildTvShowVectorText()
     → generateEmbedding()
@@ -338,11 +449,14 @@ BACKFILL PATH (existing items):
 ================================================================================
 
 ✅ Single Source of Truth:
-   - detectTvBucket()         → tv-show-description.ts ONLY
-   - detectTvFormat()         → tv-show-description.ts ONLY (NEW)
-   - detectGenreLens()        → tv-show-description.ts ONLY  
-   - buildTvShowVectorText()  → tv-show-description.ts ONLY
-   - translateToArchetypes()  → tv-show-description.ts ONLY (NEW)
+   - detectTvBucket()           → tv-show-description.ts ONLY
+   - detectTvFormat()           → tv-show-description.ts ONLY
+   - detectGenreLens()          → tv-show-description.ts ONLY
+   - buildTvShowVectorText()    → tv-show-description.ts ONLY
+   - translateToArchetypes()    → tv-show-description.ts ONLY
+   - classifyFranchiseType()    → franchise-classification.ts ONLY
+   - detectUniverseFromKeywords → franchise-keywords.ts ONLY
+   - MediaGraph                 → services/franchise/media-graph.ts ONLY
 
 ✅ All Callers Use Canonical Functions:
    - tmdb.ts                  → imports from tv-show.ts (barrel)
@@ -352,7 +466,27 @@ BACKFILL PATH (existing items):
 ✅ Extensible Design:
    - FORMAT_DETECTION         → Add keywords without code changes
    - CHARACTER_ARCHETYPES     → Add archetypes without code changes
-   - LifecycleState           → Add states without code changes
+   - UNIVERSE_KEYWORD_MAP     → Add universes without code changes
+   - KNOWN_SPINOFFS           → Add spinoffs without code changes
+
+================================================================================
+                            COST ESTIMATION
+================================================================================
+
+┌────────────────────────────┬───────────────────┬────────────────────────────┐
+│ Operation                  │ Cost per Item     │ Provider                   │
+├────────────────────────────┼───────────────────┼────────────────────────────┤
+│ TMDB API                   │ Free              │ TMDB (rate limited)        │
+│ OMDb API                   │ ~$0.001           │ OMDb                       │
+│ Description Generation     │ ~$0.002           │ LLM (configured)           │
+│ Tag Generation             │ ~$0.001           │ LLM                        │
+│ Archetype Translation      │ ~$0.001           │ LLM                        │
+│ Franchise Classification   │ ~$0.001           │ LLM                        │
+│ Embedding                  │ ~$0.001           │ Voyage-4                   │
+├────────────────────────────┼───────────────────┼────────────────────────────┤
+│ Total (new item)           │ ~$0.007           │                            │
+│ Rehydrate (no LLM)         │ ~$0.002           │                            │
+└────────────────────────────┴───────────────────┴────────────────────────────┘
 
 ================================================================================
                                END OF DOCUMENT

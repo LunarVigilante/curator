@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { motion } from 'framer-motion'
+import { motion, Variants } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { GlobalItem } from '../types'
@@ -21,13 +21,15 @@ interface StandardLayoutProps {
     onSimilarItemClick?: (itemId: string) => void
     isRefreshing?: boolean
     isRegenerating?: boolean
-    containerVariants: any
-    itemVariants: any
-    sidebarVariants: any
+    containerVariants: Variants
+    itemVariants: Variants
+    sidebarVariants: Variants
 }
 
 /**
- * Standard two-column layout for Movies, TV, Games, Anime, and Music Albums
+ * Standard two-column layout for Movies, Games, Anime, and Music Albums
+ * 
+ * Note: TV Shows use the dedicated TvShowLayout for enhanced semantic features.
  * 
  * Layout Structure:
  * - LEFT: Sidebar with scrollable "Similar Items" section
@@ -52,7 +54,6 @@ export function StandardLayout({
     const isBoardGame = category === 'BOARD_GAME'
     const isVideoGame = category === 'VIDEO_GAME'
     const isMovie = category === 'MOVIE'
-    const isTV = category === 'TV' || category === 'TV_SHOW'
 
     return (
         <div className="relative z-10 flex flex-wrap md:flex-nowrap items-stretch w-full h-full overflow-hidden">
@@ -108,7 +109,7 @@ export function StandardLayout({
                         )}
 
                         {/* Cast Row (Pills) - Fixed above description */}
-                        {(isMovie || isTV || isAnime || (item.cast && item.cast.length > 0)) && (
+                        {(isMovie || isAnime || (item.cast && item.cast.length > 0)) && (
                             <motion.div variants={itemVariants}>
                                 <CastRow cast={item.cast || []} />
                             </motion.div>
@@ -139,7 +140,7 @@ export function StandardLayout({
                         {isAnime && <AnimeFooter item={item} itemVariants={itemVariants} />}
                         {isBoardGame && <BoardGameFooter item={item} itemVariants={itemVariants} />}
                         {isVideoGame && <VideoGameFooter item={item} itemVariants={itemVariants} />}
-                        {(isMovie || isTV) && <MovieTvFooter item={item} itemVariants={itemVariants} isTV={isTV} />}
+                        {isMovie && <MovieTvFooter item={item} itemVariants={itemVariants} isTV={false} />}
                     </div>
                 </motion.div>
             </div>

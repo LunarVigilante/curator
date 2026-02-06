@@ -2,8 +2,11 @@
 
 import React from 'react'
 import type { GlobalItem } from '../types'
-import { getCategoryIcon, cleanTitle } from '../utils'
+import { getCategoryIcon, cleanTitle, normalizeCategory } from '../utils'
 import { RatingBadges } from './RatingBadges'
+import Link from 'next/link'
+import { Film, Clapperboard } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface ItemDetailHeaderProps {
     item: GlobalItem
@@ -17,6 +20,31 @@ function CategoryIconDisplay({ categoryType }: { categoryType: string | null }) 
 }
 
 export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
+    const category = normalizeCategory(item.category_type)
+    const isTV = category === 'TV' || category === 'TV_SHOW'
+    const isMovie = category === 'MOVIE'
+    const metadata = item.metadata as Record<string, any> || {}
+    const imdbRating = item.imdb_rating || metadata.imdb_rating
+    const rtRating = item.rotten_tomatoes_rating || metadata.rotten_tomatoes_rating
+
+    // Build year range for TV shows
+    const getYearRange = () => {
+        if (!item.release_year) return null
+        const metadata = item.metadata as Record<string, unknown> || {}
+        const lastAirDate = metadata.last_air_date as string | undefined
+        const endYear = lastAirDate?.slice(0, 4)
+        const statusLower = item.status?.toLowerCase() || ''
+        const isEnded = statusLower.includes('ended') || statusLower.includes('canceled')
+
+        if (isEnded && endYear && String(item.release_year) !== endYear) {
+            return `${item.release_year}–${endYear}`
+        }
+        if (!isEnded) {
+            return `${item.release_year}–Present`
+        }
+        return String(item.release_year)
+    }
+
     return (
         <div className="space-y-4">
             {/* Category • Year • Rating */}
@@ -58,6 +86,37 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
                 )}
             </div>
 
+            {/* Binge Metrics Row - TV Shows Only */}
+            {isTV && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-400">
+                    {(item.number_of_seasons ?? 0) > 0 && (
+                        <span className="font-medium text-white">
+                            {item.number_of_seasons} {item.number_of_seasons === 1 ? 'Season' : 'Seasons'}
+                        </span>
+                    )}
+                    {(item.number_of_seasons ?? 0) > 0 && (item.episodes ?? item.number_of_episodes ?? 0) > 0 && (
+                        <span className="text-zinc-600">•</span>
+                    )}
+                    {(item.episodes ?? item.number_of_episodes ?? 0) > 0 && (
+                        <span className="font-medium text-white">
+                            {item.episodes ?? item.number_of_episodes} Episodes
+                        </span>
+                    )}
+                    {getYearRange() && (
+                        <>
+                            <span className="text-zinc-600">•</span>
+                            <span>{getYearRange()}</span>
+                        </>
+                    )}
+                    {item.networks && item.networks.length > 0 && (
+                        <>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-blue-400">{item.networks[0]}</span>
+                        </>
+                    )}
+                </div>
+            )}
+
             {/* Tagline - Serif font, no border */}
             {item.tagline && (
                 <p className="text-xl text-zinc-400 font-light italic font-serif py-1">
@@ -65,8 +124,43 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
                 </p>
             )}
 
-            {/* Rating Badges */}
-            <RatingBadges item={item} />
+            {/* Links Row (TV/Movie) */}
+            {(isTV || isMovie) ? (
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                    {/* TMDB Button */}
+                    {item.vote_average !== null && item.vote_average > 0 && item.external_ids?.tmdb && (
+                        <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#01B4E4] hover:bg-[#018AB0] text-white font-black border-0 rounded transition-transform hover:scale-105">
+                            <Link href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.external_ids.tmdb}`} target="_blank">
+                                <span className="text-[10px] uppercase tracking-tighter opacity-80">TMDB</span>
+                                <span className="text-sm">{item.vote_average.toFixed(1)}</span>
+                            </Link>
+                        </Button>
+                    )}
+
+                    {/* IMDb Button */}
+                    {imdbRating && item.external_ids?.imdb && (
+                        <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#F5C518] hover:bg-[#C49A13] text-black hover:text-white font-black border-0 rounded transition-transform hover:scale-105">
+                            <Link href={`https://www.imdb.com/title/${item.external_ids.imdb}`} target="_blank">
+                                <span className="text-[10px] uppercase tracking-tighter opacity-80">IMDb</span>
+                                <span className="text-sm">{imdbRating}</span>
+                            </Link>
+                        </Button>
+                    )}
+
+                    {/* RT Button */}
+                    {rtRating && (
+                        <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#FA320A] hover:bg-[#C02808] text-white font-black border-0 rounded transition-transform hover:scale-105">
+                            <Link href={`https://www.rottentomatoes.com/search?search=${encodeURIComponent(item.title)}`} target="_blank">
+                                <span className="text-[10px] uppercase tracking-tighter opacity-80">RT</span>
+                                <span className="text-sm">{rtRating}</span>
+                            </Link>
+                        </Button>
+                    )}
+                </div>
+            ) : (
+                <RatingBadges item={item} />
+            )}
         </div>
     )
 }
+

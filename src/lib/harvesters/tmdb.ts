@@ -19,7 +19,10 @@ import {
     rewriteDescription,
     generateTags,
     ensureTags,
-    generateEmbedding
+    generateEmbedding,
+    generateAnthologySyntheticCentroid,
+    didStatusBecomeEnded,
+    type AnthologyEpisode
 } from './shared';
 import {
     generateTvShowDescription,
@@ -38,6 +41,12 @@ import {
     type FranchiseType           // NEW: Franchise type
 } from '@/lib/enrichment/categories/tv-show';
 import { getLLMConfig } from './shared';
+import { detectUniverseFromKeywords, KNOWN_SPINOFFS } from '@/lib/constants/franchise-keywords';
+import { fetchWikidataRelationships, resolveWikidataUniverseSlug, type WikidataRelationships } from '@/lib/services/wikidata';
+import { detectIABFacets, type IABFacetType } from '@/lib/constants/iab-taxonomy';
+import { getSeriesExtended, getSeriesEpisodes, getAbsoluteEpisodeCount, type TvdbEnrichmentResult, type TvdbEpisode } from '@/lib/services/tvdb';
+import { extractEnrichment, isAnime, detectUniverseFromOfficialLists } from '@/lib/services/tvdb-utils';
+import { SystemConfigService } from '@/lib/services/SystemConfigService';
 import pLimit from 'p-limit';
 
 // ============================================================================
@@ -227,6 +236,161 @@ async function fetchOmdbDataByTitle(title: string, year: number): Promise<OmdbDa
         return null;
     }
 }
+
+// ============================================================================
+// FRANCHISE DISCOVERY API HELPERS
+// ============================================================================
+
+/**
+ * Discover all TV shows with a specific TMDB keyword
+ * Used for universe detection (e.g., all shows tagged "arrowverse")
+ * 
+ * @param keywordId - TMDB keyword ID
+ * @param maxPages - Maximum pages to fetch (default: 5)
+ * @returns Array of TMDB show IDs
+ */
+export async function discoverByKeyword(keywordId: number, maxPages: number = 5): Promise<number[]> {
+    const results: number[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    while (page <= totalPages && page <= maxPages) {
+        const url = `${TMDB_BASE_URL}/discover/tv?api_key=${TMDB_API_KEY}&with_keywords=${keywordId}&sort_by=first_air_date.asc&page=${page}`;
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) {
+                if (res.status === 429) {
+                    console.warn('   ⚠️ Rate limited (Discover by Keyword). Sleeping 5s...');
+                    await sleep(5000);
+                    continue;
+                }
+                throw new Error(`TMDB Discover Error ${res.status}`);
+            }
+
+            const data = await res.json();
+            results.push(...data.results.map((s: any) => s.id));
+            totalPages = data.total_pages;
+            page++;
+
+        } catch (error) {
+            console.error(`Failed to discover by keyword ${keywordId}:`, error);
+            break;
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Fetch aggregate credits for a TV show (full cast/crew across all seasons)
+ * Used for building creator graphs
+ * 
+ * @param showId - TMDB show ID
+ * @returns Array of credits with person ID, name, and role
+ */
+export async function fetchAggregateCredits(showId: number): Promise<Array<{
+    personId: number;
+    name: string;
+    role: string;
+    department: string;
+    episodeCount: number;
+}>> {
+    const url = `${TMDB_BASE_URL}/tv/${showId}/aggregate_credits?api_key=${TMDB_API_KEY}`;
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) {
+            if (res.status === 429) {
+                await sleep(5000);
+                return fetchAggregateCredits(showId);
+            }
+            return [];
+        }
+
+        const data = await res.json();
+        const credits: Array<{ personId: number; name: string; role: string; department: string; episodeCount: number }> = [];
+
+        // Process crew (creators, writers, directors, producers)
+        for (const person of (data.crew || [])) {
+            for (const job of (person.jobs || [])) {
+                credits.push({
+                    personId: person.id,
+                    name: person.name,
+                    role: job.job,
+                    department: person.department || 'Unknown',
+                    episodeCount: job.episode_count || 0
+                });
+            }
+        }
+
+        return credits;
+
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Look up a universe by slug and return its UUID
+ */
+async function lookupUniverseId(
+    supabase: ReturnType<typeof createServiceRoleClient>,
+    slug: string
+): Promise<string | null> {
+    const { data, error: _error } = await supabase
+        .from('tv_universes')
+        .select('id')
+        .eq('slug', slug)
+        .single();
+
+    if (_error || !data) return null;
+    return data.id;
+}
+
+/**
+ * Detect universe from TMDB keywords and resolve to UUID
+ */
+async function detectAndResolveUniverse(
+    supabase: ReturnType<typeof createServiceRoleClient>,
+    keywords?: { id: number; name: string }[]
+): Promise<{ universeId: string; slug: string } | null> {
+    if (!keywords || keywords.length === 0) return null;
+
+    const keywordIds = keywords.map(k => k.id);
+    const match = detectUniverseFromKeywords(keywordIds);
+
+    if (!match) return null;
+
+    const universeId = await lookupUniverseId(supabase, match.slug);
+    if (!universeId) return null;
+
+    return { universeId, slug: match.slug };
+}
+
+/**
+ * Detect parent series from known spinoffs list
+ */
+async function detectParentSeries(
+    supabase: ReturnType<typeof createServiceRoleClient>,
+    tmdbId: number
+): Promise<string | null> {
+    const spinoff = KNOWN_SPINOFFS.find(([childId]) => childId === tmdbId);
+    if (!spinoff) return null;
+
+    const [, parentTmdbId] = spinoff;
+
+    // Look up parent by TMDB ID
+    const { data } = await supabase
+        .from('global_items')
+        .select('id')
+        .eq('category_type', 'TV_SHOW')
+        .contains('external_ids', { tmdb: parentTmdbId })
+        .single();
+
+    return data?.id || null;
+}
+
 
 // ============================================================================
 // METADATA EXTRACTION
@@ -503,7 +667,6 @@ async function processHarvestTask(
         const finalWriter = omdbData?.writer || meta.writer;
         const finalContentRating = omdbData?.rated || meta.content_rating;
         const finalBoxOffice = omdbData?.box_office || null;
-
         let imageUrl: string | null = null;
         let description = meta.overview;
         let validTags: { id: string; name: string }[] = [];
@@ -514,7 +677,11 @@ async function processHarvestTask(
             isAnthology: boolean;
             formatType?: TvFormat;
             archetypes?: string;
-            franchiseType?: FranchiseType;  // NEW: Save the Cat franchise type
+            franchiseType?: FranchiseType;  // Save the Cat franchise type
+            universeId?: string;             // FK to tv_universes
+            parentSeriesId?: string;         // FK to parent show (spinoff)
+            iabFacets?: IABFacetType[];      // IAB taxonomy for unscripted content
+            tvdbEnrichment?: TvdbEnrichmentResult; // TVDB v4 enrichment data
         } | null = null;
 
         if (task.taskType === 'NEW') {
@@ -530,6 +697,32 @@ async function processHarvestTask(
             // ================================================================
             if (type === 'tv') {
                 console.log(`   ║ 🧠 Generating TV-specific description (3-Bucket + 6-Format)...`);
+
+                // ================================================================
+                // TVDB v4 ENRICHMENT (Characters, Tags, Franchises)
+                // ================================================================
+                let tvdbEnrichment: TvdbEnrichmentResult | undefined;
+                const tvdbId = details.external_ids?.tvdb_id;
+                if (tvdbId) {
+                    const tvdbApiKey = await SystemConfigService.getDecryptedConfig('tvdb_api_key');
+                    const tvdbPin = await SystemConfigService.getDecryptedConfig('tvdb_pin');
+                    if (tvdbApiKey) {
+                        const tvdbSeries = await getSeriesExtended(tvdbId, tvdbApiKey, tvdbPin || undefined);
+                        if (tvdbSeries) {
+                            tvdbEnrichment = extractEnrichment(tvdbSeries);
+                            console.log(`   ║ 📺 TVDB: ${tvdbEnrichment.semanticTags.length} tags, ${tvdbEnrichment.characters.length} characters, ${tvdbEnrichment.officialLists.length} lists`);
+
+                            // Check for anime absolute ordering
+                            if (isAnime(tvdbSeries)) {
+                                const absoluteCount = await getAbsoluteEpisodeCount(tvdbId, tvdbApiKey, tvdbPin || undefined);
+                                if (absoluteCount > 0) {
+                                    tvdbEnrichment.absoluteEpisodeCount = absoluteCount;
+                                    console.log(`   ║ 🎌 Anime detected: ${absoluteCount} absolute episodes`);
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Detect bucket and lens (pass TMDB type for strongest signal)
                 const bucketType = detectTvBucket(meta.genres, meta.keywords, meta.overview, meta.metadata.type);
@@ -600,8 +793,23 @@ async function processHarvestTask(
 
                 // Generate TV-specific tags using 4-bucket taxonomy
                 const aiTagNames = await aiLimiter(() => generateTvShowTags(llmConfig, meta.title, description));
-                validTags = await ensureTags(supabase, aiTagNames);
-                console.log(`   ║ 🏷️ ${aiTagNames.length} TV tags generated (4-bucket taxonomy)`);
+
+                // Merge TVDB semantic tags with LLM-generated tags
+                // TVDB tags are curated, so they ground the AI output
+                let finalTagNames = [...aiTagNames];
+                if (tvdbEnrichment && tvdbEnrichment.semanticTags.length > 0) {
+                    // Add TVDB tags that aren't already in the list
+                    const existingNormalized = new Set(aiTagNames.map(t => t.toLowerCase()));
+                    const tvdbUnique = tvdbEnrichment.semanticTags
+                        .filter(t => !existingNormalized.has(t.toLowerCase()))
+                        .slice(0, 10); // Limit new tags
+                    if (tvdbUnique.length > 0) {
+                        finalTagNames = [...aiTagNames, ...tvdbUnique];
+                        console.log(`   ║ 🎯 Merged ${tvdbUnique.length} TVDB tags with LLM tags`);
+                    }
+                }
+                validTags = await ensureTags(supabase, finalTagNames);
+                console.log(`   ║ 🏷️ ${finalTagNames.length} TV tags (4-bucket + TVDB)`);
 
                 // Build SUPER-DOCUMENT vector text (Semantic Media Intelligence)
                 // Includes: Franchise Type, Format Type, Archetypes, 1024 token limit
@@ -611,10 +819,10 @@ async function processHarvestTask(
                     genres: meta.genres,
                     keywords: meta.keywords,
                     tags: {
-                        sub_genres: aiTagNames.slice(0, 5),
-                        tropes: aiTagNames.slice(5, 11),
-                        mood: aiTagNames.slice(11, 16),
-                        format: aiTagNames.slice(16, 20)
+                        sub_genres: finalTagNames.slice(0, 5),
+                        tropes: finalTagNames.slice(5, 11),
+                        mood: finalTagNames.slice(11, 16),
+                        format: finalTagNames.slice(16, 20)
                     },
                     description_parts: {
                         themes: descResult.themes
@@ -627,12 +835,117 @@ async function processHarvestTask(
                     franchiseType    // NEW: Save the Cat franchise type
                 });
 
-                embeddingVector = await generateEmbedding(vectorText);
-                if (embeddingVector) console.log(`   ║ 🧮 Embedding generated (Super-Document template)`);
+                // ANTHOLOGY DETECTION: Use synthetic centroid for anthology shows
+                // Combines series overview + top episode descriptions for richer embedding
+                if (anthology && details.seasons?.length > 0) {
+                    console.log(`   ║ 📚 Anthology detected - using Synthetic Centroid strategy`);
+                    // Fetch episode data for synthetic centroid (top 3 by popularity)
+                    const episodes: AnthologyEpisode[] = details.seasons
+                        .flatMap((s: { episode_count?: number; name?: string; overview?: string }) =>
+                            s.episode_count ? [{ name: s.name || 'Unknown', overview: s.overview || '', vote_count: s.episode_count }] : []
+                        )
+                        .slice(0, 5);
+                    if (episodes.length > 0) {
+                        embeddingVector = await generateAnthologySyntheticCentroid(
+                            descResult.semanticSummary || details.overview || '',
+                            episodes
+                        );
+                    } else {
+                        embeddingVector = await generateEmbedding(vectorText);
+                    }
+                } else {
+                    embeddingVector = await generateEmbedding(vectorText);
+                }
+                if (embeddingVector) console.log(`   ║ 🧮 Embedding generated (${anthology ? 'Synthetic Centroid' : 'Super-Document'})`);
 
                 // Store classification metadata for later payload assignment
-                tvClassification = { bucketType, genreLens, isAnthology: anthology, formatType, archetypes, franchiseType };
+                tvClassification = {
+                    bucketType,
+                    genreLens,
+                    isAnthology: anthology,
+                    formatType,
+                    archetypes,
+                    franchiseType,
+                    tvdbEnrichment // Store TVDB enrichment data
+                };
 
+                // PRIORITY 1: Detect universe from TVDB Official Lists (highest accuracy)
+                // e.g., "Breaking Bad Franchise", "Arrowverse", "Star Trek Saga"
+                if (tvdbEnrichment && tvdbEnrichment.officialLists.length > 0) {
+                    const tvdbUniverseSlug = detectUniverseFromOfficialLists(tvdbEnrichment.officialLists);
+                    if (tvdbUniverseSlug) {
+                        // Try to find or create the universe
+                        const { data: existingUniverse } = await supabase
+                            .from('tv_universes')
+                            .select('id')
+                            .eq('slug', tvdbUniverseSlug)
+                            .single();
+
+                        if (existingUniverse) {
+                            tvClassification.universeId = existingUniverse.id;
+                            console.log(`   ║ 🎯 TVDB Universe (Direct): ${tvdbUniverseSlug}`);
+                        } else {
+                            console.log(`   ║ 📋 TVDB Universe candidate: ${tvdbUniverseSlug} (not in DB yet)`);
+                        }
+                    }
+                }
+
+                // PRIORITY 2: Detect universe from TMDB keywords (fallback)
+                const rawKeywords = details.keywords?.results || [];
+                if (!tvClassification.universeId) {
+                    const universeMatch = await detectAndResolveUniverse(supabase, rawKeywords);
+                    if (universeMatch) {
+                        tvClassification.universeId = universeMatch.universeId;
+                        console.log(`   ║ 🌌 Universe detected: ${universeMatch.slug}`);
+                    }
+                }
+
+                // NEW: Detect parent series (spinoffs)
+                const parentSeriesId = await detectParentSeries(supabase, tmdbId);
+                if (parentSeriesId) {
+                    tvClassification.parentSeriesId = parentSeriesId;
+                    console.log(`   ║ 👨‍👦 Parent series detected`);
+                }
+
+                // NEW: Wikidata federation - fallback universe detection
+                const wikidataId = details.external_ids?.wikidata_id;
+                if (wikidataId && !tvClassification.universeId) {
+                    try {
+                        console.log(`   ║ 🔎 Querying Wikidata (${wikidataId})...`);
+                        const wikiRels = await fetchWikidataRelationships(wikidataId);
+
+                        // Check if Wikidata knows a universe (wikiRels can be null from cache)
+                        if (wikiRels && (wikiRels.narrativeUniverse || wikiRels.partOfSeries)) {
+                            const wikiUniverseQid = wikiRels.narrativeUniverse || wikiRels.partOfSeries;
+                            const resolvedSlug = resolveWikidataUniverseSlug(wikiUniverseQid);
+                            if (resolvedSlug) {
+                                // Look up our internal universe ID
+                                const { data: universeData } = await supabase
+                                    .from('tv_universes')
+                                    .select('id')
+                                    .eq('slug', resolvedSlug)
+                                    .single();
+                                if (universeData) {
+                                    tvClassification.universeId = universeData.id;
+                                    console.log(`   ║ 🌌 Wikidata universe: ${resolvedSlug}`);
+                                }
+                            }
+                        }
+                    } catch (wikiErr) {
+                        console.warn(`   ║ ⚠️ Wikidata lookup failed:`, wikiErr);
+                    }
+                }
+
+                // NEW: Detect IAB facets for unscripted content (FORMAT/OBSERVATIONAL buckets)
+                if (bucketType === 'FORMAT' || bucketType === 'OBSERVATIONAL') {
+                    const keywordStrings = rawKeywords.map((k: { name: string }) => k.name);
+                    const genreIds = details.genres?.map((g: { id: number }) => g.id) || [];
+                    const iabFacets = detectIABFacets(genreIds, keywordStrings);
+                    if (iabFacets.length > 0) {
+                        tvClassification.iabFacets = iabFacets;
+                        console.log(`   ║ 📊 IAB Facets: ${iabFacets.join(', ')}`);
+                    }
+                }
 
             } else {
                 // ================================================================
@@ -718,7 +1031,9 @@ async function processHarvestTask(
                     is_anthology: tvClassification.isAnthology,
                     format_type: tvClassification.formatType,
                     archetypes: tvClassification.archetypes || null,
-                    franchise_type: tvClassification.franchiseType   // NEW: Save the Cat
+                    franchise_type: tvClassification.franchiseType,
+                    universe_id: tvClassification.universeId || null,
+                    parent_series_id: tvClassification.parentSeriesId || null
                 } : {})
             };
 
@@ -852,6 +1167,40 @@ async function backfillExistingItems(
                 if (!item.number_of_seasons && meta.number_of_seasons) updatePayload.number_of_seasons = meta.number_of_seasons;
                 if (!item.number_of_episodes && meta.number_of_episodes) updatePayload.number_of_episodes = meta.number_of_episodes;
                 if (meta.metadata.type) console.log(`      Type: ${meta.metadata.type}`);
+
+                // TVDB enrichment for TV shows (same logic as harvest)
+                const tvdbId = details.external_ids?.tvdb_id;
+                if (tvdbId) {
+                    const tvdbApiKey = await SystemConfigService.getDecryptedConfig('tvdb_api_key');
+                    const tvdbPin = await SystemConfigService.getDecryptedConfig('tvdb_pin');
+                    if (tvdbApiKey) {
+                        const tvdbSeries = await getSeriesExtended(tvdbId, tvdbApiKey, tvdbPin || undefined);
+                        if (tvdbSeries) {
+                            const tvdbEnrichment = extractEnrichment(tvdbSeries);
+                            console.log(`      📺 TVDB: ${tvdbEnrichment.semanticTags.length} tags, ${tvdbEnrichment.characters.length} characters`);
+
+                            // Store TVDB enrichment in metadata
+                            updatePayload.metadata = {
+                                ...updatePayload.metadata,
+                                tvdb_enrichment: {
+                                    semantic_tags: tvdbEnrichment.semanticTags,
+                                    characters: tvdbEnrichment.characters.slice(0, 10), // Top 10
+                                    official_lists: tvdbEnrichment.officialLists,
+                                    content_rating: tvdbEnrichment.contentRating,
+                                }
+                            };
+
+                            // Check for anime
+                            if (isAnime(tvdbSeries)) {
+                                const absoluteCount = await getAbsoluteEpisodeCount(tvdbId, tvdbApiKey, tvdbPin || undefined);
+                                if (absoluteCount > 0) {
+                                    updatePayload.metadata.absolute_episode_count = absoluteCount;
+                                    console.log(`      🎌 Anime: ${absoluteCount} absolute episodes`);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if (dryRun) {

@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { LayoutGrid, ArrowUpDown, Clock, Calendar, ArrowDownAZ, ArrowUpAZ, Plus } from 'lucide-react'
+import { LayoutGrid, ArrowUpDown, Clock, Calendar, ArrowDownAZ, ArrowUpAZ, Plus, Grid3X3, Rows3 } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,9 @@ interface DataBrowserHeaderProps {
     setSortField?: (field: string) => void
     sortOrder?: 'asc' | 'desc'
     setSortOrder?: (order: 'asc' | 'desc') => void
+    // View Mode
+    viewMode?: 'standard' | 'compact'
+    setViewMode?: (mode: 'standard' | 'compact') => void
 }
 
 const SORT_OPTIONS = [
@@ -53,7 +56,9 @@ export function DataBrowserHeader({
     sortField = 'last_metadata_update',
     setSortField,
     sortOrder = 'desc',
-    setSortOrder
+    setSortOrder,
+    viewMode = 'standard',
+    setViewMode
 }: DataBrowserHeaderProps) {
     const hasActiveFilters = Object.keys(activeFilters).length > 0
 
@@ -91,8 +96,8 @@ export function DataBrowserHeader({
                                     key={`${opt.field}-${opt.order}`}
                                     onClick={() => handleSortChange(opt.field, opt.order)}
                                     className={`gap-2 ${opt.field === sortField && opt.order === sortOrder
-                                            ? 'bg-cyan-900/30 text-cyan-400'
-                                            : 'text-zinc-300'
+                                        ? 'bg-cyan-900/30 text-cyan-400'
+                                        : 'text-zinc-300'
                                         }`}
                                 >
                                     <opt.icon className="w-4 h-4" />
@@ -101,6 +106,34 @@ export function DataBrowserHeader({
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
+
+                    {/* View Mode Toggle */}
+                    <div className="flex items-center rounded-md border border-zinc-700 p-0.5 bg-zinc-900/50">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setViewMode?.('standard')}
+                            className={`h-7 px-2 gap-1 ${viewMode === 'standard'
+                                    ? 'bg-cyan-900/40 text-cyan-400'
+                                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
+                                }`}
+                        >
+                            <Rows3 className="w-4 h-4" />
+                            <span className="text-xs hidden sm:inline">Standard</span>
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setViewMode?.('compact')}
+                            className={`h-7 px-2 gap-1 ${viewMode === 'compact'
+                                    ? 'bg-cyan-900/40 text-cyan-400'
+                                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
+                                }`}
+                        >
+                            <Grid3X3 className="w-4 h-4" />
+                            <span className="text-xs hidden sm:inline">Compact</span>
+                        </Button>
+                    </div>
 
                     {/* Tile Size Slider */}
                     <div className="flex items-center gap-3">

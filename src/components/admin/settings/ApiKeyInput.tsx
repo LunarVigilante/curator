@@ -31,6 +31,8 @@ interface ApiKeyInputProps {
     secondaryValue?: string;
     secondaryOnChange?: (value: string) => void;
     secondaryPlaceholder?: string;
+    /** If true, secondary field is optional for testing */
+    secondaryOptional?: boolean;
 }
 
 /**
@@ -49,11 +51,12 @@ export function ApiKeyInput({
     secondaryValue,
     secondaryOnChange,
     secondaryPlaceholder = 'Client Secret',
+    secondaryOptional = false,
 }: ApiKeyInputProps) {
     const hasDualInputs = secondaryValue !== undefined && secondaryOnChange !== undefined;
     const isTestDisabled = serviceStatus.status === 'loading' ||
         !value ||
-        (hasDualInputs && !secondaryValue);
+        (hasDualInputs && !secondaryValue && !secondaryOptional);
 
     const getStatusIcon = () => {
         switch (serviceStatus.status) {

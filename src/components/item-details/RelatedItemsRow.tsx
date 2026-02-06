@@ -29,11 +29,12 @@ interface RelatedItem {
     image_url: string | null
     category_type: string | null
     similarity: number
+    hybrid_score: number
     release_year: number | null
     runtime: number | null
     vote_average: number | null
-    shared_genres: string[] | null
-    shared_tags: string[] | null
+    shared_traits: string[] | null
+    difference_factors: string[] | null
 }
 
 interface RelatedItemsRowProps {
@@ -110,45 +111,24 @@ export function RelatedItemsRow({
                 // When using internal filter, fetch all categories; otherwise use provided filter
                 const effectiveCategoryFilter = showCategoryFilter ? null : categoryFilter
 
-                // Try the enhanced RPC first, fallback to basic if it fails
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                let data: any[] | null = null
-                let rpcError: { message: string } | null = null
-
-                // Pass null to default to same-category (uses partial vector index)
-                // The RPC will use source item's category when null is passed
+                // Use the new Hybrid Scoring RPC
                 const rpcCategoryFilter = null
 
                 // Try enhanced RPC with reasons
-                const enhancedResult = await (supabase.rpc as any)('find_similar_items_with_reasons', {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const enhancedResult = await (supabase.rpc as any)('find_hybrid_similar_items', {
                     source_item_id: sourceItemId,
                     match_count: fetchLimit,
                     category_filter: rpcCategoryFilter
                 })
 
                 if (enhancedResult.error) {
-                    // Fallback to basic RPC
-                    console.warn('Enhanced RPC failed, falling back to basic:', enhancedResult.error)
-                    const basicResult = await (supabase.rpc as any)('find_similar_items', {
-                        source_item_id: sourceItemId,
-                        match_count: fetchLimit,
-                        category_filter: rpcCategoryFilter === 'ALL' ? null : rpcCategoryFilter
-                    })
-                    data = basicResult.data?.map((item: RelatedItem) => ({
-                        ...item,
-                        shared_genres: null,
-                        shared_tags: null
-                    })) || null
-                    rpcError = basicResult.error
-                } else {
-                    data = enhancedResult.data
-                }
-
-                if (rpcError) {
-                    console.error('Error fetching related items:', rpcError)
-                    setError(rpcError.message)
+                    console.error('Hybrid RPC failed:', enhancedResult.error)
+                    setError(enhancedResult.error.message)
                     return
                 }
+
+                const data = enhancedResult.data
 
                 // Debug logging
                 console.log('[RelatedItems] RPC returned', data?.length, 'items')
@@ -177,17 +157,19 @@ export function RelatedItemsRow({
         async function fetchExplanations() {
             if (filteredItems.length === 0 || !sourceItemId) return
 
-            // Get IDs of visible items that don't have explanations yet
-            const visibleIds = filteredItems
-                .slice(0, visibleCount)
-                .map(item => item.id)
-                .filter(id => !explanations.has(id))
+            // Prepare items with their shared traits context
+            const itemsToExplain = visibleItems
+                .filter(item => !explanations.has(item.id))
+                .map(item => ({
+                    id: item.id,
+                    sharedTraits: item.shared_traits || []
+                }))
 
-            if (visibleIds.length === 0) return
+            if (itemsToExplain.length === 0) return
 
             setLoadingExplanations(true)
             try {
-                const newExplanations = await getBatchSimilarityExplanations(sourceItemId, visibleIds)
+                const newExplanations = await getBatchSimilarityExplanations(sourceItemId, itemsToExplain)
                 setExplanations(prev => {
                     const merged = new Map(prev)
                     newExplanations.forEach((value, key) => merged.set(key, value))
@@ -318,15 +300,15 @@ export function RelatedItemsRow({
                                             {item.title}
                                         </p>
                                         <p className="text-[10px] text-cyan-500/80 font-medium mt-0.5">
-                                            {Math.round(item.similarity * 100)}% match
+                                            {Math.round(item.hybrid_score * 100)}% match
                                         </p>
                                     </div>
                                 </>
                             )
 
                             // Build tooltip content showing why it's similar
-                            const sharedGenres = item.shared_genres?.filter(Boolean) || []
-                            const sharedTags = item.shared_tags?.filter(Boolean) || []
+                            // Use shared_traits from RPC (Hybrid logic)
+                            const sharedTraits = item.shared_traits?.filter(Boolean) || []
                             const explanation = explanations.get(item.id)
                             const isLoadingExplanation = loadingExplanations && !explanation
 
@@ -337,9 +319,8 @@ export function RelatedItemsRow({
                                     runtime={item.runtime}
                                     voteAverage={item.vote_average}
                                     categoryType={item.category_type}
-                                    similarity={item.similarity}
-                                    sharedGenres={sharedGenres}
-                                    sharedTags={sharedTags}
+                                    similarity={item.hybrid_score} // Use hybrid score
+                                    sharedTraits={sharedTraits}
                                     explanation={explanation}
                                     isLoading={isLoadingExplanation}
                                 />
@@ -463,8 +444,10 @@ export function RelatedItemsRow({
                                         </div>
                                     )}
                                     {/* Similarity badge */}
-                                    <div className="absolute bottom-1 right-1 bg-black/60 backdrop-blur-sm text-[9px] text-white font-medium px-1.5 py-0.5 rounded shadow-lg">
-                                        {Math.round(item.similarity * 100)}%
+                                    <div className={`absolute bottom-1 right-1 backdrop-blur-sm text-[9px] text-white font-medium px-1.5 py-0.5 rounded shadow-lg ${(item.hybrid_score * 100) > 80 ? 'bg-green-500/80' :
+                                        (item.hybrid_score * 100) > 50 ? 'bg-amber-500/80' : 'bg-red-500/80'
+                                        }`}>
+                                        {Math.max(0, Math.min(100, Math.round(item.hybrid_score * 100)))}%
                                     </div>
                                 </div>
                                 <p className="text-xs text-zinc-400 mt-1.5 truncate group-hover:text-white transition-colors">

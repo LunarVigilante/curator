@@ -50,6 +50,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
     const [metronUsername, setMetronUsername] = useState(settings?.['metron_username'] || '');
     const [metronPassword, setMetronPassword] = useState(settings?.['metron_password'] || '');
     const [omdbApiKey, setOmdbApiKey] = useState(settings?.['omdb_api_key'] || '');
+    const [tvdbApiKey, setTvdbApiKey] = useState(settings?.['tvdb_api_key'] || '');
+    const [tvdbPin, setTvdbPin] = useState(settings?.['tvdb_pin'] || '');
 
     // Voyage AI (Embeddings)
     const [voyageApiKey, setVoyageApiKey] = useState(settings?.['voyage_api_key'] || '');
@@ -90,7 +92,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         metron: { status: 'idle' },
         steamgrid: { status: 'idle' },
         omdb: { status: 'idle' },
-        twitch: { status: 'idle' }
+        twitch: { status: 'idle' },
+        tvdb: { status: 'idle' }
     });
 
 
@@ -124,6 +127,8 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
             if (config['metron_username']) setMetronUsername(config['metron_username']);
             if (config['metron_password']) setMetronPassword(config['metron_password']);
             if (config['omdb_api_key']) setOmdbApiKey(config['omdb_api_key']);
+            if (config['tvdb_api_key']) setTvdbApiKey(config['tvdb_api_key']);
+            if (config['tvdb_pin']) setTvdbPin(config['tvdb_pin']);
 
             if (config['resend_api_key']) setResendKey(config['resend_api_key']);
             if (config['resend_from_email']) setFromEmail(config['resend_from_email']);
@@ -164,7 +169,7 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
         }
     };
 
-    const handleTestService = async (service: 'tmdb' | 'twitch' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron' | 'omdb' | 'steamgrid', apiKey: string, clientSecret?: string) => {
+    const handleTestService = async (service: 'tmdb' | 'twitch' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron' | 'omdb' | 'steamgrid' | 'tvdb', apiKey: string, clientSecret?: string) => {
         setServiceStatuses(prev => ({ ...prev, [service]: { status: 'loading' } }));
         try {
             const result = await testServiceConnection({ service, apiKey, clientSecret });
@@ -251,7 +256,10 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                 featureAiCritic: enableAiCritic ? 'true' : 'false',
                 featureSmartSort: enableSmartSort ? 'true' : 'false',
                 featureRecommendations: enableRecommendations ? 'true' : 'false',
-                featureChallenges: enableChallenges ? 'true' : 'false'
+                featureChallenges: enableChallenges ? 'true' : 'false',
+                // TVDB
+                tvdbApiKey,
+                tvdbPin
             });
             toast.success("System configuration updated!");
         } catch {
@@ -566,6 +574,22 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                             helpText={<>Required for fetching Rotten Tomatoes & IMDb ratings. Get key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" className="underline hover:text-white">omdbapi.com</a></>}
                         />
 
+                        {/* TVDB v4 (TV Enrichment) */}
+                        <ApiKeyInput
+                            label="TVDB v4 (TV Enrichment)"
+                            value={tvdbApiKey}
+                            onChange={(v) => { setTvdbApiKey(v); setServiceStatuses(prev => ({ ...prev, tvdb: { status: 'idle' } })); }}
+                            serviceStatus={serviceStatuses.tvdb || { status: 'idle' }}
+                            onTest={() => handleTestService('tvdb', tvdbApiKey, tvdbPin)}
+                            testLabel="TVDB"
+                            placeholder="API Key"
+                            secondaryValue={tvdbPin}
+                            secondaryOnChange={(v) => { setTvdbPin(v); setServiceStatuses(prev => ({ ...prev, tvdb: { status: 'idle' } })); }}
+                            secondaryPlaceholder="User PIN (optional)"
+                            secondaryOptional={true}
+                            helpText={<>Enhanced TV metadata (characters, tags, franchises). Get credentials from <a href="https://thetvdb.com/api-information" target="_blank" className="underline hover:text-white">thetvdb.com</a></>}
+                        />
+
                         {/* Metron (Comic Backup) */}
                         <ApiKeyInput
                             label="Metron (Comic Backup)"
@@ -594,83 +618,6 @@ export default function AdminSystemConfig({ settings }: AdminSystemConfigProps) 
                         </Button>
                     </CardFooter>
                 </form>
-            </Card>
-
-            {/* Feature Flags Section */}
-            <Card className="border-white/10 bg-black/20 backdrop-blur-sm">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Zap className="h-5 w-5 text-yellow-400" />
-                        Feature Flags
-                    </CardTitle>
-                    <CardDescription>
-                        Toggle features to customize the app experience.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div>
-                            <Label className="text-sm font-medium">AI Critic</Label>
-                            <p className="text-xs text-muted-foreground">Allow users to generate AI critiques of their lists</p>
-                        </div>
-                        <Button
-                            variant={enableAiCritic ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setEnableAiCritic(!enableAiCritic)}
-                            className={enableAiCritic ? 'bg-green-600 hover:bg-green-700' : ''}
-                        >
-                            {enableAiCritic ? 'Enabled' : 'Disabled'}
-                        </Button>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div>
-                            <Label className="text-sm font-medium">Smart Sort</Label>
-                            <p className="text-xs text-muted-foreground">AI auto-sorts items into tiers based on reviews</p>
-                        </div>
-                        <Button
-                            variant={enableSmartSort ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setEnableSmartSort(!enableSmartSort)}
-                            className={enableSmartSort ? 'bg-green-600 hover:bg-green-700' : ''}
-                        >
-                            {enableSmartSort ? 'Enabled' : 'Disabled'}
-                        </Button>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div>
-                            <Label className="text-sm font-medium">AI Recommendations</Label>
-                            <p className="text-xs text-muted-foreground">AI-powered recommendations based on user preferences</p>
-                        </div>
-                        <Button
-                            variant={enableRecommendations ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setEnableRecommendations(!enableRecommendations)}
-                            className={enableRecommendations ? 'bg-green-600 hover:bg-green-700' : ''}
-                        >
-                            {enableRecommendations ? 'Enabled' : 'Disabled'}
-                        </Button>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div>
-                            <Label className="text-sm font-medium">Community Challenges</Label>
-                            <p className="text-xs text-muted-foreground">Allow community challenge features</p>
-                        </div>
-                        <Button
-                            variant={enableChallenges ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setEnableChallenges(!enableChallenges)}
-                            className={enableChallenges ? 'bg-green-600 hover:bg-green-700' : ''}
-                        >
-                            {enableChallenges ? 'Enabled' : 'Disabled'}
-                        </Button>
-                    </div>
-                </CardContent>
-                <CardFooter>
-                    <Button onClick={(e) => handleSaveConfig(e)} disabled={isLoading}>
-                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save Feature Flags
-                    </Button>
-                </CardFooter>
             </Card>
         </div>
     );

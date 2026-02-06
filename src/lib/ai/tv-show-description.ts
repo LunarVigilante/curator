@@ -1344,12 +1344,13 @@ export function buildTvShowEmbeddingText(item: TvShowEmbeddingData): string {
 // ============================================================================
 
 const MAX_VECTOR_TOKENS = 1024;          // Voyage-4 optimal range for semantic density
-const WORDS_TO_TOKENS_RATIO = 1.3;       // English word → token approximation
-const MAX_WORDS = Math.floor(MAX_VECTOR_TOKENS / WORDS_TO_TOKENS_RATIO);  // ~577 words
+const WORDS_TO_TOKENS_RATIO = 1.5;       // Conservative: accounts for technical terms (was 1.3)
+const MAX_WORDS = Math.floor(MAX_VECTOR_TOKENS / WORDS_TO_TOKENS_RATIO);  // ~682 words
 
 /**
- * Estimate token count from text (word count × 1.3)
- * More accurate than character count for English text
+ * Estimate token count from text (word count × 1.5)
+ * Conservative ratio to avoid overflow with technical terms like "Targaryen"
+ * For exact counts, consider using a tokenizer library (gpt-tokenizer, tiktoken)
  */
 function estimateTokens(text: string): number {
     const wordCount = text.split(/\s+/).filter(Boolean).length;
@@ -1479,19 +1480,86 @@ export function buildTvShowVectorText(item: TvShowEmbeddingData & {
 
     // Combine with newlines for clear section separation
     // This format works better with transformer attention than pipe-delimited
-    const fullText = sections.join('\n');
 
     // =========================================================================
-    // TOKEN LIMIT ENFORCEMENT (1024 tokens max)
-    // Prevents "Vector Dilution" where generic content obscures key signals
+    // DYNAMIC COMPRESSION (Priority-based section dropping)
+    // Drop lower-signal sections before truncating high-value content
+    // 
+    // Priority (lowest dropped first): Keywords → Pacing → Sub-Genres → Mood → Tropes
+    // Never drop: Title, Genre, Franchise Type, Format, Type, Lens, Archetypes, Premise
     // =========================================================================
+
+    // Build sections with priority markers for dynamic dropping
+    type Section = { key: string; priority: number; content: string };
+    const prioritizedSections: Section[] = [];
+
+    // HIGH PRIORITY - Never drop (priority 1-5)
+    if (item.title) prioritizedSections.push({ key: 'title', priority: 1, content: `Title: ${item.title}` });
+    if (item.genres?.length) prioritizedSections.push({ key: 'genre', priority: 2, content: `Genre: ${item.genres.join(', ')}` });
+    if (item.franchiseType && item.franchiseType !== 'UNKNOWN') prioritizedSections.push({ key: 'franchise', priority: 3, content: `Franchise Type: ${item.franchiseType}` });
+    if (item.formatType && item.formatType !== 'UNKNOWN') prioritizedSections.push({ key: 'format', priority: 4, content: `Format: ${item.formatType}` });
+    if (item.bucketType) prioritizedSections.push({ key: 'bucket', priority: 5, content: `Type: ${item.bucketType}` });
+    if (item.genreLens && item.genreLens !== 'GENERAL') prioritizedSections.push({ key: 'lens', priority: 6, content: `Lens: ${item.genreLens}` });
+    if (item.archetypes) prioritizedSections.push({ key: 'archetypes', priority: 7, content: `Key Characters: ${item.archetypes}` });
+
+    // MEDIUM PRIORITY - High semantic value (priority 8-11)
+    if (item.semanticSummary) prioritizedSections.push({ key: 'premise', priority: 8, content: `Premise: ${item.semanticSummary}` });
+    if (item.tags?.tropes?.length) prioritizedSections.push({ key: 'tropes', priority: 9, content: `Tropes: ${item.tags.tropes.join(', ')}` });
+    // Sub-Genres before Mood: "Cyberpunk" is more searchable than "Gritty"
+    if (item.tags?.sub_genres?.length) prioritizedSections.push({ key: 'subgenres', priority: 10, content: `Sub-Genres: ${item.tags.sub_genres.join(', ')}` });
+    if (item.tags?.mood?.length) prioritizedSections.push({ key: 'mood', priority: 11, content: `Mood: ${item.tags.mood.join(', ')}` });
+
+    // LOW PRIORITY - First to be dropped (priority 12-13)
+    if (item.tags?.format?.length) prioritizedSections.push({ key: 'pacing', priority: 12, content: `Pacing: ${item.tags.format.join(', ')}` });
+
+    // LOWEST PRIORITY - Keywords with RESCUE logic
+    // Rescue unique nouns that don't appear in Summary (e.g., "Chess", "Methamphetamine")
+    if (item.keywords?.length) {
+        const existingTags = new Set([
+            ...(item.tags?.sub_genres || []),
+            ...(item.tags?.tropes || []),
+            ...(item.tags?.mood || []),
+            ...(item.tags?.format || [])
+        ].map(t => t.toLowerCase()));
+
+        const summaryLower = (item.semanticSummary || '').toLowerCase();
+        const uniqueKeywords = item.keywords.filter(k => !existingTags.has(k.toLowerCase())).slice(0, 8);
+
+        // Rescue keywords that are unique nouns NOT in summary
+        const rescuedKeywords = uniqueKeywords.filter(k => !summaryLower.includes(k.toLowerCase()));
+        const droppableKeywords = uniqueKeywords.filter(k => summaryLower.includes(k.toLowerCase()));
+
+        // Rescued keywords get higher priority (9.5 - between tropes and subgenres)
+        if (rescuedKeywords.length) {
+            prioritizedSections.push({ key: 'rescued_keywords', priority: 9.5, content: `Concepts: ${rescuedKeywords.join(', ')}` });
+        }
+        // Droppable keywords stay lowest priority
+        if (droppableKeywords.length) {
+            prioritizedSections.push({ key: 'keywords', priority: 13, content: `Keywords: ${droppableKeywords.join(', ')}` });
+        }
+    }
+
+    // Sort by priority (low number = high priority = keep first)
+    prioritizedSections.sort((a, b) => a.priority - b.priority);
+
+    // Build text, dropping lowest-priority sections until under token limit
+    let finalSections = [...prioritizedSections];
+    let fullText = finalSections.map(s => s.content).join('\n');
+
+    while (estimateTokens(fullText) > MAX_VECTOR_TOKENS && finalSections.length > 5) {
+        const dropped = finalSections.pop(); // Drop lowest priority
+        if (dropped) {
+            console.log(`📉 Dropping low-priority section: ${dropped.key}`);
+        }
+        fullText = finalSections.map(s => s.content).join('\n');
+    }
+
+    // Final truncation if still over limit (rare edge case)
     const finalText = truncateToTokenLimit(fullText, MAX_VECTOR_TOKENS);
 
-    // Log if truncation occurred
-    if (fullText.length !== finalText.length) {
-        const originalTokens = estimateTokens(fullText);
-        const finalTokens = estimateTokens(finalText);
-        console.log(`📏 Vector text truncated: ${originalTokens} → ${finalTokens} tokens`);
+    // Log compression stats
+    if (finalSections.length < prioritizedSections.length) {
+        console.log(`📏 Dynamic compression: ${prioritizedSections.length} → ${finalSections.length} sections`);
     }
 
     return finalText;

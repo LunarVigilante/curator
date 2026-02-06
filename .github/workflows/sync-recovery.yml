@@ -1,0 +1,33 @@
+# Sync Recovery Sweep
+# Runs daily to retry failed embedding operations with TPM-safe mode
+# v5.0: Ensures 100% vector coverage without manual intervention
+
+name: Sync Recovery Sweep
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 3 AM UTC
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run Sync Recovery
+        run: npx tsx scripts/sync-recover.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

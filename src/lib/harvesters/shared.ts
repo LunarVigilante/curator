@@ -534,6 +534,7 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
             body: JSON.stringify({
                 model: VOYAGE_MODEL,
                 input: [text.slice(0, 120000)], // Voyage-4 supports 120k context
+                input_type: "document", // CRITICAL: Use "document" for indexing (vs "query" for search)
             }),
         });
 
@@ -566,3 +567,259 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
     }
 }
 
+/**
+ * Generate "Synthetic Centroid" embedding for anthology shows
+ * 
+ * Problem: Black Mirror/Love Death+Robots contain wildly different episode genres.
+ * A single summary embedding might miss "Space Horror" if focused on "Sci-Fi" overall.
+ * 
+ * Solution: Concatenate series overview + top 3 episode descriptions, then embed.
+ * The Transformer understands the combined text contains multiple concepts.
+ * 
+ * @param seriesOverview - Main show description
+ * @param topEpisodes - Top 3-5 most popular episodes with their descriptions
+ * @returns Embedding vector using synthetic centroid approach
+ */
+export interface AnthologyEpisode {
+    name: string;
+    overview: string;
+    vote_count?: number;
+}
+
+export async function generateAnthologySyntheticCentroid(
+    seriesOverview: string,
+    topEpisodes: AnthologyEpisode[]
+): Promise<number[] | null> {
+    // Limit to top 3 episodes by vote count
+    const selectedEpisodes = topEpisodes
+        .sort((a, b) => (b.vote_count ?? 0) - (a.vote_count ?? 0))
+        .slice(0, 3);
+
+    // Character limit to stay safely under 1024 tokens
+    // Using 1.5 words-to-tokens ratio, 1024 tokens ≈ 680 words ≈ 4000 chars
+    const MAX_TOTAL_CHARS = 4000;
+
+    // WEIGHTED SPLIT (v4.2): Overview gets 40%, episodes split the remaining 60%
+    // Rationale: Series Overview contains core "Vibe" and "Premise" - strongest signal
+    const OVERVIEW_WEIGHT = 0.40;
+    const maxOverviewChars = Math.floor(MAX_TOTAL_CHARS * OVERVIEW_WEIGHT);
+    const maxEpisodeChars = selectedEpisodes.length > 0
+        ? Math.floor((MAX_TOTAL_CHARS * (1 - OVERVIEW_WEIGHT)) / selectedEpisodes.length)
+        : 0;
+
+    // Build concatenated text with WEIGHTED PROPORTIONAL TRIMMING
+    const parts: string[] = [];
+
+    // Series overview first (highest attention weight, largest allocation)
+    if (seriesOverview) {
+        const trimmedOverview = seriesOverview.length > maxOverviewChars
+            ? seriesOverview.slice(0, maxOverviewChars - 3) + '...'
+            : seriesOverview;
+        parts.push(`Series: ${trimmedOverview}`);
+    }
+
+    // Top episode descriptions (each gets equal share of remaining 60%)
+    for (const ep of selectedEpisodes) {
+        if (ep.overview) {
+            const trimmedDesc = ep.overview.length > maxEpisodeChars
+                ? ep.overview.slice(0, maxEpisodeChars - 3) + '...'
+                : ep.overview;
+            parts.push(`Episode "${ep.name}": ${trimmedDesc}`);
+        }
+    }
+
+    // Join with newlines for clear separation
+    const syntheticText = parts.join('\n\n');
+
+    console.log(`[Anthology] Synthetic centroid: overview (${maxOverviewChars} max) + ${selectedEpisodes.length} episodes (${maxEpisodeChars} max each) = ${syntheticText.length} chars`);
+
+    // Generate embedding using the standard function
+    return generateEmbedding(syntheticText);
+}
+
+/**
+ * Check if a show's status changed to a "final" state requiring LLM refresh
+ * 
+ * @param oldStatus - Previous status
+ * @param newStatus - Current status
+ * @returns True if status changed to Ended/Canceled
+ */
+const STATUS_FINALS = ['Ended', 'Canceled', 'Cancelled'];
+
+export function didStatusBecomeEnded(oldStatus: string | null | undefined, newStatus: string): boolean {
+    if (!oldStatus) return false; // First occurrence, not a change
+    const wasEnded = STATUS_FINALS.includes(oldStatus);
+    const isEnded = STATUS_FINALS.includes(newStatus);
+    return !wasEnded && isEnded;
+}
+
+// =============================================================================
+// CLIFFHANGER DETECTION (v4.2 Enhanced)
+// Tiered confidence: mechanical (0.9) → structural (0.7) → narrative (0.5)
+// =============================================================================
+
+export interface CliffhangerResult {
+    isLikely: boolean;
+    confidence: number;
+    reason: string;
+    tier: 'mechanical' | 'structural' | 'narrative' | 'unaired_sequel' | 'none';
+}
+
+/**
+ * Tiered keyword system for cliffhanger detection
+ * 
+ * MECHANICAL (0.9): Explicit production markers → Auto-apply unresolved-ending
+ * STRUCTURAL (0.7): Format indicators → Send to franchise_review_queue
+ * NARRATIVE (0.5): Story-level hints → Flag as "Suspected" in UI
+ */
+const CLIFFHANGER_TIERS = {
+    // Tier 1: Explicit production markers (auto-apply)
+    mechanical: {
+        confidence: 0.9,
+        keywords: [
+            'to be continued',
+            'cliffhanger',
+            'part one', 'part 1', 'part i', 'part two', 'part 2', 'part ii',
+            'chapter one', 'chapter 1',
+            '...to be concluded',
+            'the story continues'
+        ]
+    },
+    // Tier 2: Structural indicators (review queue)
+    structural: {
+        confidence: 0.7,
+        keywords: [
+            'season finale',
+            'mid-season finale',
+            'spring finale',
+            'fall finale',
+            'winter finale',
+            'penultimate',
+            'the beginning of the end',
+            'everything changes'
+        ],
+        // Negative modifiers that reduce confidence
+        negatives: ['series finale', 'final episode', 'the end', 'farewell', 'goodbye']
+    },
+    // Tier 3: Narrative hints (suspected)
+    narrative: {
+        confidence: 0.5,
+        keywords: [
+            'unresolved',
+            'mystery remains',
+            'unanswered questions',
+            'left wondering',
+            'open-ended',
+            'hanging in the balance',
+            'what happens next',
+            'the truth is out there',
+            'it\'s not over',
+            'just the beginning',
+            'only the beginning',
+            'the journey continues',
+            'secrets revealed',
+            'who will survive',
+            'the battle begins',
+            'war is coming',
+            'they\'re coming'
+        ]
+    }
+};
+
+/**
+ * Detect potential cliffhanger for Canceled shows with tiered confidence
+ * 
+ * @param status - Show status (only triggers for 'Canceled')
+ * @param finalEpisode - Metadata of the last aired episode
+ * @param nextEpisode - Optional metadata of the next unaired episode (for multi-part detection)
+ * @returns Detection result with confidence score, reason, and tier
+ */
+export function detectPotentialCliffhanger(
+    status: string,
+    finalEpisode: { name: string; overview?: string },
+    nextEpisode?: { name: string; air_date?: string | null }
+): CliffhangerResult {
+    // Only analyze Canceled shows (Ended implies planned conclusion)
+    if (status !== 'Canceled' && status !== 'Cancelled') {
+        return { isLikely: false, confidence: 0, reason: '', tier: 'none' };
+    }
+
+    const episodeText = `${finalEpisode.name} ${finalEpisode.overview || ''}`.toLowerCase();
+
+    // Check for negative modifiers first (series finale = planned ending)
+    const hasNegative = CLIFFHANGER_TIERS.structural.negatives.some(neg =>
+        episodeText.includes(neg)
+    );
+    if (hasNegative) {
+        return {
+            isLikely: false,
+            confidence: 0.1,
+            reason: 'Marked as intentional finale',
+            tier: 'none'
+        };
+    }
+
+    // TIER 0: Unaired Sequel (1.0) - Definite cliffhanger (v4.3)
+    // Check if a "Part Two" exists in metadata but is unaired
+    const mechanicalMatch = CLIFFHANGER_TIERS.mechanical.keywords.find(kw =>
+        episodeText.includes(kw)
+    );
+
+    if (mechanicalMatch && nextEpisode) {
+        const partTwoPattern = /part (two|2|ii)/i;
+        const hasPartTwo = partTwoPattern.test(nextEpisode.name);
+        const isUnaired = !nextEpisode.air_date || new Date(nextEpisode.air_date) > new Date();
+
+        if (hasPartTwo && isUnaired) {
+            return {
+                isLikely: true,
+                confidence: 1.0,
+                reason: `Multi-part finale incomplete: "${finalEpisode.name}" → "${nextEpisode.name}" (unaired)`,
+                tier: 'unaired_sequel'
+            };
+        }
+    }
+
+    // TIER 1: Mechanical (0.9) - Auto-apply
+    if (mechanicalMatch) {
+        return {
+            isLikely: true,
+            confidence: 0.9,
+            reason: `Mechanical marker: "${mechanicalMatch}"`,
+            tier: 'mechanical'
+        };
+    }
+
+    // TIER 2: Structural (0.7) - Review queue
+    const structuralMatches = CLIFFHANGER_TIERS.structural.keywords.filter(kw =>
+        episodeText.includes(kw)
+    );
+    if (structuralMatches.length > 0) {
+        // Boost confidence for "Season Finale" specifically
+        const isSeasonFinale = structuralMatches.includes('season finale');
+        return {
+            isLikely: true,
+            confidence: isSeasonFinale ? 0.75 : 0.7,
+            reason: `Structural: ${structuralMatches.join(', ')} (Canceled status)`,
+            tier: 'structural'
+        };
+    }
+
+    // TIER 3: Narrative (0.5) - Suspected
+    const narrativeMatches = CLIFFHANGER_TIERS.narrative.keywords.filter(kw =>
+        episodeText.includes(kw)
+    );
+    if (narrativeMatches.length > 0) {
+        // Stack confidence for multiple narrative hints (max 0.65)
+        const confidence = Math.min(0.5 + (narrativeMatches.length - 1) * 0.05, 0.65);
+        return {
+            isLikely: true,
+            confidence,
+            reason: `Narrative hints: ${narrativeMatches.join(', ')}`,
+            tier: 'narrative'
+        };
+    }
+
+    // No signals detected, but still Canceled
+    return { isLikely: false, confidence: 0.2, reason: 'Canceled with no cliffhanger signals', tier: 'none' };
+}

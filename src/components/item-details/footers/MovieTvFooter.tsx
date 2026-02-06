@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Building, Film, Pencil, Sparkles } from 'lucide-react'
+import { Building, Film, Pencil, Sparkles, Brain, Shield, CheckCircle, AlertTriangle, Circle } from 'lucide-react'
 import type { GlobalItem } from '../types'
 import { DetailRow } from '../shared'
 import { isValidValue, formatRuntime, formatCurrency, getLanguageName, getCountryName } from '../utils'
@@ -12,9 +12,22 @@ interface MovieTvFooterProps {
     isTV: boolean
 }
 
+// Story Status badge colors based on cliffhanger tier
+const STORY_STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
+    'none': { label: 'Complete Story', color: 'text-emerald-400', icon: CheckCircle },
+    'resolved': { label: 'Resolved Finale', color: 'text-emerald-400', icon: CheckCircle },
+    'unresolved': { label: 'Open-Ended', color: 'text-amber-400', icon: AlertTriangle },
+    'cliffhanger': { label: 'Major Cliffhanger', color: 'text-red-400', icon: AlertTriangle },
+}
+
 /**
- * Movie/TV Show footer grid with Creative, Production, Format, and Run/Info columns
- * Now displays more metadata from harvest/enrichment
+ * Movie/TV Show footer grid with Creative/Insights, Production, Format, and Run/Info columns
+ * 
+ * Key Features:
+ * - INSIGHTS column replaces empty Creative column (shows Narrative Engine, Archetypes)
+ * - Safe Binge badge anchors the Run column for visual balance
+ * - Production studio fallback when no creator data
+ * - Dynamic grid that always maintains 4 columns
  */
 export function MovieTvFooter({ item, itemVariants, isTV }: MovieTvFooterProps) {
     // Extract TV-specific metadata
@@ -39,6 +52,31 @@ export function MovieTvFooter({ item, itemVariants, isTV }: MovieTvFooterProps) 
     const numberOfEpisodes = item.number_of_episodes || metadata.number_of_episodes
     const runtime = item.runtime || metadata.runtime
 
+    // Check if Creative column has any data
+    const hasCreativeData = isTV
+        ? !!(createdBy?.length || isValidValue(director) || isValidValue(writer) || isValidValue(sourceMaterial) || isValidValue(originalCreator))
+        : !!(isValidValue(director) || isValidValue(writer) || isValidValue(sourceMaterial))
+
+    // Extract semantic insights for fallback column
+    const narrativeEngine = metadata.save_the_cat || metadata.narrative_engine
+    const archetype = metadata.archetype || (item.keywords?.find((k: string) =>
+        k.toLowerCase().includes('archetype') ||
+        k.toLowerCase().includes('gladiator') ||
+        k.toLowerCase().includes('fool') ||
+        k.toLowerCase().includes('trickster')
+    ))
+    const coreTrope = metadata.core_trope || (item.keywords?.find((k: string) =>
+        k.toLowerCase().includes('trope') ||
+        k.toLowerCase().includes('experiment') ||
+        k.toLowerCase().includes('competition')
+    ))
+
+    // Check if we have insights to show as fallback
+    const hasInsightsData = !!(narrativeEngine || archetype || coreTrope || item.cliffhanger_tier)
+
+    // Get cliffhanger status config
+    const storyStatus = item.cliffhanger_tier ? STORY_STATUS_CONFIG[item.cliffhanger_tier] : null
+
     // Build air date range for TV
     const getAirDateRange = () => {
         if (!firstAirDate) return null
@@ -60,42 +98,70 @@ export function MovieTvFooter({ item, itemVariants, isTV }: MovieTvFooterProps) 
         ? `${episodeRunTime[0]}m`
         : null
 
-
-
     return (
         <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-4 gap-8 py-6 border-t border-white/5">
 
-            {/* BLOCK 1: CREATIVE */}
-            <div className="space-y-2">
-                <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5"><Pencil className="w-3 h-3" /> Creative</h5>
-                <div className="space-y-0.5">
-                    {isTV ? (
-                        <>
-                            {createdBy && createdBy.length > 0 && (
-                                <DetailRow label="Created By"><span className="text-white">{createdBy.slice(0, 2).join(', ')}{createdBy.length > 2 ? '...' : ''}</span></DetailRow>
-                            )}
-                            {(!createdBy || createdBy.length === 0) && (
-                                <>
-                                    {isValidValue(director) && <DetailRow label="Director"><span className="text-white">{director}</span></DetailRow>}
-                                    {isValidValue(writer) && <DetailRow label="Writer"><span className="text-zinc-300">{writer}</span></DetailRow>}
-                                </>
-                            )}
-                            {isValidValue(sourceMaterial) && (
-                                <DetailRow label="Based On"><span className="text-zinc-400 italic">{sourceMaterial}</span></DetailRow>
-                            )}
-                            {isValidValue(originalCreator) && <DetailRow label="Original Creator"><span className="text-zinc-300">{originalCreator}</span></DetailRow>}
-                        </>
-                    ) : (
-                        <>
-                            {isValidValue(director) && <DetailRow label="Director"><span className="text-white">{director}</span></DetailRow>}
-                            {isValidValue(writer) && <DetailRow label="Writer"><span className="text-zinc-300">{writer}</span></DetailRow>}
-                            {isValidValue(sourceMaterial) && (
-                                <DetailRow label="Based On"><span className="text-zinc-400 italic">{sourceMaterial}</span></DetailRow>
-                            )}
-                        </>
-                    )}
+            {/* BLOCK 1: CREATIVE or INSIGHTS (fallback) */}
+            {hasCreativeData ? (
+                // === CREATIVE COLUMN (has creator data) ===
+                <div className="space-y-2">
+                    <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
+                        <Pencil className="w-3 h-3" /> Creative
+                    </h5>
+                    <div className="space-y-0.5">
+                        {isTV ? (
+                            <>
+                                {createdBy && createdBy.length > 0 && (
+                                    <DetailRow label="Created By"><span className="text-white">{createdBy.slice(0, 2).join(', ')}{createdBy.length > 2 ? '...' : ''}</span></DetailRow>
+                                )}
+                                {(!createdBy || createdBy.length === 0) && (
+                                    <>
+                                        {isValidValue(director) && <DetailRow label="Director"><span className="text-white">{director}</span></DetailRow>}
+                                        {isValidValue(writer) && <DetailRow label="Writer"><span className="text-zinc-300">{writer}</span></DetailRow>}
+                                    </>
+                                )}
+                                {isValidValue(sourceMaterial) && (
+                                    <DetailRow label="Based On"><span className="text-zinc-400 italic">{sourceMaterial}</span></DetailRow>
+                                )}
+                                {isValidValue(originalCreator) && <DetailRow label="Original Creator"><span className="text-zinc-300">{originalCreator}</span></DetailRow>}
+                            </>
+                        ) : (
+                            <>
+                                {isValidValue(director) && <DetailRow label="Director"><span className="text-white">{director}</span></DetailRow>}
+                                {isValidValue(writer) && <DetailRow label="Writer"><span className="text-zinc-300">{writer}</span></DetailRow>}
+                                {isValidValue(sourceMaterial) && (
+                                    <DetailRow label="Based On"><span className="text-zinc-400 italic">{sourceMaterial}</span></DetailRow>
+                                )}
+                            </>
+                        )}
+                    </div>
                 </div>
-            </div>
+            ) : (
+                // === INSIGHTS COLUMN (fallback when no creative data) ===
+                <div className="space-y-2">
+                    <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
+                        <Brain className="w-3 h-3" /> Insights
+                    </h5>
+                    <div className="space-y-0.5">
+                        {narrativeEngine && (
+                            <DetailRow label="Narrative"><span className="text-purple-300">{narrativeEngine}</span></DetailRow>
+                        )}
+                        {archetype && (
+                            <DetailRow label="Archetype"><span className="text-cyan-300">{archetype}</span></DetailRow>
+                        )}
+                        {coreTrope && (
+                            <DetailRow label="Core Trope"><span className="text-amber-300">{coreTrope}</span></DetailRow>
+                        )}
+                        {!hasInsightsData && item.studio && (
+                            // Ultimate fallback: show production studio in Insights
+                            <DetailRow label="Developed By"><span className="text-zinc-400">{item.studio}</span></DetailRow>
+                        )}
+                        {!hasInsightsData && !item.studio && productionCompanies?.[0] && (
+                            <DetailRow label="Format By"><span className="text-zinc-400">{productionCompanies[0]}</span></DetailRow>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* BLOCK 2: PRODUCTION */}
             <div className="space-y-2">
@@ -143,7 +209,7 @@ export function MovieTvFooter({ item, itemVariants, isTV }: MovieTvFooterProps) 
                 </div>
             </div>
 
-            {/* BLOCK 4: INFO */}
+            {/* BLOCK 4: RUN / INFO with Safe Binge Anchor */}
             <div className="space-y-2">
                 <h5 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-1.5">
                     <Sparkles className="w-3 h-3" /> {isTV ? 'Run' : 'Info'}
@@ -164,6 +230,16 @@ export function MovieTvFooter({ item, itemVariants, isTV }: MovieTvFooterProps) 
                             )}
                             {isValidValue(item.status) && <DetailRow label="Status"><span className="text-zinc-400">{item.status}</span></DetailRow>}
                             {getLanguageName(item.original_language) && <DetailRow label="Language"><span className="text-zinc-400">{getLanguageName(item.original_language)}</span></DetailRow>}
+
+                            {/* === SAFE BINGE ANCHOR === */}
+                            {storyStatus && isEnded && (
+                                <div className="pt-2 mt-2 border-t border-white/5">
+                                    <div className={`flex items-center gap-1.5 text-xs font-semibold ${storyStatus.color}`}>
+                                        <Shield className="w-3.5 h-3.5" />
+                                        <span>{storyStatus.label}</span>
+                                    </div>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <>
@@ -183,3 +259,4 @@ export function MovieTvFooter({ item, itemVariants, isTV }: MovieTvFooterProps) 
         </motion.div>
     )
 }
+

@@ -107,6 +107,8 @@ export async function updateSystemConfig(data: {
     omdbApiKey?: string
     twitchClientId?: string
     twitchClientSecret?: string
+    tvdbApiKey?: string
+    tvdbPin?: string
 }) {
     const session = await assertAdmin()
     console.log('[Admin] updateSystemConfig called by user:', session.user.id)
@@ -142,6 +144,10 @@ export async function updateSystemConfig(data: {
     // Twitch / IGDB
     if (data.twitchClientId) await upsertSetting('twitch_client_id', data.twitchClientId, 'MEDIA', true)
     if (data.twitchClientSecret) await upsertSetting('twitch_client_secret', data.twitchClientSecret, 'MEDIA', true)
+
+    // TVDB
+    if (data.tvdbApiKey) await upsertSetting('tvdb_api_key', data.tvdbApiKey, 'MEDIA', true)
+    if (data.tvdbPin) await upsertSetting('tvdb_pin', data.tvdbPin, 'MEDIA', true)
 
 
     // Voyage AI (Embeddings)
@@ -381,9 +387,9 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
 }
 
 export async function testServiceConnection(data: {
-    service: 'tmdb' | 'twitch' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron' | 'omdb' | 'steamgrid'
+    service: 'tmdb' | 'twitch' | 'googlebooks' | 'spotify' | 'resend' | 'comicvine' | 'bgg' | 'metron' | 'omdb' | 'steamgrid' | 'tvdb'
     apiKey: string
-    clientSecret?: string  // Optional: for Spotify / Metron Password
+    clientSecret?: string  // Optional: for Spotify / Metron Password / TVDB PIN
 }) {
     await assertAdmin();
     console.log(`[ServiceTest] Testing ${data.service} connection...`);
@@ -402,7 +408,8 @@ export async function testServiceConnection(data: {
             bgg: 'bgg_api_key',
             metron: 'metron_username',
             omdb: 'omdb_api_key',
-            steamgrid: 'STEAMGRIDDB_API_KEY'
+            steamgrid: 'STEAMGRIDDB_API_KEY',
+            tvdb: 'tvdb_api_key'
         }
         const realKey = await SystemConfigService.getDecryptedConfig(keyMap[data.service])
         if (!realKey) throw new Error(`No API key found for ${data.service} and none provided.`)
@@ -539,6 +546,14 @@ export async function testServiceConnection(data: {
                 const data = await res.json();
                 if (!data.success) throw new Error('SteamGridDB: API returned failure');
                 return { success: true, message: "SteamGridDB: Connection Verified" }
+            }
+            case 'tvdb': {
+                // TVDB uses JWT auth - test by logging in
+                const pin = clientSecret || await SystemConfigService.getDecryptedConfig('tvdb_pin') || '';
+                const { testConnection } = await import('@/lib/services/tvdb');
+                const result = await testConnection(apiKey, pin);
+                if (!result.success) throw new Error(result.message);
+                return { success: true, message: "TVDB: Connection Verified" }
             }
             default:
                 throw new Error('Unsupported service')

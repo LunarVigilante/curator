@@ -52,6 +52,10 @@ export interface GlobalItem {
     metacritic_rating: string | null
     external_ids: Record<string, string> | null
 
+    // Cliffhanger detection (Safe Binge)
+    cliffhanger_tier: 'none' | 'resolved' | 'unresolved' | 'cliffhanger' | null
+    cliffhanger_score: number | null
+
     // Anime metadata
     romaji_title: string | null
     season: string | null

@@ -92,7 +92,7 @@ export function useDataFetching(state: BrowserState) {
         // OPTIMIZED PATH: Use browse_items RPC for basic browsing
         // =================================================================
         const hasActiveFilters = Object.keys(filters.activeFilters).length > 0
-        const hasAdvancedFilters = filters.missingImage || filters.uncategorized || hasActiveFilters
+        const hasAdvancedFilters = filters.missingImage || filters.uncategorized || filters.safeBingeOnly || hasActiveFilters
 
         if (!hasAdvancedFilters) {
             try {
@@ -136,7 +136,7 @@ export function useDataFetching(state: BrowserState) {
         // =================================================================
         // ADVANCED FILTERS PATH: Full query with all columns
         // =================================================================
-        const SELECTED_COLUMNS = 'id,external_id,source,title,description,image_url,release_year,metadata,cached_tags,category_type,last_metadata_update,created_at,external_ids,cast,director,writer,studio,genres,content_rating,runtime,vote_average,trailer_url,tagline,episodes,season,source_material,romaji_title,original_creator,platforms,developers,publishers,playtime,metacritic,min_players,max_players,min_playtime,max_playtime,min_age,mechanics,categories,complexity,designers,artists,is_expansion,bgg_id,original_language,origin_countries,original_title,status,homepage,budget,revenue,production_companies,networks,number_of_seasons,number_of_episodes,keywords,watch_providers,backdrop_path,logo_path,studios,banner_url,imdb_rating,imdb_votes,rotten_tomatoes_rating,metacritic_rating,awards_text,box_office,time_to_beat,game_engines,websites,game_modes,perspectives,videos,screenshots,franchise,dlc_count,release_date,families,rank_overall,best_players,min_age_community,language_dependence,followers,album_type,label,total_tracks,upc,audio_features,isrc,duration_ms,album_name,artist_names,preview_url,volumes,chapters,format,staff,description_length,description_parts,anilist_score,vote_count,popularity,track_number,themes'
+        const SELECTED_COLUMNS = 'id,external_id,source,title,description,image_url,release_year,metadata,cached_tags,category_type,last_metadata_update,created_at,external_ids,cast,director,writer,studio,genres,content_rating,runtime,vote_average,trailer_url,tagline,episodes,season,source_material,romaji_title,original_creator,platforms,developers,publishers,playtime,metacritic,min_players,max_players,min_playtime,max_playtime,min_age,mechanics,categories,complexity,designers,artists,is_expansion,bgg_id,original_language,origin_countries,original_title,status,homepage,budget,revenue,production_companies,networks,number_of_seasons,number_of_episodes,keywords,watch_providers,backdrop_path,logo_path,studios,banner_url,imdb_rating,imdb_votes,rotten_tomatoes_rating,metacritic_rating,awards_text,box_office,time_to_beat,game_engines,websites,game_modes,perspectives,videos,screenshots,franchise,dlc_count,release_date,families,rank_overall,best_players,min_age_community,language_dependence,followers,album_type,label,total_tracks,upc,audio_features,isrc,duration_ms,album_name,artist_names,preview_url,volumes,chapters,format,staff,description_length,description_parts,anilist_score,vote_count,popularity,track_number,themes,cliffhanger_tier,cliffhanger_score'
 
         let query = supabase
             .from('global_items')
@@ -185,6 +185,12 @@ export function useDataFetching(state: BrowserState) {
             query = query.in('category_type', filters.selectedCategories)
         }
 
+        // Safe Binge filter: exclude cliffhanger endings
+        if (filters.safeBingeOnly) {
+            // Filter to only show items where cliffhanger_tier is null (unknown), 'none', or 'resolved'
+            query = query.or('cliffhanger_tier.is.null,cliffhanger_tier.in.("none","resolved")')
+        }
+
         if (filters.missingImage) orConditions.push('image_url.is.null')
         if (filters.uncategorized) orConditions.push('category_type.is.null')
 
@@ -217,7 +223,7 @@ export function useDataFetching(state: BrowserState) {
             setLoading(false)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [supabase, ui.page, ui.pageSize, filters.debouncedSearchQuery, filters.missingImage, filters.shortDesc, filters.uncategorized, filters.selectedCategories, filters.activeFilters, sort.sortField, sort.sortOrder])
+    }, [supabase, ui.page, ui.pageSize, filters.debouncedSearchQuery, filters.missingImage, filters.shortDesc, filters.uncategorized, filters.safeBingeOnly, filters.selectedCategories, filters.activeFilters, sort.sortField, sort.sortOrder])
 
     // Effects
     useEffect(() => {
@@ -228,7 +234,7 @@ export function useDataFetching(state: BrowserState) {
     useEffect(() => {
         ui.setPage(1)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filters.debouncedSearchQuery, filters.selectedCategories, filters.missingImage, filters.shortDesc, filters.uncategorized])
+    }, [filters.debouncedSearchQuery, filters.selectedCategories, filters.missingImage, filters.shortDesc, filters.uncategorized, filters.safeBingeOnly])
 
     // Defer stats loading
     useEffect(() => {

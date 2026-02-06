@@ -21,10 +21,11 @@ interface DataBrowserGridProps {
     onItemFlag: (item: GlobalItem) => void
     onItemDelete: (id: string) => void
     onItemViewDetails: (item: GlobalItem) => void
-    // Loading Sets
     regeneratingDescriptionIds: Set<string>
     refreshingMetadataIds: Set<string>
     regeneratingTagIds: Set<string>
+    // View Mode
+    viewMode?: 'standard' | 'compact'
 }
 
 // Memoized grid component
@@ -45,18 +46,28 @@ export const DataBrowserGrid = React.memo(function DataBrowserGrid({
     onItemViewDetails,
     regeneratingDescriptionIds,
     refreshingMetadataIds,
-    regeneratingTagIds
+    regeneratingTagIds,
+    viewMode = 'standard'
 }: DataBrowserGridProps) {
 
-    // Memoize grid columns class based on tile size
     const gridColsClass = useMemo(() => {
+        // Compact mode: higher density
+        if (viewMode === 'compact') {
+            if (tileSize <= 15) return 'grid-cols-8 md:grid-cols-10 lg:grid-cols-12 xl:grid-cols-14'
+            if (tileSize <= 30) return 'grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12'
+            if (tileSize <= 50) return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10'
+            if (tileSize <= 70) return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
+            if (tileSize <= 85) return 'grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
+            return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+        }
+        // Standard mode
         if (tileSize <= 15) return 'grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12'
         if (tileSize <= 30) return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10'
         if (tileSize <= 50) return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
         if (tileSize <= 70) return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
         if (tileSize <= 85) return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
         return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-    }, [tileSize])
+    }, [tileSize, viewMode])
 
     if (loading && items.length === 0) {
         return (
@@ -102,6 +113,7 @@ export const DataBrowserGrid = React.memo(function DataBrowserGrid({
                     isRegenerating={regeneratingDescriptionIds.has(item.id)}
                     isRefreshing={refreshingMetadataIds.has(item.id)}
                     isTagging={regeneratingTagIds.has(item.id)}
+                    viewMode={viewMode}
                 />
             ))}
         </div>

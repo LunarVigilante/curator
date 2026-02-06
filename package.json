@@ -14,7 +14,8 @@
     "backfill:embeddings": "npx tsx src/scripts/backfill-embeddings.ts",
     "seed:content": "npx tsx src/scripts/seed-content.ts",
     "deep-import:tmdb": "npx tsx src/scripts/deep-import-tmdb.ts",
-    "harvest:all": "npx tsx src/scripts/harvest-all.ts"
+    "harvest:all": "npx tsx src/scripts/harvest-all.ts",
+    "reharvest:tv": "npx tsx src/scripts/reharvest-tv.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.15",

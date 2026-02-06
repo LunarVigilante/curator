@@ -22,6 +22,8 @@ export type SystemSettingKey =
     | 'comicvine_api_key'
     | 'metron_username'
     | 'metron_password'
+    | 'tvdb_api_key'
+    | 'tvdb_pin'
     // Media API URLs (custom endpoints)
     | 'tmdb_api_url'
     | 'rawg_api_url'

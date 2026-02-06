@@ -71,9 +71,9 @@ export function ItemDetailSidebar({
                 </div>
             </div>
 
-            {/* Trailer Button (Cinematic) */}
+            {/* Trailer Button (Cinematic) - Added top margin for breathing room */}
             {item.trailer_url && (
-                <Button asChild className="w-full h-12 bg-zinc-900 hover:bg-zinc-800 border border-white/5 rounded-xl text-zinc-300 font-bold tracking-widest uppercase text-[10px] gap-2">
+                <Button asChild className="w-full h-12 mt-2 bg-zinc-900 hover:bg-zinc-800 border border-white/5 rounded-xl text-zinc-300 font-bold tracking-widest uppercase text-[10px] gap-2">
                     <Link href={item.trailer_url} target="_blank">
                         <Play className="w-3 h-3 fill-zinc-300" /> Trailer
                     </Link>
@@ -89,81 +89,6 @@ export function ItemDetailSidebar({
                 <Flag className="w-4 h-4 mr-2" />
                 Report Issue
             </Button>
-
-            {/* External Links - More provider links */}
-            <div className="w-full flex flex-wrap gap-2">
-                {/* IMDb Link */}
-                {item.external_ids?.imdb && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#F5C518]/10 text-[#F5C518] border-[#F5C518]/20 hover:!bg-[#C49A13] hover:!text-white hover:!border-[#C49A13] h-8">
-                        <Link href={`https://www.imdb.com/title/${item.external_ids.imdb}`} target="_blank">
-                            <Film className="w-3 h-3 mr-1.5" /> IMDb
-                        </Link>
-                    </Button>
-                )}
-
-                {/* TMDB Link */}
-                {item.external_ids?.tmdb && (isMovie || isTV) && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#01b4e4]/10 text-[#01b4e4] border-[#01b4e4]/20 hover:!bg-[#018AB0] hover:!text-white hover:!border-[#018AB0] h-8">
-                        <Link href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.external_ids.tmdb}`} target="_blank">
-                            <Clapperboard className="w-3 h-3 mr-1.5" /> TMDB
-                        </Link>
-                    </Button>
-                )}
-
-                {/* Rotten Tomatoes Link (constructed from title) */}
-                {item.rotten_tomatoes_rating && (isMovie || isTV) && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#FA320A]/10 text-[#FA320A] border-[#FA320A]/20 hover:!bg-[#C02808] hover:!text-white hover:!border-[#C02808] h-8">
-                        <Link href={`https://www.rottentomatoes.com/search?search=${encodeURIComponent(item.title)}`} target="_blank">
-                            🍅 RT
-                        </Link>
-                    </Button>
-                )}
-
-                {/* BGG Link */}
-                {category === 'BOARD_GAME' && item.external_ids?.bgg && (
-                    <Button asChild variant="outline" size="sm" className="bg-orange-500/10 text-orange-400 border-orange-500/20 hover:!bg-orange-600 hover:!text-white hover:!border-orange-600 h-8">
-                        <Link href={`https://boardgamegeek.com/boardgame/${item.external_ids.bgg}`} target="_blank">
-                            <ExternalLink className="w-3 h-3 mr-1.5" /> BGG
-                        </Link>
-                    </Button>
-                )}
-
-                {/* Spotify Link */}
-                {item.external_ids?.spotify && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#1DB954]/10 text-[#1DB954] border-[#1DB954]/20 hover:!bg-[#168D40] hover:!text-white hover:!border-[#168D40] h-8">
-                        <Link href={`https://open.spotify.com/${isMusicArtist ? 'artist' : 'album'}/${item.external_ids.spotify}`} target="_blank">
-                            <Music className="w-3 h-3 mr-1.5" /> Spotify
-                        </Link>
-                    </Button>
-                )}
-
-                {/* AniList Link */}
-                {item.external_ids?.anilist && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#02A9FF]/10 text-[#02A9FF] border-[#02A9FF]/20 hover:!bg-[#0287CC] hover:!text-white hover:!border-[#0287CC] h-8">
-                        <Link href={`https://anilist.co/anime/${item.external_ids.anilist}`} target="_blank">
-                            <Sparkles className="w-3 h-3 mr-1.5" /> AniList
-                        </Link>
-                    </Button>
-                )}
-
-                {/* IGDB Link */}
-                {item.external_ids?.igdb && isVideoGame && (
-                    <Button asChild variant="outline" size="sm" className="bg-[#9147FF]/10 text-[#9147FF] border-[#9147FF]/20 hover:!bg-[#7338CC] hover:!text-white hover:!border-[#7338CC] h-8">
-                        <Link href={`https://www.igdb.com/games/${item.external_ids.igdb}`} target="_blank">
-                            <Gamepad2 className="w-3 h-3 mr-1.5" /> IGDB
-                        </Link>
-                    </Button>
-                )}
-
-                {/* Generic Website Link */}
-                {metadata?.homepage && (
-                    <Button asChild variant="outline" size="sm" className="text-zinc-400 border-zinc-800 h-8">
-                        <Link href={metadata.homepage} target="_blank">
-                            <Globe className="w-3 h-3 mr-1.5" /> Site
-                        </Link>
-                    </Button>
-                )}
-            </div>
 
             {/* Video Game Platforms */}
             {isVideoGame && item.platforms && (
@@ -186,40 +111,6 @@ export function ItemDetailSidebar({
                             <Badge key={genre} variant="outline" className="text-zinc-400 border-zinc-800 bg-zinc-900/50">
                                 {genre}
                             </Badge>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Content Rating & Descriptors */}
-            {(item.content_rating || metadata?.content_descriptors?.length > 0) && (isMovie || isTV) && (
-                <div className="w-full space-y-3">
-                    <h4 className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1.5">
-                        <Flag className="w-3 h-3" /> Content Info
-                    </h4>
-                    <div className="flex flex-wrap gap-1.5">
-                        {/* Main Rating Badge */}
-                        {item.content_rating && (
-                            <Badge
-                                variant="outline"
-                                className={`font-bold ${['R', 'NC-17', 'TV-MA'].includes(item.content_rating)
-                                        ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                                        : ['PG-13', 'TV-14'].includes(item.content_rating)
-                                            ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
-                                            : 'text-green-400 border-green-500/30 bg-green-500/10'
-                                    }`}
-                            >
-                                {item.content_rating}
-                            </Badge>
-                        )}
-                        {/* Content Descriptors (e.g., Violence, Language) */}
-                        {metadata?.content_descriptors?.map((descriptor: string, idx: number) => (
-                            <span
-                                key={`descriptor-${idx}`}
-                                className="text-[11px] text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-700/50"
-                            >
-                                {descriptor}
-                            </span>
                         ))}
                     </div>
                 </div>

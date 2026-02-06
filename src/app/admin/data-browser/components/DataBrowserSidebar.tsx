@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Search, ShieldAlert, ImageIcon, FileText, AlertTriangle } from 'lucide-react'
+import { Search, ShieldAlert, ImageIcon, FileText, AlertTriangle, Shield } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -18,6 +18,8 @@ interface DataBrowserSidebarProps {
     setShortDesc: (val: boolean) => void
     uncategorized: boolean
     setUncategorized: (val: boolean) => void
+    safeBingeOnly: boolean
+    setSafeBingeOnly: (val: boolean) => void
     onOpenMaintenance: () => void
 }
 
@@ -32,6 +34,8 @@ export function DataBrowserSidebar({
     setShortDesc,
     uncategorized,
     setUncategorized,
+    safeBingeOnly,
+    setSafeBingeOnly,
     onOpenMaintenance
 }: DataBrowserSidebarProps) {
     return (
@@ -49,6 +53,22 @@ export function DataBrowserSidebar({
                         className="pl-9 bg-zinc-900/50 border-zinc-700 focus:border-cyan-600 focus:ring-cyan-600/20"
                     />
                 </div>
+            </div>
+
+            {/* Safe Binge Toggle (TV-specific, user-facing) */}
+            <div className="mb-4 p-3 rounded-lg bg-emerald-950/20 border border-emerald-900/30">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <Checkbox
+                        checked={safeBingeOnly}
+                        onCheckedChange={(c) => setSafeBingeOnly(!!c)}
+                        className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 border-emerald-700 w-4 h-4"
+                    />
+                    <Shield className="w-4 h-4 text-emerald-500" />
+                    <div>
+                        <span className="text-sm font-medium text-emerald-400">Safe Binge Only</span>
+                        <p className="text-[10px] text-zinc-500">Hide cliffhanger endings</p>
+                    </div>
+                </label>
             </div>
 
             {/* Category Filter */}
@@ -108,3 +128,4 @@ export function DataBrowserSidebar({
         </div>
     )
 }
+

@@ -22,6 +22,7 @@ export function useDataBrowserState() {
     const [missingImage, setMissingImage] = useState(false)
     const [shortDesc, setShortDesc] = useState(false)
     const [uncategorized, setUncategorized] = useState(false)
+    const [safeBingeOnly, setSafeBingeOnly] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
 
@@ -35,6 +36,9 @@ export function useDataBrowserState() {
     // Sort
     const [sortField, setSortField] = useState('last_metadata_update')
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+    // View Mode
+    const [viewMode, setViewMode] = useState<'standard' | 'compact'>('standard')
 
     // Selection
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -139,6 +143,7 @@ export function useDataBrowserState() {
         setMissingImage(false)
         setShortDesc(false)
         setUncategorized(false)
+        setSafeBingeOnly(false)
         setSearchQuery('')
         setDebouncedSearchQuery('')
     }, [router])
@@ -150,6 +155,7 @@ export function useDataBrowserState() {
             missingImage, setMissingImage,
             shortDesc, setShortDesc,
             uncategorized, setUncategorized,
+            safeBingeOnly, setSafeBingeOnly,
             searchQuery, setSearchQuery,
             debouncedSearchQuery, setDebouncedSearchQuery,
             activeFilters,
@@ -162,7 +168,8 @@ export function useDataBrowserState() {
             totalPages, setTotalPages,
             totalCount, setTotalCount,
             pageSize,
-            inputPage, setInputPage
+            inputPage, setInputPage,
+            viewMode, setViewMode
         },
         sort: {
             sortField, setSortField,

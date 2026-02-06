@@ -68,6 +68,8 @@ function DataBrowserContent() {
                 setSortField={state.sort.setSortField}
                 sortOrder={state.sort.sortOrder}
                 setSortOrder={state.sort.setSortOrder}
+                viewMode={ui.viewMode}
+                setViewMode={ui.setViewMode}
             />
 
             {/* Rehydration Status Panel */}
@@ -86,6 +88,8 @@ function DataBrowserContent() {
                     setShortDesc={filters.setShortDesc}
                     uncategorized={filters.uncategorized}
                     setUncategorized={filters.setUncategorized}
+                    safeBingeOnly={filters.safeBingeOnly}
+                    setSafeBingeOnly={filters.setSafeBingeOnly}
                     onOpenMaintenance={() => modals.setMaintenanceOpen(true)}
                 />
 
@@ -112,6 +116,7 @@ function DataBrowserContent() {
                         regeneratingDescriptionIds={actions.regeneratingDescriptionIds}
                         regeneratingTagIds={actions.regeneratingTagIds}
                         refreshingMetadataIds={actions.refreshingMetadataIds}
+                        viewMode={ui.viewMode}
                     />
 
                     <DataBrowserPagination

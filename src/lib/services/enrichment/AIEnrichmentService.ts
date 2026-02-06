@@ -78,11 +78,15 @@ export async function generateAIDescription(
 
 /**
  * Generate tags for an item using AI
+ * Calls LLM directly to avoid authentication issues with internal API calls
  */
 export async function generateAITags(
     supabase: SupabaseClient,
     itemId: string
 ): Promise<string[] | null> {
+    const { callLLM } = await import('@/lib/llm')
+    const { SystemConfigService } = await import('@/lib/services/SystemConfigService')
+
     // Get current item
     const { data: item, error } = await (supabase.from('global_items') as any)
         .select('title, description, category_type, genres, metadata')
@@ -95,26 +99,60 @@ export async function generateAITags(
     }
 
     try {
-        // Call the existing tag generation endpoint logic
-        const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/v1/ai/generate-tags`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                itemId,
-                title: item.title,
-                description: item.description,
-                type: item.category_type,
-                genres: item.genres
-            })
-        })
+        // Fetch LLM config from database
+        const provider = await SystemConfigService.getDecryptedConfig('llm_provider') || 'openrouter'
+        const apiKey = await SystemConfigService.getDecryptedConfig('llm_api_key')
+        const endpoint = await SystemConfigService.getDecryptedConfig('llm_endpoint')
+        const model = await SystemConfigService.getDecryptedConfig('llm_model')
 
-        if (!response.ok) {
-            console.error('Tag generation API failed')
+        // Check all possible API key locations based on provider
+        const anannasKey = await SystemConfigService.getDecryptedConfig('anannas_api_key')
+        const openaiKey = await SystemConfigService.getDecryptedConfig('openai_api_key')
+        const openrouterKey = await SystemConfigService.getDecryptedConfig('openrouter_api_key')
+        const anthropicKey = await SystemConfigService.getDecryptedConfig('anthropic_api_key')
+        const googleKey = await SystemConfigService.getDecryptedConfig('google_ai_api_key')
+
+        const finalApiKey = apiKey || openrouterKey || anannasKey || openaiKey || anthropicKey || googleKey
+
+        if (!finalApiKey) {
+            console.error('[generateAITags] No LLM API Key configured')
             return null
         }
 
-        const result = await response.json()
-        return result.tags || null
+        const systemPrompt = `You are an expert curator. Generate 5-8 relevant tags for the given item.
+
+TAG RULES:
+- Generate 5-8 tags
+- Include: Genre, Mood, Theme, Era/Period
+- Be specific and useful for discovery
+- Each tag should be 1-3 words
+
+Return ONLY a comma-separated list of tags. No JSON, no quotes, no markdown.
+Example: Action, Sci-Fi, Dark Atmosphere, 1990s, Cyberpunk, Neo-Noir`
+
+        const userPrompt = `Generate tags for:
+Title: ${item.title}
+Type: ${item.category_type}
+${item.description ? `Description: ${item.description}` : ''}`
+
+        const response = await callLLM({
+            userPrompt,
+            systemPrompt,
+            apiKey: finalApiKey,
+            provider,
+            model: model || undefined,
+            endpoint: endpoint || undefined
+        })
+
+        // Parse comma-separated tags
+        const tags = response
+            .split(',')
+            .map((tag: string) => tag.trim())
+            .filter((tag: string) => tag.length > 0 && tag.length < 50)
+            .slice(0, 8)
+
+        console.log('[generateAITags] Generated tags:', tags.length)
+        return tags
     } catch (e) {
         console.error('Failed to generate AI tags:', e)
         return null

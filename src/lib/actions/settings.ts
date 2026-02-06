@@ -10,7 +10,9 @@ const SENSITIVE_KEYS = [
   'tmdb_api_key',
   'rawg_api_key',
   'lastfm_api_key',
-  'google_books_api_key'
+  'google_books_api_key',
+  'tvdb_api_key',
+  'tvdb_pin'
 ]
 
 export async function getSettings(): Promise<SystemSettings> {

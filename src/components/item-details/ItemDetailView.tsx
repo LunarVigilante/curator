@@ -28,6 +28,7 @@ import { normalizeCategory } from './utils'
 import { StandardLayout } from './layouts/StandardLayout'
 import { MusicTrackLayout } from './layouts/MusicTrackLayout'
 import { BookLayout } from './layouts/BookLayout'
+import { TvShowLayout } from './layouts/TvShowLayout'
 
 // ============================================================================
 // PROPS
@@ -186,6 +187,7 @@ export default function ItemDetailView({
 
     // Determine category and layout
     const category = normalizeCategory(item.category_type)
+    const isTV = category === 'TV' || category === 'TV_SHOW'
     const isVideoGame = category === 'VIDEO_GAME'
     const isMusicTrack = item.category_type === 'MUSIC_TRACK'
     const isBook = category === 'BOOK'
@@ -386,6 +388,23 @@ export default function ItemDetailView({
                             onClose={onClose}
                             onRefreshMetadata={isAdmin ? handleRefreshMetadata : undefined}
                             onRegenerateDescription={isAdmin ? handleRegenerateDescription : undefined}
+                            isRefreshing={isRefreshing}
+                            isRegenerating={isRegenerating}
+                            containerVariants={containerVariants}
+                            itemVariants={itemVariants}
+                            sidebarVariants={sidebarVariants}
+                        />
+                    ) : isTV ? (
+                        <TvShowLayout
+                            item={item}
+                            onEdit={onEdit}
+                            onDelete={onDelete}
+                            onReportOpen={() => setReportOpen(true)}
+                            onClose={onClose}
+                            onItemChange={onItemChange ? (item) => item && onItemChange(item) : undefined}
+                            onRefreshMetadata={isAdmin ? handleRefreshMetadata : undefined}
+                            onRegenerateDescription={isAdmin ? handleRegenerateDescription : undefined}
+                            onSimilarItemClick={handleSimilarItemClick}
                             isRefreshing={isRefreshing}
                             isRegenerating={isRegenerating}
                             containerVariants={containerVariants}

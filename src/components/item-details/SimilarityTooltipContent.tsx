@@ -13,8 +13,7 @@ interface SimilarityTooltipContentProps {
     voteAverage?: number | null
     categoryType?: string | null
     similarity: number
-    sharedGenres?: string[]
-    sharedTags?: string[]
+    sharedTraits?: string[]
     explanation?: SimilarityExplanation | null
     isLoading?: boolean
 }
@@ -42,8 +41,7 @@ export function SimilarityTooltipContent({
     voteAverage,
     categoryType,
     similarity,
-    sharedGenres = [],
-    sharedTags = [],
+    sharedTraits = [],
     explanation,
     isLoading = false
 }: SimilarityTooltipContentProps) {
@@ -74,7 +72,7 @@ export function SimilarityTooltipContent({
     // Build shared DNA from explanation or fallback to genres/tags
     const rawDNA = explanation?.sharedDNA?.length
         ? explanation.sharedDNA
-        : [...sharedGenres.slice(0, 2), ...sharedTags.slice(0, 1)]
+        : sharedTraits.slice(0, 3)
 
     const sharedDNA = rawDNA
         .map(extractTagName)

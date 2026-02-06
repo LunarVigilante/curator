@@ -8,9 +8,9 @@ import { SystemConfigService } from '@/lib/services/SystemConfigService'
  * Similarity explanation with structured data for glanceable tooltip
  */
 export interface SimilarityExplanation {
-    summary: string           // 1-2 sentences max explaining WHY they're similar
-    sharedDNA: string[]       // 2-3 thematic tags (e.g., "Gothic Horror", "Vampire Romance")
-    keyDifference: string | null  // 1 sentence noting key difference (optional)
+    summary: string           // Narrative Bridge ("Why you'll like it")
+    sharedDNA: string[]       // Passed from RPC (Green Chips)
+    keyDifference: string | null  // Contrast Warning ("The Wedge")
 }
 
 /**
@@ -68,6 +68,7 @@ function truncateToTokenLimit(text: string, maxTokens: number): string {
 function buildComparisonPrompt(
     sourceItem: ItemMetadata,
     similarItem: ItemMetadata,
+    sharedTraits: string[],
     contextLimit: number
 ): string {
     // Reserve tokens for system prompt and response (~500 tokens)
@@ -131,29 +132,25 @@ ITEM B: "${similarItem.title}" (${similarItem.release_year || 'Unknown'})
 `
     }
 
+    prompt += `
+CONTEXT:
+These items share the following key traits: ${sharedTraits.join(', ') || 'None identified'}.
+`
     return prompt
 }
 
-const SYSTEM_PROMPT = `You are an expert at analyzing media similarities. Given two items, explain WHY they are similar.
+const SYSTEM_PROMPT = `You are an expert at analyzing media similarities. Given two items and their shared traits, explain WHY a fan of Item A would enjoy Item B.
 
 CRITICAL: Return ONLY a valid JSON object with EXACTLY this structure:
 {
-  "summary": "1-2 sentences explaining shared themes, tones, or appeal",
-  "sharedDNA": ["Theme 1", "Theme 2", "Theme 3"],
-  "keyDifference": "1 sentence noting key difference (or null)"
+  "summary": "2 sentences explaining the appeal connection",
+  "keyDifference": "1 sentence warning about the biggest contrast (tone, style, etc)"
 }
 
 Rules:
-- "summary": MAX 2 sentences. Be punchy and insightful.
-- "sharedDNA": EXACTLY 2-3 short thematic tags (e.g., "Gothic Horror", "Found Family", "Noir Aesthetic")
-- "keyDifference": ONE sentence or null. Focus on contrast in tone, style, or approach.
-
-Examples of good sharedDNA tags:
-- "Vampire Romance", "90s Aesthetic", "Doomed Love"
-- "Found Family", "Heist Thrills", "Ensemble Cast"
-- "Gothic Horror", "Atmospheric Dread", "Reluctant Hero"
-
-Be concise, specific, and insightful. NO markdown in values.`
+- "summary" (The Bridge): Focus on the shared narrative elements provided in Context. convince a fan of A to watch B.
+- "keyDifference" (The Wedge): Identify the biggest mismatch (e.g., "Show A is dark/gritty while Show B is campy").
+- Be concise, specific, and insightful. NO markdown.`
 
 /**
  * Get context limit for the configured model
@@ -193,7 +190,8 @@ async function getModelContextLimit(): Promise<number> {
  */
 export async function getSimilarityExplanation(
     sourceItemId: string,
-    similarItemId: string
+    similarItemId: string,
+    sharedTraits: string[] = []
 ): Promise<SimilarityExplanation | null> {
     const supabase = await createServiceRoleClient()
 
@@ -209,7 +207,7 @@ export async function getSimilarityExplanation(
         if (cached) {
             return {
                 summary: cached.summary,
-                sharedDNA: cached.shared_dna || [],
+                sharedDNA: sharedTraits.length > 0 ? sharedTraits : (cached.shared_dna || []), // Prefer RPC traits if provided
                 keyDifference: cached.key_difference
             }
         }
@@ -239,7 +237,7 @@ export async function getSimilarityExplanation(
         const contextLimit = await getModelContextLimit()
 
         // Build prompt with context-aware truncation
-        const userPrompt = buildComparisonPrompt(sourceItem, similarItem, contextLimit)
+        const userPrompt = buildComparisonPrompt(sourceItem, similarItem, sharedTraits, contextLimit)
 
         // Call LLM
         const response = await callLLMForJSON(userPrompt, SYSTEM_PROMPT, { maxTokens: 300 })
@@ -304,23 +302,16 @@ export async function getSimilarityExplanation(
                 // Strategy 3: Extract values using regex
                 try {
                     const summaryMatch = cleanResponse.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)/)
-                    const sharedDNAMatch = cleanResponse.match(/"sharedDNA"\s*:\s*\[(.*?)\]/)
+                    // sharedDNA is now passed in, but we support parsing it if LLM hallucinates it
                     const keyDiffMatch = cleanResponse.match(/"keyDifference"\s*:\s*"((?:[^"\\]|\\.)*)"/)
 
                     if (summaryMatch) {
                         let summary = summaryMatch[1]
                         summary = summary.replace(/\\$/, '').trim()
 
-                        // Parse sharedDNA array
-                        let sharedDNA: string[] = []
-                        if (sharedDNAMatch) {
-                            const matches = sharedDNAMatch[1].match(/"([^"]+)"/g)
-                            sharedDNA = matches ? matches.map(m => m.replace(/"/g, '')) : []
-                        }
-
                         parsed = {
                             summary,
-                            sharedDNA,
+                            sharedDNA: sharedTraits, // Use input traits
                             keyDifference: keyDiffMatch ? keyDiffMatch[1] : null
                         }
                     }
@@ -345,8 +336,8 @@ export async function getSimilarityExplanation(
             return null
         }
 
-        // Ensure sharedDNA is an array
-        const sharedDNA = Array.isArray(parsed.sharedDNA) ? parsed.sharedDNA : []
+        // Use input traits as sharedDNA
+        parsed.sharedDNA = sharedTraits
 
         // Normalize keyDifference - convert string 'null', 'N/A', etc. to actual null
         const normalizeKeyDifference = (val: unknown): string | null => {
@@ -365,14 +356,14 @@ export async function getSimilarityExplanation(
                 source_item_id: sourceItemId,
                 similar_item_id: similarItemId,
                 summary: parsed.summary,
-                shared_dna: sharedDNA,
+                shared_dna: sharedTraits,
                 key_difference: keyDifference,
                 created_at: new Date().toISOString()
             })
 
         return {
             summary: parsed.summary,
-            sharedDNA,
+            sharedDNA: sharedTraits,
             keyDifference
         }
     } catch (err) {
@@ -387,12 +378,16 @@ export async function getSimilarityExplanation(
  */
 export async function getBatchSimilarityExplanations(
     sourceItemId: string,
-    similarItemIds: string[]
+    items: { id: string, sharedTraits?: string[] }[]
 ): Promise<Map<string, SimilarityExplanation>> {
     const results = new Map<string, SimilarityExplanation>()
     const supabase = await createServiceRoleClient()
 
-    if (similarItemIds.length === 0) return results
+    if (items.length === 0) return results
+
+    // Create map for easy lookup
+    const itemMap = new Map(items.map(i => [i.id, i.sharedTraits || []]))
+    const similarItemIds = items.map(i => i.id)
 
     // Fetch all cached explanations (gracefully handle missing table)
     const cachedIds = new Set<string>()
@@ -408,7 +403,7 @@ export async function getBatchSimilarityExplanations(
             for (const item of cached) {
                 results.set(item.similar_item_id, {
                     summary: item.summary,
-                    sharedDNA: item.shared_dna || [],
+                    sharedDNA: itemMap.get(item.similar_item_id) || item.shared_dna || [], // Prefer RPC input
                     keyDifference: item.key_difference
                 })
                 cachedIds.add(item.similar_item_id)
@@ -424,7 +419,8 @@ export async function getBatchSimilarityExplanations(
 
     // Generate in parallel (but limit concurrency)
     const generatePromises = missingIds.map(async (similarId) => {
-        const explanation = await getSimilarityExplanation(sourceItemId, similarId)
+        const sharedTraits = itemMap.get(similarId) || []
+        const explanation = await getSimilarityExplanation(sourceItemId, similarId, sharedTraits)
         if (explanation) {
             results.set(similarId, explanation)
         }

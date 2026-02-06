@@ -19,6 +19,7 @@ import { log } from 'next-axiom';
 
 const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
 const VOYAGE_RERANK_URL = 'https://api.voyageai.com/v1/rerank';
+const VOYAGE_TOKENIZE_URL = 'https://api.voyageai.com/v1/tokenize';  // v4.2
 const VOYAGE_MODEL = 'voyage-4';
 const VOYAGE_RERANK_MODEL = 'rerank-2';
 // Voyage-4 is the latest model with improved performance
@@ -192,6 +193,74 @@ export async function generateEmbeddingsBatch(
         console.error('[Search] Error generating batch embeddings:', error);
         return texts.map(() => null);
     }
+}
+
+// ============================================================================
+// TOKEN COUNTING (Voyage /tokenize API) - v4.2
+// ============================================================================
+
+interface TokenizeResponse {
+    total_tokens: number;
+    tokens: number[][];
+}
+
+/**
+ * Count exact tokens for text using Voyage /tokenize API.
+ * Use this for precise token budgeting before embedding generation.
+ * 
+ * @param texts - Array of texts to count tokens for
+ * @param model - Model to use for tokenization (default: voyage-4)
+ * @returns Array of token counts for each text
+ */
+export async function countTokens(
+    texts: string[],
+    model: string = VOYAGE_MODEL
+): Promise<number[]> {
+    const apiKey = process.env.VOYAGE_API_KEY;
+
+    if (!apiKey) {
+        console.warn('[Search] VOYAGE_API_KEY not configured, using heuristic');
+        // Fallback to word-based heuristic (1.5 words per token)
+        return texts.map(text => Math.ceil(text.split(/\s+/).filter(Boolean).length * 1.5));
+    }
+
+    try {
+        const response = await fetch(VOYAGE_TOKENIZE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model,
+                texts,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(`[Search] Voyage tokenize API error ${response.status}: ${errorText}`);
+            // Fallback to heuristic
+            return texts.map(text => Math.ceil(text.split(/\s+/).filter(Boolean).length * 1.5));
+        }
+
+        const data: TokenizeResponse = await response.json();
+
+        // Return token count for each text
+        return data.tokens.map(tokenArray => tokenArray.length);
+    } catch (error) {
+        console.error('[Search] Error counting tokens:', error);
+        // Fallback to heuristic
+        return texts.map(text => Math.ceil(text.split(/\s+/).filter(Boolean).length * 1.5));
+    }
+}
+
+/**
+ * Count tokens for a single text (convenience wrapper)
+ */
+export async function countTokensSingle(text: string): Promise<number> {
+    const [count] = await countTokens([text]);
+    return count;
 }
 
 // ============================================================================

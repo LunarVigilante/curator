@@ -31,6 +31,8 @@ export interface GenerationContext {
     originalDescription: string;
     type: string;
     metadata?: Record<string, any>;
+    /** Show status (e.g., 'Ended', 'Returning Series') - used for spoiler constraints */
+    status?: string;
 }
 
 // ============================================================================
@@ -38,8 +40,102 @@ export interface GenerationContext {
 // ============================================================================
 
 const PROMPTS = {
-    premise: (ctx: GenerationContext) => ({
-        system: `You are an expert media archivist. Write a detailed, compelling, and spoiler-free premise.
+    premise: (ctx: GenerationContext) => {
+        // Detect if this is a completed or canceled series
+        const isEnded = ctx.status === 'Ended';
+        const isCanceled = ctx.status === 'Canceled' || ctx.status === 'Cancelled';
+
+        // Build status-specific constraints (v4.2 Enhanced)
+        let spoilerConstraint = '';
+
+        if (isEnded) {
+            // Ended: Legacy framing - cultural impact without resolution spoilers
+            spoilerConstraint = `
+
+LEGACY FRAMING FOR COMPLETED SERIES:
+This series has concluded. Frame your description around LEGACY and CULTURAL IMPACT, not plot resolution.
+
+REQUIRED APPROACH:
+1. Summarize the complete NARRATIVE ARC (beginning → middle → climax setup)
+2. Emphasize THEMES and what made this show culturally significant
+3. Describe the ATMOSPHERE and emotional journey
+4. Mention any genre-defining or groundbreaking elements
+
+ABSOLUTELY DO NOT REVEAL:
+- Final episode events or how the story "ends"
+- Character deaths, fates, or ultimate outcomes
+- Final plot twists or revelations
+- Who "wins" or "survives"
+
+FRAMING EXAMPLES:
+✅ "Breaking Bad chronicles a high school teacher's transformation into a drug lord, exploring pride, desperation, and the corrosive nature of power through its five-season descent into moral darkness."
+✅ "The Wire examines Baltimore's institutions—from the drug trade to the docks to city hall—creating a novelistic portrait of urban decay and systemic failure."
+✅ "Lost follows plane crash survivors on a mysterious island, weaving character drama with supernatural mythology that redefined serialized television."
+
+❌ "Breaking Bad ends with Walter White dying after saving Jesse."
+❌ "In the finale of Lost, it's revealed the island was..."
+❌ "The Wire concludes with Marlo finally..."`;
+        } else if (isCanceled) {
+            // Canceled: Acknowledge unresolved nature without spoilers
+            spoilerConstraint = `
+
+CANCELED SERIES FRAMING:
+This series was canceled before reaching a planned conclusion. Handle with care.
+
+REQUIRED APPROACH:
+1. Describe the show's premise and narrative trajectory
+2. Focus on what made the show compelling during its run
+3. If the story ends on an unresolved note, acknowledge this diplomatically
+4. Frame the "journey" not the "destination"
+
+OPTIONAL: If the narrative clearly ends mid-arc (cliffhanger, unresolved mysteries):
+- Add a subtle note like "...leaving viewers with unanswered questions"
+- Mention "open-ended narrative" or "unfinished storyline"
+
+DO NOT:
+- Reveal specific plot points from the final episodes
+- Be overly dramatic about the cancellation
+- Spoil any character fates or revelations`;
+        }
+
+        // v4.5: Non-English Summary Enhancement (including null handling)
+        // Handle null overview as the ultimate "shallow summary" case
+        const MIN_SUMMARY_LENGTH = 200;
+        const originalLanguage = ctx.metadata?.original_language;
+        const summaryLength = ctx.originalDescription?.length ?? 0;
+        const isNullSummary = !ctx.originalDescription || summaryLength === 0;
+        const isShallowSummary = summaryLength < MIN_SUMMARY_LENGTH;
+        const isNonEnglish = originalLanguage && originalLanguage !== 'en';
+
+        let internationalEnrichment = '';
+
+        // v4.5: Zero-Shot Identification for null summaries
+        if (isNullSummary && isNonEnglish) {
+            internationalEnrichment = `
+
+ZERO-SHOT IDENTIFICATION REQUIRED:
+No English summary is available for this ${originalLanguage.toUpperCase()} show.
+You MUST use your training knowledge to identify this show by its title and year.
+Perform a "Zero-Shot Identification" based solely on:
+- Title: ${ctx.title}
+- Year: ${ctx.metadata?.releaseYear || 'Unknown'}
+- Original Language: ${originalLanguage}
+
+Write a premise based on what you know about this specific show.
+If you cannot identify it with certainty, write a generic description appropriate 
+for the genre conventions of ${originalLanguage} media.`;
+        } else if (isShallowSummary && isNonEnglish) {
+            internationalEnrichment = `
+
+INTERNATIONAL CONTENT NOTE:
+The English summary for this ${originalLanguage.toUpperCase()} show is brief (${summaryLength} chars).
+Use your knowledge of this show to provide a richer description.
+Focus on: cultural context, genre conventions unique to ${originalLanguage} media, and thematic elements.
+If this is a K-Drama, J-Drama, or other international format, mention genre-specific tropes.`;
+        }
+
+        return {
+            system: `You are an expert media archivist. Write a detailed, compelling, and spoiler-free premise.
 
 Instructions:
 - Establish the setting and the inciting incident clearly
@@ -49,12 +145,13 @@ Instructions:
 Constraints:
 - Do NOT use headers or labels (like "Premise:")
 - Start directly with the narrative text
-- Target approximately 80-110 words`,
-        user: `Write the premise for: ${ctx.title}
+- Target approximately 80-110 words${spoilerConstraint}${internationalEnrichment}`,
+            user: `Write the premise for: ${ctx.title}
 
-Type: ${ctx.type}
+Type: ${ctx.type}${ctx.status ? `\nStatus: ${ctx.status}` : ''}
 Original context: ${ctx.originalDescription?.slice(0, 500) || 'No context available'}`
-    }),
+        };
+    },
 
     themes: (ctx: GenerationContext) => ({
         system: `You are a literary and media analyst. Identify and elaborate on the core themes, character archetypes, and narrative tropes.
