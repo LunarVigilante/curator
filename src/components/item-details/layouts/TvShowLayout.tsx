@@ -141,11 +141,8 @@ export function TvShowLayout({
                     </div>
 
                     {/* === SCROLLABLE MIDDLE: Semantic Insights + Structured Description === */}
-                    <ScrollArea className="flex-1 my-4 -mx-2 px-2 min-h-0">
+                    <ScrollArea className="flex-1 my-4 -mx-2 px-2 min-h-0 overflow-y-auto">
                         <motion.div variants={itemVariants} className="pr-4 space-y-4">
-                            {/* Semantic Insight Bar - TV-specific feature */}
-                            <SemanticInsightBar item={item} />
-
                             {/* Structured Description with section headers */}
                             <StructuredDescription item={item} />
                         </motion.div>

@@ -20,7 +20,7 @@ export function CastRow({ cast }: CastRowProps) {
 
     return (
         <div className="space-y-3">
-            <h4 className="text-[10px] uppercase tracking-widest text-zinc-500 font-black flex items-center gap-2">
+            <h4 className="text-[10px] uppercase tracking-widest text-zinc-300 font-black flex items-center gap-2">
                 <Users className="w-3 h-3" /> Cast
             </h4>
             <div className="flex flex-wrap gap-2">

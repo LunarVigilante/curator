@@ -33,6 +33,8 @@ export type FranchiseType =
     | 'BUDDY_LOVE'              // Two people who need each other
     | 'WHYDUNIT'                // Mystery focused on human nature
     | 'FOOL_TRIUMPHANT'         // Underdog challenges establishment
+    | 'INSTITUTIONALIZED'       // Group/family dynamics, cost of belonging
+    | 'SUPERHERO'               // Extraordinary person, ordinary world
     | 'UNKNOWN';
 
 /**
@@ -109,6 +111,22 @@ export const FRANCHISE_DEFINITIONS: readonly {
         examples: ['Ted Lasso', 'Abbott Elementary', 'Schitt\'s Creek', 'The Good Place', 'Parks and Recreation'],
         keywords: ['underdog', 'optimism', 'fish out of water', 'outsider', 'misfit', 'unlikely hero',
             'establishment', 'rebel', 'naive', 'heart of gold', 'clash of cultures', 'wholesome']
+    },
+    {
+        id: 'INSTITUTIONALIZED',
+        label: 'Institutionalized',
+        engine: 'A group, family, or organization. The conflict is about the cost of belonging and the struggle for power within.',
+        examples: ['Succession', 'The Wire', 'Yellowstone', 'The Bear', 'Mad Men', 'The Sopranos'],
+        keywords: ['hierarchy', 'family business', 'power struggle', 'loyalty', 'betrayal', 'corporate',
+            'empire', 'succession', 'dynasty', 'organization', 'institution', 'politics', 'workplace']
+    },
+    {
+        id: 'SUPERHERO',
+        label: 'Superhero',
+        engine: 'An extraordinary person in an ordinary world. The burden of being "special" and the responsibility it brings.',
+        examples: ['The Boys', 'Peacemaker', 'The Flash', 'WandaVision', 'Daredevil', 'Jessica Jones'],
+        keywords: ['superpower', 'hero', 'vigilante', 'extraordinary', 'secret identity', 'justice',
+            'burden', 'special abilities', 'superhuman', 'powers', 'cape', 'villain', 'nemesis']
     }
 ] as const;
 
@@ -180,36 +198,45 @@ export async function classifyFranchiseType(
         .map(def => `- **${def.id}** (${def.label}): ${def.engine}\n  Examples: ${def.examples.join(', ')}`)
         .join('\n\n');
 
-    const systemPrompt = `You are a narrative analyst trained in the "Save the Cat! Writes for TV" methodology by Blake Snyder. Your task is to classify TV shows into exactly ONE of 8 franchise types.
+    const systemPrompt = `You are a Senior Narrative Analyst trained in the "Save the Cat! Writes for TV" methodology. Your task is to classify TV shows into exactly ONE franchise type.
 
-A show's FRANCHISE TYPE defines its repeatable story ENGINE - the mechanism that generates conflict across episodes. This is NOT about genre (action, comedy) but about NARRATIVE STRUCTURE.
+## Strategic Decision Matrix (Use This First):
+- If the conflict is about a person trapped in a corrupt SYSTEM, FAMILY, or ORGANIZATION → **INSTITUTIONALIZED**
+- If the conflict is a mystery where the detective's obsession uncovers the DARK SIDE of HUMAN NATURE → **WHYDUNIT**
+- If the conflict is an ORDINARY person in a life-or-death SURVIVAL crisis → **DUDE_WITH_A_PROBLEM**
+- If the conflict involves SURVIVAL against a MONSTER or SUPERNATURAL THREAT in a confined space → **MONSTER_IN_THE_HOUSE**
+- If the conflict is a TEAM on a QUEST or JOURNEY → **GOLDEN_FLEECE**
+- If the conflict is about MAGIC or SUPERNATURAL affecting NORMAL life → **OUT_OF_THE_BOTTLE**
+- If the conflict is about LIFE TRANSITIONS, GROWING UP, or INTERNAL change → **RITES_OF_PASSAGE**
+- If the conflict is driven by TWO CHARACTERS who NEED each other → **BUDDY_LOVE**
+- If the conflict is an UNDERDOG challenging the ESTABLISHMENT → **FOOL_TRIUMPHANT**
+- If the conflict is an EXTRAORDINARY person bearing the BURDEN of their POWERS → **SUPERHERO**
 
-## The 8 Franchise Types:
-
+## The Franchise Types:
 ${franchiseDescriptions}
 
-## Classification Rules:
-1. Choose the SINGLE best-fitting franchise type
-2. Focus on the show's REPEATABLE ENGINE, not individual plot points
-3. Base your analysis on the protagonist's journey and source of conflict
-4. If multiple types seem to fit, choose the one that defines the MAJORITY of episodes
+## Critical Classification Rule:
+Focus EXCLUSIVELY on the "Engine"—what generates conflict EVERY WEEK? 
+- Do NOT be distracted by surface aesthetics (noir, gritty, atmospheric, etc.)
+- Ask: "What is the REPEATABLE conflict mechanism?"
+- For prestige dramas: Is it the mystery (Whydunit), the power struggle within a group (Institutionalized), or survival (Dude with a Problem)?
 
 ## Output Format:
 Respond with ONLY a JSON object:
 {
     "franchise_type": "FRANCHISE_TYPE_ID",
     "confidence": "high" | "medium" | "low",
-    "justification": "1-2 sentence explanation citing specific story elements"
+    "justification": "One sentence focused on the REPEATABLE conflict engine, not aesthetics."
 }`;
 
-    const userPrompt = `Classify this TV show into ONE franchise type:
+    const userPrompt = `Classify this TV show into ONE franchise type. Focus on the STRUCTURAL ENGINE, not surface-level aesthetics:
 
 **Title:** ${title}
 
 **Overview:** ${overview}
 ${pilotOverview ? `\n**Pilot Episode:** ${pilotOverview}` : ''}
 
-Analyze the narrative engine and output JSON.`;
+What generates conflict EVERY episode? Output JSON.`;
 
     try {
         const response = await callLLM({

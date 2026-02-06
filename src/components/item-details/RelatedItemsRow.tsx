@@ -98,6 +98,16 @@ export function RelatedItemsRow({
         }
     }, [filteredItems.length, allItems.length, fetchLimit, loading])
 
+    // Clear stale data immediately when source item changes (all-or-nothing loading)
+    useEffect(() => {
+        // Reset to fresh loading state when source changes
+        setAllItems([])
+        setItems([])
+        setExplanations(new Map())
+        setVisibleCount(5)
+        setNoMoreItems(false)
+    }, [sourceItemId])
+
     useEffect(() => {
         async function fetchRelatedItems() {
             setLoading(true)
@@ -257,15 +267,15 @@ export function RelatedItemsRow({
                     )}
                 </div>
 
-                {loading && allItems.length === 0 ? (
-                    // Skeleton loading state - vertical stack (initial load only)
+                {loading ? (
+                    // Skeleton loading state - always show skeleton when loading (all-or-nothing)
                     <div className="flex flex-col gap-2">
                         {Array.from({ length: 4 }).map((_, i) => (
                             <div key={i} className="flex gap-2 items-center">
-                                <Skeleton className="w-12 h-16 rounded bg-zinc-800 flex-shrink-0" />
+                                <Skeleton className="w-12 h-16 rounded bg-zinc-800 flex-shrink-0 animate-pulse" />
                                 <div className="flex-1 space-y-1.5">
-                                    <Skeleton className="w-full h-3 rounded bg-zinc-800" />
-                                    <Skeleton className="w-12 h-2 rounded bg-zinc-800" />
+                                    <Skeleton className="w-full h-3 rounded bg-zinc-800 animate-pulse" />
+                                    <Skeleton className="w-12 h-2 rounded bg-zinc-800 animate-pulse" />
                                 </div>
                             </div>
                         ))}
@@ -411,13 +421,13 @@ export function RelatedItemsRow({
                 )}
             </div>
 
-            {loading && allItems.length === 0 ? (
-                // Skeleton loading state - horizontal
+            {loading ? (
+                // Skeleton loading state - always show skeleton when loading (all-or-nothing)
                 <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
                     {Array.from({ length: 5 }).map((_, i) => (
                         <div key={i} className="flex-shrink-0 w-24">
-                            <Skeleton className="w-24 h-36 rounded-lg bg-zinc-800" />
-                            <Skeleton className="w-20 h-3 mt-2 rounded bg-zinc-800" />
+                            <Skeleton className="w-24 h-36 rounded-lg bg-zinc-800 animate-pulse" />
+                            <Skeleton className="w-20 h-3 mt-2 rounded bg-zinc-800 animate-pulse" />
                         </div>
                     ))}
                 </div>

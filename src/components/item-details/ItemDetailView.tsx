@@ -218,11 +218,8 @@ export default function ItemDetailView({
         }
     }
 
-    // Background image logic
-    const backdropUrl = item.backdrop_path
-        ? (item.backdrop_path.startsWith('http') ? item.backdrop_path : `https://image.tmdb.org/t/p/original${item.backdrop_path}`)
-        : null
-    const bgImage = backdropUrl || item.image_url
+    // Background image logic - ALWAYS use poster with heavy blur per user preference
+    const bgImage = item.image_url
 
     // Admin action handlers
     const handleRefreshMetadata = async () => {
@@ -334,28 +331,17 @@ export default function ItemDetailView({
                             <>
                                 <Image
                                     src={bgImage}
-                                    alt="Backdrop"
+                                    alt="Background"
                                     fill
-                                    className={cn(
-                                        "object-cover transition-opacity duration-700",
-                                        !backdropUrl ? "blur-[120px] opacity-40 scale-105" : "opacity-30 blur-3xl scale-110"
-                                    )}
+                                    className="object-none blur-[60px] opacity-80"
+                                    style={{ objectPosition: 'center center' }}
                                     priority
                                     unoptimized
                                 />
-                                {/* Gradient Overlays - increased darkness for better readability */}
-                                <div className={cn(
-                                    "absolute inset-0",
-                                    isVideoGame ? "bg-zinc-950/70" : "bg-zinc-950/60"
-                                )} />
-                                <div className={cn(
-                                    "absolute inset-y-0 left-0 w-[400px] bg-gradient-to-r from-zinc-950/80 to-transparent",
-                                    isVideoGame ? "via-zinc-950/60" : "via-zinc-950/40"
-                                )} />
-                                <div className={cn(
-                                    "absolute inset-0 bg-gradient-to-t from-zinc-950 to-transparent",
-                                    isVideoGame ? "via-zinc-950/60" : "via-zinc-950/40"
-                                )} />
+                                {/* Light overlay to maintain readability */}
+                                <div className="absolute inset-0 bg-zinc-950/45" />
+                                {/* Bottom fade for footer */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-transparent" />
                             </>
                         )}
                     </motion.div>

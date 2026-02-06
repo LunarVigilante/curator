@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
-import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter } from '@/lib/harvesters/shared';
+import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter, getLLMConfig } from '@/lib/harvesters/shared';
+import { generateVibeScores } from '@/lib/ai/vibe-scoring';
 import pLimit from 'p-limit';
 
 // Config
@@ -456,6 +457,7 @@ async function processTask(task: any) {
         let description = meta.overview;
         let validTags: { id: string, name: string }[] = [];
         let embeddingVector = null;
+        let vibeScores: any = null;
 
         if (task.type === 'NEW') {
             console.log(`   ╟────────────────────────────────────────────────────────────────`);
@@ -507,6 +509,27 @@ Overview: ${meta.overview || 'N/A'}
                 console.log(`   ║    ✅ Embedding generated in ${Date.now() - startEmbed}ms (${embeddingVector.length} dimensions)`);
             } else {
                 console.log(`   ║    ⚠️  No embedding generated`);
+            }
+
+            console.log(`   ╟────────────────────────────────────────────────────────────────`);
+            console.log(`   ║ 🎭 GENERATING VIBE SCORES...`);
+            const llmConfig = await getLLMConfig(supabase);
+            if (llmConfig.apiKey) {
+                const startVibe = Date.now();
+                vibeScores = await aiLimiter(() =>
+                    generateVibeScores(
+                        { apiKey: llmConfig.apiKey!, provider: llmConfig.provider, model: llmConfig.model, endpoint: llmConfig.endpoint },
+                        { title: meta.title, overview: description, genres: meta.genres, keywords: meta.keywords }
+                    )
+                );
+                if (vibeScores) {
+                    console.log(`   ║    ✅ Vibe scores generated in ${Date.now() - startVibe}ms`);
+                    console.log(`   ║    Sample: grit=${vibeScores.grit}, cerebral=${vibeScores.cerebral}, prestige=${vibeScores.prestige}`);
+                } else {
+                    console.log(`   ║    ⚠️  No vibe scores generated`);
+                }
+            } else {
+                console.log(`   ║    ⚠️  No LLM config, skipping vibe scores`);
             }
         }
 
@@ -577,7 +600,8 @@ Overview: ${meta.overview || 'N/A'}
                 description: description, // Calculated above
                 image_url: imageUrl,      // Calculated above
                 cached_tags: validTags,   // Calculated above
-                vector_text: JSON.stringify(embeddingVector)
+                vector_text: JSON.stringify(embeddingVector),
+                vibe_scores: vibeScores   // 20-dimension vibe profile
             };
 
             const { error } = await (supabase.from('global_items') as any).insert(insertPayload);

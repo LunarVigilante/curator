@@ -162,16 +162,18 @@ const OBSERVATIONAL_KEYWORDS = [
 const SCRIPTED_FORCE_KEYWORDS = [
     'mockumentary', 'sitcom', 'comedy-drama', 'dramedy', 'scripted',
     'fictional', 'satire', 'parody', 'workplace comedy', 'single-camera',
-    'laugh track', 'multi-camera', 'animated series', 'anime'
+    'laugh track', 'multi-camera', 'animated series', 'anime',
+    'starring', 'episodes', 'season finale', 'teleplay', 'showrunner'
 ];
 
 /**
  * Determine which structural bucket a TV show belongs to
  * 
- * Priority Order (CRITICAL - prevents mockumentary misclassification):
- * 0a. TMDB TYPE: "Scripted" type → NARRATIVE (strongest signal from source)
- * 0b. SCRIPTED FORCE: Mockumentary, Sitcom, etc. → NARRATIVE (ignores Documentary tag)
- * 1. FORMAT: Game Show, Competition → FORMAT
+ * Priority Order (CRITICAL - prevents drama misclassification):
+ * 0a. GENRE SHIELD: Drama/Comedy/Sci-Fi genres → NARRATIVE (blocks FORMAT)
+ * 0b. TMDB TYPE: "Scripted" type → NARRATIVE (strongest signal from source)
+ * 0c. SCRIPTED FORCE: Mockumentary, Sitcom, etc. → NARRATIVE
+ * 1. FORMAT: Game Show, Competition → FORMAT (only if no scripted signals)
  * 2. OBSERVATIONAL: Documentary, News → OBSERVATIONAL
  * 3. DEFAULT: Everything else → NARRATIVE
  * 
@@ -192,7 +194,34 @@ export function detectTvBucket(
     const tmdbTypeLower = tmdbType?.toLowerCase() || '';
 
     // =========================================================================
-    // 0a. TMDB TYPE CHECK: Strongest signal from source data
+    // 0a. GENRE SHIELD: If it's Drama/Comedy, it's Scripted.
+    // This prevents "Dexter" from becoming a "Competition" because of plot keywords.
+    // =========================================================================
+    const isScriptedGenre = genresLower.some(g =>
+        g === 'drama' ||
+        g === 'comedy' ||
+        g === 'sci-fi & fantasy' ||
+        g === 'science fiction' ||
+        g === 'action & adventure' ||
+        g === 'action' ||
+        g === 'adventure' ||
+        g === 'mystery' ||
+        g === 'crime' ||
+        g === 'thriller' ||
+        g === 'animation' ||
+        g === 'family' ||
+        g === 'western' ||
+        g === 'war' ||
+        g === 'war & politics'
+    );
+
+    // If we have a scripted genre, immediately lock to NARRATIVE
+    if (isScriptedGenre) {
+        return 'NARRATIVE';  // Genre shield activated - blocks FORMAT
+    }
+
+    // =========================================================================
+    // 0b. TMDB TYPE CHECK: Strongest signal from source data
     // "Scripted" is ALWAYS narrative content
     // "Miniseries" requires genre check (Documentary miniseries like Planet Earth)
     // =========================================================================
@@ -210,8 +239,8 @@ export function detectTvBucket(
     }
 
     // =========================================================================
-    // 0b. NEGATIVE CONSTRAINT: Force NARRATIVE if scripted indicators present
-    // This MUST run before Documentary check to prevent mockumentary misclassification
+    // 0c. SCRIPTED FORCE: Force NARRATIVE if scripted indicators present
+    // This runs before FORMAT check to prevent any remaining misclassification
     // =========================================================================
     const hasScriptedForce = SCRIPTED_FORCE_KEYWORDS.some(sf =>
         keywordsLower.some(k => k.includes(sf)) || synopsisLower.includes(sf)
@@ -220,7 +249,9 @@ export function detectTvBucket(
         return 'NARRATIVE';  // Mockumentary, Sitcom, etc. are scripted content
     }
 
-    // 1. Check for FORMAT markers (Competition/Game/Rules)
+    // =========================================================================
+    // 1. FORMAT (Competition/Game) - Only reaches here if NOT a scripted genre
+    // =========================================================================
     const hasFormatKeyword = FORMAT_KEYWORDS.some(fk =>
         keywordsLower.some(k => k.includes(fk)) || synopsisLower.includes(fk)
     );
@@ -231,7 +262,9 @@ export function detectTvBucket(
         return 'FORMAT';
     }
 
-    // 2. Check for OBSERVATIONAL markers (Documentary/News)
+    // =========================================================================
+    // 2. OBSERVATIONAL (Documentary/News)
+    // =========================================================================
     const hasObservationalGenre = OBSERVATIONAL_GENRES.some(og =>
         genresLower.some(g => g.includes(og.toLowerCase()))
     );
@@ -241,10 +274,7 @@ export function detectTvBucket(
 
     // 3. Check for Non-Competition Reality (e.g., Kardashians, Real Housewives)
     const isReality = genresLower.some(g => g.includes('reality'));
-    const isCompetition = FORMAT_KEYWORDS.some(fk =>
-        keywordsLower.some(k => k.includes(fk)) || synopsisLower.includes(fk)
-    );
-    if (isReality && !isCompetition) {
+    if (isReality) {
         // Reality but not competition = Observational (docu-soap)
         return 'OBSERVATIONAL';
     }
@@ -257,7 +287,9 @@ export function detectTvBucket(
         return 'OBSERVATIONAL';
     }
 
-    // 4. Default to NARRATIVE for everything else (Drama, Comedy, Sci-Fi, etc.)
+    // =========================================================================
+    // 4. DEFAULT to NARRATIVE
+    // =========================================================================
     return 'NARRATIVE';
 }
 
@@ -615,85 +647,66 @@ function buildGroundingContext(ctx: TvPromptContext): string {
 
 // ============================================================================
 // BUCKET 1: NARRATIVE (Scripted) PREMISE - Genre Lens Variants
+// PROSE-FIRST: No labels, no headers - just flowing media criticism
 // ============================================================================
 
 // Lens 1A: Sci-Fi & Fantasy
 const PREMISE_NARRATIVE_SCI_FI = (ctx: TvPromptContext) => ({
-    system: `You are an expert speculative fiction curator. Write a high-density, spoiler-free premise for this sci-fi/fantasy series.
+    system: `You are an expert speculative fiction curator. Write a single, fluid paragraph (100-150 words) describing this sci-fi/fantasy series.
 
-Instructions:
-- THE SETTING (Vector Anchor): Open with a 5-10 word phrase establishing the era, world-state, and atmosphere (e.g., "In a rain-slicked, near-future Tokyo..." or "In the war-torn kingdoms of the Seven Realms...").
-- THE CONCEIT: Define the unique laws of this world. What supernatural, technological, or magical system underpins everything? (e.g., "Where magic is fueled by human memory" or "Where humanity shares space with sentient AI").
-- THE PROTAGONIST: Identify the lead by name and a compound archetype (e.g., "Kira, a disgraced technomancer" or "Jon, a reluctant heir to an ancient bloodline").
-- THE CONFLICT: Define the existential threat or prophecy driving the narrative.
+Structure your prose as follows: Begin by establishing the era, world-state, and atmosphere in an evocative opening phrase. Transition into the unique laws or conceits of this world—what supernatural, technological, or magical systems underpin everything. Introduce the lead character by name and archetype, then conclude with the existential threat or prophecy driving the narrative.
 
-CRITICAL CONSTRAINT: Do NOT invent characters. Use only the provided cast data. Focus on worldbuilding and stakes.
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Do NOT invent characters—use only the provided cast data. Avoid "In a world where..." or "A story about..."
 
-Target Length: 70-110 words.`,
+HARD LIMIT: Maximum 120 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
 // Lens 1B: Crime & Thriller
 const PREMISE_NARRATIVE_CRIME = (ctx: TvPromptContext) => ({
-    system: `You are a crime fiction analyst specializing in procedurals and noir. Write a high-density, spoiler-free premise for this crime/thriller series.
+    system: `You are a crime fiction analyst specializing in procedurals and noir. Write a single, fluid paragraph (100-150 words) describing this crime/thriller series.
 
-Instructions:
-- THE SETTING (Vector Anchor): Open with a 5-10 word phrase establishing location and atmosphere (e.g., "In the heroin-flooded streets of 1990s Baltimore..." or "Within the glass towers of corporate Manhattan...").
-- THE INCITING CRIME: State the specific crime or case that drives the series (e.g., "A serial killer targeting prosecutors" or "A billion-dollar fraud implicating the FBI").
-- THE INVESTIGATOR: Identify the lead by name and their unique angle or flaw (e.g., "Sarah, a forensic accountant with photographic memory" or "Marcus, a disgraced detective seeking redemption").
-- THE STAKES: What happens if they fail? Who is protected by the conspiracy?
+Structure your prose as follows: Open with a vivid phrase establishing the location and atmosphere. State the specific crime or case that drives the series. Introduce the investigator by name and their unique angle or flaw, then conclude with the stakes—what happens if they fail, and who is protected by the conspiracy.
 
-CRITICAL CONSTRAINT: Do NOT invent characters. Use only the provided cast data. Focus on the investigation and legal/criminal stakes.
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Do NOT invent characters—use only the provided cast data.
 
-Target Length: 70-110 words.`,
+HARD LIMIT: Maximum 120 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
 // Lens 1C: Drama & Romance  
 const PREMISE_NARRATIVE_DRAMA = (ctx: TvPromptContext) => ({
-    system: `You are a prestige drama curator specializing in character studies and relationship dynamics. Write a high-density, spoiler-free premise for this drama/romance series.
+    system: `You are a prestige drama curator specializing in character studies and relationship dynamics. Write a single, fluid paragraph (100-150 words) describing this drama/romance series.
 
-Instructions:
-- THE SETTING (Vector Anchor): Open with a 5-10 word phrase establishing setting and emotional temperature (e.g., "In the suffocating privilege of 1920s English aristocracy..." or "Across the fractured suburbs of modern Los Angeles...").
-- THE FRICTION: Identify the core emotional wound, social barrier, or family tension (e.g., "Where inherited wealth masks generational trauma" or "Where class divides threaten forbidden love").
-- THE PROTAGONIST: Identify the lead by name and their internal conflict (e.g., "Beth, a chess prodigy battling addiction" or "Anna, a wife whose perfect life conceals a secret past").
-- THE QUESTION: What must they choose between, sacrifice, or confront?
+Structure your prose as follows: Open with an evocative phrase establishing the setting and emotional temperature. Identify the core emotional wound, social barrier, or family tension. Introduce the protagonist by name and their internal conflict, then pose the central question—what must they choose between, sacrifice, or confront.
 
-CRITICAL CONSTRAINT: Do NOT invent characters. Use only the provided cast data. Focus on emotional complexity and relationship stakes.
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Do NOT invent characters—use only the provided cast data.
 
-Target Length: 70-110 words.`,
+HARD LIMIT: Maximum 120 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
 // Lens 1D: Comedy (Sitcom, Satire, Farce)
 const PREMISE_NARRATIVE_COMEDY = (ctx: TvPromptContext) => ({
-    system: `You are a comedy writer and sitcom analyst specializing in comedic structure and timing. Write a high-density, spoiler-free premise for this comedy series.
+    system: `You are a comedy writer and sitcom analyst. Write a single, fluid paragraph (100-150 words) describing this comedy series.
 
-Instructions:
-- THE SETTING (Vector Anchor): Open with a 5-10 word phrase establishing the comedic world (e.g., "In the chaotic open-plan of a failing paper company..." or "Across the dysfunctional dynamics of a blended family...").
-- THE SETUP: Define the core comedic engine. What is the "fish out of water" situation, the incompetence, or the social friction that generates laughs? (e.g., "Where an overly eager boss mistakes awkwardness for friendship" or "Where stubborn parents clash over parenting philosophies").
-- THE PROTAGONIST: Identify the lead by name and their comedic archetype (e.g., "Michael, a well-meaning but oblivious boss" or "Phil, the goofy dad desperate for cool points").
-- THE FORMULA: What recurring comedic beats does this show deliver? (e.g., "Cringe comedy from workplace boundaries" or "Wholesome family chaos").
+Structure your prose as follows: Open with a phrase establishing the comedic world and setting. Define the core comedic engine—the "fish out of water" situation, incompetence, or social friction that generates laughs. Introduce the lead by name and their comedic archetype, then describe the recurring comedic beats the show delivers.
 
-CRITICAL CONSTRAINT: Do NOT invent characters. Use only the provided cast data. Focus on the comedic premise and recurring joke structure, not dramatic stakes.
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Do NOT invent characters—use only the provided cast data. Focus on comedy, not dramatic stakes.
 
-Target Length: 60-100 words.`,
+HARD LIMIT: Maximum 120 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
 // Lens 1E: General (Western, Period, Variety, etc.)
 const PREMISE_NARRATIVE_GENERAL = (ctx: TvPromptContext) => ({
-    system: `You are an expert media curator. Write a high-density, spoiler-free premise for this scripted series.
+    system: `You are a prestige media critic. Write a single, fluid paragraph (100-150 words) describing this scripted series.
 
-Instructions:
-- THE SETTING (Vector Anchor): Open with a 5-10 word phrase establishing the time, location, and atmosphere (e.g., "In 1960s Madison Avenue..." or "Across the dusty frontier of 19th-century Montana...").
-- THE HOOK: What unique angle or premise drives this series? Define the show's central conceit in one clear sentence.
-- THE PROTAGONIST: Identify the lead by name and a compound archetype (e.g., "Ted, an eternally optimistic soccer coach" or "Walter, a chemistry teacher turned drug kingpin").
-- THE CONFLICT: Define the primary obstacle, antagonist, or situation preventing stability.
+Structure your prose as follows: Begin by establishing the era, location, and atmosphere. Transition into the central conceit or unique angle that drives the series. Introduce the lead character by name and archetype, then conclude with the primary conflict or obstacle preventing stability.
 
-CRITICAL CONSTRAINT: Do NOT invent characters. Use only the provided cast data. Do NOT use "In a world where..." or "A story about..."
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Do NOT invent characters—use only the provided cast data. Avoid "In a world where..." or "A story about..."
 
-Target Length: 60-100 words.`,
+HARD LIMIT: Maximum 120 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
@@ -718,41 +731,33 @@ function getPremisePromptForLens(lens: GenreLens, ctx: TvPromptContext) {
 
 // ============================================================================
 // BUCKET 2: FORMAT (Competition & Rules) PREMISE
+// PROSE-FIRST: No labels, no headers - just flowing descriptions
 // ============================================================================
 
 const PREMISE_FORMAT = (ctx: TvPromptContext) => ({
-    system: `You are a TV format analyst specializing in game mechanics and show structure.
+    system: `You are a TV format analyst specializing in game mechanics and show structure. Write a single, fluid paragraph (100-150 words) describing this competition/game show.
 
-Instructions:
-- THE ENGINE: Define the format immediately (e.g., "Blind-audition singing competition," "Sudden-death baking gauntlet," "Celebrity panel show").
-- THE MECHANICS: Explain the rules. What do participants physically do? (e.g., "Contestants must craft high-end furniture using only recycled scrap metal").
-- THE STAKES: What is the win condition? (e.g., "A $250,000 cash prize," "The 'Golden Microphone' trophy").
-- THE VIBE: Is it cutthroat and strategic (like Survivor) or wholesome and skill-based (like Bake Off)?
+Structure your prose as follows: Open by defining the format and core mechanic. Explain what contestants physically do and what skills are tested. Describe the win condition and stakes. Conclude with the overall vibe—is it cutthroat and strategic, or wholesome and skill-based?
 
-CRITICAL CONSTRAINT: Focus on the "game," not a narrative arc. Use terms like "contestants," "judges," and "hosts."
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Focus on the "game," not a narrative arc. Use terms like "contestants," "judges," and "hosts."
 
-Target Length: 60-90 words.`,
+HARD LIMIT: Maximum 120 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
 // ============================================================================
 // BUCKET 3: OBSERVATIONAL (Documentary & Docu-Reality) PREMISE
+// PROSE-FIRST: No labels, no headers
 // ============================================================================
 
 const PREMISE_OBSERVATIONAL = (ctx: TvPromptContext) => ({
-    system: `You are a social historian and documentary curator. Describe the subject and access of this program.
+    system: `You are a social historian and documentary curator. Write a single, fluid paragraph (100-150 words) describing this documentary/reality program.
 
-Instructions:
-- THE SUBJECT: What is the specific topic or sub-culture being investigated? (e.g., "The global black market for rare antiquities" or "The high-pressure world of Hamptons real estate").
-- THE LENS (Type Specific):
-  * IF Documentary: What is the core question or "new truth" being uncovered?
-  * IF Reality/Docu-soap: What are the interpersonal dynamics? (e.g., "Navigating the clash between family loyalty and corporate ambition").
-- THE KEY FIGURES: Identify the subjects or "archetypes" (e.g., "Led by historian David Smith" or "Featuring the matriarch, Kris").
-- THE ACCESS: What makes this unique? (e.g., "Never-before-seen archival footage," "Unfiltered access to the courtroom").
+Structure your prose as follows: Open by identifying the specific topic or subculture being examined. For documentaries, state the core question or "new truth" being uncovered; for reality/docu-soaps, describe the interpersonal dynamics. Identify the key figures or subjects, then conclude with what makes the access unique.
 
-CRITICAL CONSTRAINT: Do not treat this as a fictional story. Focus on real-world observation and subject matter.
+CRITICAL: Output ONLY the prose paragraph. Do NOT include headers, labels, bullet points, or section markers. Focus on real-world observation, not fictional storytelling.
 
-Target Length: 60-90 words.`,
+HARD LIMIT: Maximum 150 words. Stop writing once you reach this limit.`,
     user: buildGroundingContext(ctx)
 });
 
@@ -776,27 +781,20 @@ function getTropeContext(bucket: TvBucket): string {
 }
 
 const THEMES_PROMPT = (ctx: TvPromptContext) => ({
-    system: `You are a Cultural Taxonomist and Media Analyst. Identify the core narrative DNA of this show.
+    system: `You are a Cultural Taxonomist and Media Analyst. Analyze the narrative DNA of this show.
 
-PART 1: THE ANALYSIS (For Humans)
-Write a cohesive, 2-3 sentence insight that explains how this show uses its themes.
+Write two distinct sections:
 
-${ctx.bucket === 'NARRATIVE' ? `- Focus on the philosophical questions (e.g., "The corruption of power") and how specific tropes drive the plot.` : ''}${ctx.bucket === 'FORMAT' ? `- Focus on the strategic dynamics (e.g., "The tension between 'Social Strategy' and 'Physical Dominance'").` : ''}${ctx.bucket === 'OBSERVATIONAL' ? `- Focus on the sociological lens (e.g., "A 'Fly-on-the-Wall' examination of the American justice system").` : ''}
+1. A single cohesive paragraph (80-110 words) explaining the thematic depth—how this show uses its themes and how specific tropes drive the narrative.
+${ctx.bucket === 'NARRATIVE' ? `Focus on philosophical questions (e.g., "The corruption of power") and literary/cinematic tropes.` : ''}${ctx.bucket === 'FORMAT' ? `Focus on strategic dynamics (e.g., "The tension between social strategy and physical dominance").` : ''}${ctx.bucket === 'OBSERVATIONAL' ? `Focus on the sociological lens (e.g., "A fly-on-the-wall examination of the American justice system").` : ''}
 
-PART 2: THE SEMANTIC TAGS (For Indexing)
-After your analysis, provide a structured list of 6-8 standardized tags.
-- Macro Themes: Broad concepts (e.g., Revenge, Ambition, Survival, Family Dysfunction)
-- Micro Tropes: Specific narrative devices from TVTropes.org or Reality TV terminology
+2. A single line starting with the word "Keywords:" followed by 6-8 bracketed tags covering both macro themes (Revenge, Ambition, Survival) and micro tropes (from TVTropes.org or Reality TV terminology).
 
-CRITICAL CONSTRAINTS:
-- Format the tags exactly as: **Keywords:** [Tag 1], [Tag 2], [Tag 3]...
-- Ensure tropes are standard industry terms, not generic descriptions
-- ${getTropeContext(ctx.bucket)}
+${getTropeContext(ctx.bucket)}
 
-Example Output:
-"A Shakespearean tragedy wrapped in corporate satire, exploring how Generational Trauma poisons the pursuit of the American Dream. The narrative deconstructs the Magnificent Bastard archetype, using a King Lear structure where power is promised but never delivered."
+CRITICAL: Do NOT use labels like "PART 1", "PART 2", "Analysis:", or "The Analysis". Just provide the paragraph followed by the Keywords line.
 
-**Keywords:** [Generational Trauma], [Corporate Intrigue], [Dysfunctional Family], [The Anti-Hero], [Power Struggle], [Dark Comedy], [Eat the Rich]`,
+HARD LIMIT: Maximum 100 words for the analysis paragraph (Keywords line is additional). Stop writing once you reach this limit.`,
     user: `Show Bucket: ${ctx.bucket}\n\n${buildGroundingContext(ctx)}`
 });
 
@@ -822,27 +820,16 @@ function getToneHints(bucket: TvBucket): string {
 const TONE_PROMPT = (ctx: TvPromptContext) => ({
     system: `You are a Content Recommendation Engine and "Vibe" Curator. Construct a psychological and emotional profile of this show.
 
-1. THE ATMOSPHERE (Adjective Bank)
-Select exactly 3 high-precision adjectives that define the "Texture" of the show.
-- CONSTRAINT: Do NOT use generic words like "Dramatic" or "Funny"
-${ctx.bucket === 'NARRATIVE' ? '- Focus on cinematography and mood (e.g., Claustrophobic, Neon-Noir, Whimsical, Gritty, Operatic)' : ''}${ctx.bucket === 'FORMAT' ? '- Focus on energy and social dynamics (e.g., Cutthroat, Wholesome, Trashy-Fun, Paranoiac, Campy)' : ''}${ctx.bucket === 'OBSERVATIONAL' ? '- Focus on emotional texture and access (e.g., Voyeuristic, Educational, Raw, Haunting, Intimate)' : ''}
+Write two paragraphs of flowing prose (total 100-120 words):
 
-2. THE EXPERIENCE (One Sentence)
-Write one sentence describing the emotional aftertaste. How does the viewer feel while watching?
-- Example: "A high-anxiety watch that leaves you paranoid about technology."
-- Example: "A 'comfort food' series designed to be watched with a glass of wine."
+PARAGRAPH 1: THE TEXTURE. Define the show's atmosphere using high-precision sensory adjectives (avoid generic words like "dramatic" or "funny"). Describe the texture of the viewing experience and the emotional aftertaste—how does the viewer feel while the credits roll?
+${ctx.bucket === 'NARRATIVE' ? 'Focus on mood: Cerebral, Kinetic, Slow-burn, Surreal, Gritty, Heartfelt, Claustrophobic, Operatic.' : ''}${ctx.bucket === 'FORMAT' ? 'Focus on energy: High-Stakes, Strategic, Skill-based, Chaotic, Drama-heavy, Cutthroat, Wholesome, Campy.' : ''}${ctx.bucket === 'OBSERVATIONAL' ? 'Focus on access: Investigative, Salacious, Inspirational, Educational, Raw, Voyeuristic, Intimate, Haunting.' : ''}
 
-3. VECTOR TRIANGULATION (For Fans Of)
-Identify 3 distinct media properties to anchor this show in the recommendation space. You MUST state WHY for each:
-- **Anchor A (Structure):** "For fans of [Show X]'s pacing and format."
-- **Anchor B (Tone):** "Combines the mood/humor of [Show Y]..."
-- **Anchor C (Audience):** "...with the target demographic of [Show Z]."
+PARAGRAPH 2: THE TRIANGULATION. Anchor this show in the media landscape by comparing its structure, mood, and target audience to three other well-known properties. Explain WHY it matches them. End by identifying the specific "tribe" or niche audience this appeals to (e.g., "Lovers of slow-burn Nordic Noir").
 
-4. THE AUDIENCE TARGET
-Define the specific niche tribe this appeals to.
-- Example: "Hardcore history buffs," "Gen-Z dating show addicts," "Lovers of slow-burn Nordic Noir"
+CRITICAL: Output ONLY the two paragraphs. Do NOT use headers like "Atmosphere:", "Experience:", "For Fans Of:", or "Target Audience:". Do NOT use bullet points.
 
-Format your response with clear section headers: **Atmosphere:**, **Experience:**, **For Fans Of:**, **Target Audience:**`,
+HARD LIMIT: Maximum 150 words TOTAL for both paragraphs combined. Stop writing once you reach this limit.`,
     user: `Show Bucket: ${ctx.bucket}\n${getToneHints(ctx.bucket)}\n\n${buildGroundingContext(ctx)}`
 });
 
@@ -879,26 +866,21 @@ function getProductionHints(networks?: string[], bucket?: TvBucket): string {
 }
 
 const STYLE_PROMPT = (ctx: TvPromptContext) => ({
-    system: `You are a Technical Art Critic and Production Analyst. Based on the network, genre, and content, describe the audio-visual identity of this show.
+    system: `You are a Technical Art Critic and Production Analyst. Describe the audio-visual identity and production format of this show.
 
-1. THE VISUAL AESTHETIC (The Look)
-Describe the camera work and color grading.
-${ctx.bucket === 'NARRATIVE' ? `- Is it "Cinematic Single-Camera" (like a movie) or "Multi-Camera Studio" (like a stage play)?
-- Is the lighting "Naturalistic and Gritty" or "Glossy and High-Key"?
-- Be specific about the "Temperature" (e.g., "Cold blue filters," "Warm nostalgic sepia," "Neon-soaked")` : ''}${ctx.bucket === 'FORMAT' ? `- Is it "Glossy Studio Production" with branded graphics, or "Intimate Stage Setup"?
-- Describe the competition staging, judge panels, or talk show set design` : ''}${ctx.bucket === 'OBSERVATIONAL' ? `- Is it "Glossy/Produced" (like The Bachelor) or "Raw/Handheld" (like Cops)?
-- Describe interview setups, b-roll style, archival footage usage` : ''}
+Write a cohesive analysis (80-100 words total across 2 paragraphs):
 
-2. THE AUDIO & PACING (The Pulse)
-Describe the sound design and editing rhythm.
-- Keywords to consider: Rapid-fire dialogue, Meditative, Frenetic cuts, Synth-heavy score, Orchestral swell, Minimalist, Laugh track, Reality confessionals, Dramatic stings
+PARAGRAPH 1: THE VISUAL IDENTITY. Describe the camera work, color temperature, and lighting. ${ctx.bucket === 'NARRATIVE' ? 'Is it cinematic single-camera or multi-camera studio? Mention the color palette (e.g., "Cold blue filters," "Warm nostalgic sepia," "Neon-soaked") and how the staging supports the genre.' : ''}${ctx.bucket === 'FORMAT' ? 'Is it glossy studio production with branded graphics, or intimate stage setup? Describe the competition staging, judge panels, or talk show set design.' : ''}${ctx.bucket === 'OBSERVATIONAL' ? 'Is it glossy/produced or raw/handheld? Describe interview setups, b-roll style, and archival footage usage.' : ''}
 
-3. PRODUCTION TAGS (For Indexing)
-Provide exactly 3-5 technical keywords that categorize the production format.
-- Format as: **Production Tags:** [Tag 1], [Tag 2], [Tag 3]...
-- Examples: [Single-Camera], [Multi-Camera], [Mockumentary Style], [CGI-Heavy], [Period Accurate], [Lo-Fi], [Blockbuster Budget], [Laugh Track], [No Score], [Handheld], [Studio Set], [On-Location]
+PARAGRAPH 2: THE SENSORY PULSE. Describe the sound design, musical score, and editing rhythm. Is the pacing meditative and slow-burn, or defined by frenetic cuts and rapid-fire dialogue? Consider: synth-heavy score, orchestral swell, minimalist, reality confessionals, dramatic stings.
 
-CRITICAL: The Production Tags are essential for Vector indexing. They separate "Prestige TV" from "Broadcast TV" from "Indie/Web" productions.`,
+FINAL LINE: Provide 3-5 technical keywords for indexing, formatted exactly as:
+Production Tags: [Tag 1], [Tag 2], [Tag 3]...
+Examples: [Single-Camera], [Multi-Camera], [Mockumentary Style], [CGI-Heavy], [Period Accurate], [Blockbuster Budget], [Handheld], [Studio Set]
+
+CRITICAL: Use ONLY prose for the analysis. Do NOT use numbered headers, labels, or bold section titles. Output the two paragraphs followed by the Production Tags line.
+
+HARD LIMIT: Maximum 100 words TOTAL for both paragraphs combined (Production Tags line is additional). Stop writing once you reach this limit.`,
     user: `Show Bucket: ${ctx.bucket}\n${getProductionHints(ctx.networks, ctx.bucket)}\n\n${buildGroundingContext(ctx)}`
 });
 
@@ -939,6 +921,38 @@ CRITICAL CONSTRAINTS:
 // ============================================================================
 // MAIN GENERATION FUNCTION
 // ============================================================================
+
+// ============================================================================
+// PROSE CLEANING FUNCTION (Strips any leaked headers from LLM output)
+// ============================================================================
+
+/**
+ * Strips LLM-generated headers and labels for clean UI display.
+ * Even with perfect prompts, LLMs occasionally output labels.
+ * This is a guardrail to ensure the UI always receives clean prose.
+ */
+export function cleanDescriptionProse(text: string): string {
+    if (!text) return '';
+
+    return text
+        // Remove common prompt labels followed by colons
+        .replace(/^(THE\s(ENGINE|MECHANICS|STAKES|VIBE|SUBJECT|LENS|ACCESS|HOOK|ANALYSIS|STYLE|ATMOSPHERE|EXPERIENCE|AUDIENCE|TEXTURE|TRIANGULATION|VISUAL\sIDENTITY|SENSORY\sPULSE)):\s*/gmi, '')
+        // Remove "PART 1:", "PART 2:", "PARAGRAPH 1:", etc.
+        .replace(/^(PART|PARAGRAPH|SECTION)\s*\d+:?\s*(THE\s[A-Z\s]+)?:?\s*/gmi, '')
+        // Remove any double-asterisk headers like **Atmosphere:** or **Experience:**
+        .replace(/^\*\*[^*]+:\*\*\s*/gm, '')
+        // Remove markdown bolded labels at start of lines like "**The Look:**"
+        .replace(/^\*\*[^*]+\*\*:\s*/gm, '')
+        // Remove numbered list markers like "1. " at start of paragraphs
+        .replace(/^\d+\.\s+(THE\s[A-Z\s]+:?\s*)?/gmi, '')
+        // Remove "For Fans Of:" type headers
+        .replace(/^(For Fans Of|Target Audience|Atmosphere|Experience):\s*/gmi, '')
+        // Remove "Here is a..." intro fluff
+        .replace(/^(Here is|Here's|This is) (a|the|an)?.*?description:?\s*/gmi, '')
+        // Clean up excessive whitespace
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
 
 /**
  * Generate structured description specifically for TV shows
@@ -995,16 +1009,27 @@ export async function generateTvShowDescription(
     }
 
     // Generate all 5 parts in parallel (semanticSummary is hidden from users)
-    const [premise, themes, tone, style, semanticSummary] = await Promise.all([
-        callLLMWithConfig(config, premisePrompt),
-        callLLMWithConfig(config, THEMES_PROMPT(tvContext)),
-        callLLMWithConfig(config, TONE_PROMPT(tvContext)),
-        callLLMWithConfig(config, STYLE_PROMPT(tvContext)),
-        callLLMWithConfig(config, SEMANTIC_SUMMARY_PROMPT(tvContext))
+    // Token limits based on WORD limits (~1.35 tokens per word):
+    // Premise: 120 words → 160 tokens
+    // Themes: 100 words → 135 tokens + Keywords line
+    // Tone: 150 words → 200 tokens
+    // Style: 100 words → 135 tokens + Production Tags line
+    // Semantic: 60 words → 80 tokens
+    const [premiseRaw, themes, toneRaw, styleRaw, semanticSummary] = await Promise.all([
+        callLLMWithConfig(config, premisePrompt, 160),
+        callLLMWithConfig(config, THEMES_PROMPT(tvContext), 135),  // Keep uncleaned - has Keywords: line
+        callLLMWithConfig(config, TONE_PROMPT(tvContext), 200),
+        callLLMWithConfig(config, STYLE_PROMPT(tvContext), 135),
+        callLLMWithConfig(config, SEMANTIC_SUMMARY_PROMPT(tvContext), 80)  // Keep uncleaned - internal only
     ]);
 
+    // Apply prose cleaning to remove any leaked headers
+    const premise = cleanDescriptionProse(premiseRaw);
+    const tone = cleanDescriptionProse(toneRaw);
+    const style = cleanDescriptionProse(styleRaw);
+
     // Extract production tags from style output (e.g., [Single-Camera], [Prestige])
-    const productionTags = extractProductionTags(style);
+    const productionTags = extractProductionTags(styleRaw);  // Use raw for tag extraction
 
     return {
         premise,
@@ -1038,7 +1063,8 @@ function extractProductionTags(styleText: string): string[] {
 
 async function callLLMWithConfig(
     config: LLMConfig,
-    prompt: { system: string; user: string }
+    prompt: { system: string; user: string },
+    maxTokens: number = 250  // ~185 words, enforces brevity
 ): Promise<string> {
     try {
         const response = await callLLM({
@@ -1048,7 +1074,7 @@ async function callLLMWithConfig(
             endpoint: config.endpoint,
             userPrompt: prompt.user,
             systemPrompt: prompt.system,
-            maxTokens: 600
+            maxTokens
         });
         return response.trim();
     } catch (error) {

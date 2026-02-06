@@ -48,12 +48,12 @@ export const KNOWN_UNIVERSES: readonly UniverseDefinition[] = [
         keywordHints: ['arrowverse', 'dc universe', 'crisis on infinite earths']
     },
     {
-        slug: 'chicago-verse',
-        name: 'Chicago Franchise',
+        slug: 'one-chicago',
+        name: 'One Chicago',
         exactTitles: ['Chicago Fire', 'Chicago P.D.', 'Chicago Med', 'Chicago Justice'],
         titlePatterns: ['Chicago'],
         networkHints: ['NBC'],
-        keywordHints: ['dick wolf', 'chicago franchise']
+        keywordHints: ['one chicago', 'dick wolf', 'chicago franchise']
     },
     {
         slug: 'law-order-universe',
@@ -165,12 +165,20 @@ export const KNOWN_UNIVERSES: readonly UniverseDefinition[] = [
         keywordHints: ['dick wolf', 'fbi']
     },
     {
-        slug: 'one-chicago',
-        name: 'One Chicago',
-        exactTitles: ['Chicago Fire', 'Chicago P.D.', 'Chicago Med', 'Chicago Justice'],
-        titlePatterns: ['Chicago'],
-        networkHints: ['NBC'],
-        keywordHints: ['one chicago', 'dick wolf']
+        slug: 'bachelor-verse',
+        name: 'The Bachelor Franchise',
+        exactTitles: ['The Bachelor', 'The Bachelorette', 'Bachelor in Paradise', 'The Golden Bachelor', 'The Golden Bachelorette'],
+        titlePatterns: ['Bachelor', 'Bachelorette'],
+        networkHints: ['ABC'],
+        keywordHints: ['bachelor nation', 'final rose', 'fantasy suites']
+    },
+    {
+        slug: '90-day-verse',
+        name: '90 Day Fiancé Universe',
+        exactTitles: ['90 Day Fiancé', '90 Day Fiancé: Happily Ever After?', '90 Day: The Single Life', '90 Day Fiancé: The Other Way', '90 Day Fiancé: Before the 90 Days'],
+        titlePatterns: ['90 Day'],
+        networkHints: ['TLC', 'Discovery+'],
+        keywordHints: ['k-1 visa', '90 day fiance', 'international couple']
     }
 ] as const;
 
@@ -202,17 +210,28 @@ export function detectUniverseHeuristic(
     const keywordSet = new Set((keywords || []).map(k => k.toLowerCase()));
 
     for (const universe of KNOWN_UNIVERSES) {
-        // Check exact title match (highest confidence)
+        // 1. EXACT MATCH (Confidence: exact) - highest priority
         if (universe.exactTitles.some(t => t.toLowerCase() === normalizedTitle)) {
             return { slug: universe.slug, name: universe.name, confidence: 'exact' };
         }
 
-        // Check title patterns
-        if (universe.titlePatterns.some(p => normalizedTitle.startsWith(p.toLowerCase()))) {
-            return { slug: universe.slug, name: universe.name, confidence: 'pattern' };
+        // 2. REGEX PATTERN MATCH (Confidence: pattern)
+        // Uses word boundaries (\b) to ensure "NCIS" doesn't match "INCISIVE"
+        for (const pattern of universe.titlePatterns) {
+            try {
+                const regex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (regex.test(normalizedTitle)) {
+                    return { slug: universe.slug, name: universe.name, confidence: 'pattern' };
+                }
+            } catch {
+                // Fallback to includes if regex fails
+                if (normalizedTitle.includes(pattern.toLowerCase())) {
+                    return { slug: universe.slug, name: universe.name, confidence: 'pattern' };
+                }
+            }
         }
 
-        // Check keyword hints (medium confidence)
+        // 3. KEYWORD SCORING (Confidence: heuristic)
         const keywordMatches = universe.keywordHints.filter(k =>
             keywordSet.has(k.toLowerCase()) ||
             Array.from(keywordSet).some(kw => kw.includes(k.toLowerCase()))
@@ -221,7 +240,7 @@ export function detectUniverseHeuristic(
             return { slug: universe.slug, name: universe.name, confidence: 'heuristic' };
         }
 
-        // Check network + single keyword (for new shows in franchise)
+        // 4. NETWORK + SINGLE KEYWORD (for new shows in franchise)
         const networkMatch = universe.networkHints.some(n => networkSet.has(n.toLowerCase()));
         if (networkMatch && keywordMatches.length >= 1) {
             return { slug: universe.slug, name: universe.name, confidence: 'heuristic' };

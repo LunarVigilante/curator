@@ -26,6 +26,14 @@ export interface StructuredDescription {
     bucketType?: 'NARRATIVE' | 'FORMAT' | 'OBSERVATIONAL'; // Optional: Content bucket for filtering
 }
 
+/** UI-ready description with semantic metadata stripped */
+export interface DisplayDescription {
+    premise: string;
+    themes: string;   // Prose only, Keywords stripped
+    tone: string;
+    style: string;    // Prose only, Production Tags stripped
+}
+
 export interface GenerationContext {
     title: string;
     originalDescription: string;
@@ -34,6 +42,50 @@ export interface GenerationContext {
     /** Show status (e.g., 'Ended', 'Returning Series') - used for spoiler constraints */
     status?: string;
 }
+
+// ============================================================================
+// SEMANTIC METADATA STRIPPING (For UI display)
+// ============================================================================
+
+/**
+ * Strips semantic metadata (Keywords and Production Tags) from description text.
+ * Use this to prepare descriptions for UI display while keeping the full version
+ * in the database for vector search and filtering.
+ * 
+ * @param description - The full StructuredDescription with embedded metadata
+ * @returns DisplayDescription - Clean prose ready for UI
+ */
+export function stripSemanticMetadata(description: StructuredDescription): DisplayDescription {
+    return {
+        premise: description.premise,
+        themes: stripKeywordsLine(description.themes),
+        tone: description.tone,
+        style: stripProductionTagsLine(description.style)
+    };
+}
+
+/**
+ * Removes the "Keywords: [tag1], [tag2]..." line from themes text
+ */
+function stripKeywordsLine(text: string): string {
+    if (!text) return '';
+    // Match "Keywords:" followed by bracketed tags until end of text or double newline
+    return text
+        .replace(/\n*Keywords:\s*\[.*$/gim, '')
+        .trim();
+}
+
+/**
+ * Removes the "Production Tags: [tag1], [tag2]..." line from style text
+ */
+function stripProductionTagsLine(text: string): string {
+    if (!text) return '';
+    // Match "Production Tags:" followed by bracketed tags until end of text or double newline
+    return text
+        .replace(/\n*Production Tags:\s*\[.*$/gim, '')
+        .trim();
+}
+
 
 // ============================================================================
 // PROMPTS

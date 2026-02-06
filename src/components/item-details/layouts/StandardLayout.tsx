@@ -118,7 +118,7 @@ export function StandardLayout({
 
                     {/* === SCROLLABLE MIDDLE: Description === */}
                     {item.description && (
-                        <ScrollArea className="flex-1 my-4 -mx-2 px-2 min-h-0">
+                        <ScrollArea className="flex-1 my-4 -mx-2 px-2 min-h-0 overflow-y-auto">
                             <motion.div
                                 variants={itemVariants}
                                 className="prose prose-invert max-w-none text-zinc-300 text-base leading-relaxed font-light pr-4"

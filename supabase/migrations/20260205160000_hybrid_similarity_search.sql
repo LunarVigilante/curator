@@ -79,7 +79,7 @@ BEGIN
             gi.image_url,
             gi.category_type,
             gi.release_year,
-            gi.vote_average,
+            gi.vote_average::float as vote_average,  -- Cast to float to match return type
             gi.runtime,
             gi.metadata,
             1 - (gi.embedding <=> source_embedding) as vector_sim

@@ -380,34 +380,74 @@ export { generateTags } from '@/lib/enrichment';
 
 /**
  * Ensures tags exist in database and returns their IDs
+ * New tags get AI-generated descriptions
+ * Uses slug for unique identification (matches existing schema)
  */
 export async function ensureTags(
     supabase: ReturnType<typeof createServiceRoleClient>,
     tagNames: string[]
-): Promise<{ id: string, name: string }[]> {
+): Promise<{ id: string, name: string, slug: string, description?: string | null }[]> {
     if (!tagNames.length) return [];
+
+    // Helper to generate slug from name
+    const toSlug = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
     // Deduplicate and normalize
     const uniqueNames = [...new Set(tagNames.map(n => n.trim()).filter(n => n.length > 0))];
+    const slugs = uniqueNames.map(toSlug);
 
-    // 1. Get existing
+    // 1. Get existing tags by slug
     const { data: existing } = await supabase
         .from('tags')
-        .select('id, name')
-        .in('name', uniqueNames);
+        .select('id, name, slug, description')
+        .in('slug', slugs);
 
-    const existingMap = new Map((existing || []).map((t: any) => [t.name.toLowerCase(), t]));
-    const toCreate = uniqueNames.filter(name => !existingMap.has(name.toLowerCase()));
+    const existingMap = new Map((existing || []).map((t: any) => [t.slug, t]));
+    const toCreate = uniqueNames.filter(name => !existingMap.has(toSlug(name)));
 
-    // 2. Create missing
+    // 2. Create missing tags with AI descriptions
     let newTags: any[] = [];
     if (toCreate.length > 0) {
+        // Import AI description generator dynamically to avoid circular deps
+        const { generateTagDescription, categorizeTag } = await import('@/lib/ai/tag-description');
+
+        // Generate descriptions for new tags (with rate limiting)
+        const tagsToInsert = [];
+        for (const name of toCreate) {
+            try {
+                const [description, category] = await Promise.all([
+                    generateTagDescription(name),
+                    categorizeTag(name)
+                ]);
+                tagsToInsert.push({
+                    name,
+                    slug: toSlug(name),
+                    description,
+                    category,
+                    source_type: 'ai'
+                });
+                // Small delay to avoid rate limiting
+                await sleep(50);
+            } catch (error) {
+                console.warn(`⚠️ Failed to generate description for tag "${name}":`, error);
+                tagsToInsert.push({
+                    name,
+                    slug: toSlug(name),
+                    description: null,
+                    category: null,
+                    source_type: 'ai'
+                });
+            }
+        }
+
         const { data, error } = await (supabase.from('tags') as any)
-            .insert(toCreate.map(name => ({ name })))
-            .select('id, name');
+            .insert(tagsToInsert)
+            .select('id, name, slug, description');
 
         if (!error && data) {
             newTags = data;
+        } else if (error) {
+            console.error('Failed to insert tags:', error);
         }
     }
 

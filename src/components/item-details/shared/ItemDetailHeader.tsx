@@ -5,7 +5,7 @@ import type { GlobalItem } from '../types'
 import { getCategoryIcon, cleanTitle, normalizeCategory } from '../utils'
 import { RatingBadges } from './RatingBadges'
 import Link from 'next/link'
-import { Film, Clapperboard } from 'lucide-react'
+import { Film, Clapperboard, FlaskConical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface ItemDetailHeaderProps {
@@ -48,7 +48,7 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
     return (
         <div className="space-y-4">
             {/* Category • Year • Rating */}
-            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-zinc-500">
+            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-zinc-300">
                 <CategoryIconDisplay categoryType={item.category_type} />
                 <span>{item.category_type?.replace('_', ' ')}</span>
                 <span className="text-zinc-800">•</span>
@@ -69,10 +69,10 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
                     {cleanTitle(item.title)}
                 </h2>
                 {item.original_title && item.original_title !== item.title && (
-                    <p className="text-zinc-500 text-lg mt-1 font-medium">{item.original_title}</p>
+                    <p className="text-zinc-400 text-lg mt-1 font-medium">{item.original_title}</p>
                 )}
                 {item.romaji_title && (
-                    <p className="text-zinc-500 text-lg mt-1 font-medium italic">{item.romaji_title}</p>
+                    <p className="text-zinc-400 text-lg mt-1 font-medium italic">{item.romaji_title}</p>
                 )}
 
                 {/* Artist Name for Albums */}
@@ -88,7 +88,7 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
 
             {/* Binge Metrics Row - TV Shows Only */}
             {isTV && (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-400">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-200">
                     {(item.number_of_seasons ?? 0) > 0 && (
                         <span className="font-medium text-white">
                             {item.number_of_seasons} {item.number_of_seasons === 1 ? 'Season' : 'Seasons'}
@@ -126,35 +126,46 @@ export function ItemDetailHeader({ item }: ItemDetailHeaderProps) {
 
             {/* Links Row (TV/Movie) */}
             {(isTV || isMovie) ? (
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                    {/* TMDB Button */}
-                    {item.vote_average !== null && item.vote_average > 0 && item.external_ids?.tmdb && (
-                        <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#01B4E4] hover:bg-[#018AB0] text-white font-black border-0 rounded transition-transform hover:scale-105">
-                            <Link href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.external_ids.tmdb}`} target="_blank">
-                                <span className="text-[10px] uppercase tracking-tighter opacity-80">TMDB</span>
-                                <span className="text-sm">{item.vote_average.toFixed(1)}</span>
-                            </Link>
-                        </Button>
-                    )}
+                <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* TMDB Button */}
+                        {item.vote_average !== null && item.vote_average > 0 && item.external_ids?.tmdb && (
+                            <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#01B4E4] hover:bg-[#018AB0] text-white font-black border-0 rounded transition-transform hover:scale-105">
+                                <Link href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.external_ids.tmdb}`} target="_blank">
+                                    <span className="text-[10px] uppercase tracking-tighter opacity-80">TMDB</span>
+                                    <span className="text-sm">{item.vote_average.toFixed(1)}</span>
+                                </Link>
+                            </Button>
+                        )}
 
-                    {/* IMDb Button */}
-                    {imdbRating && item.external_ids?.imdb && (
-                        <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#F5C518] hover:bg-[#C49A13] text-black hover:text-white font-black border-0 rounded transition-transform hover:scale-105">
-                            <Link href={`https://www.imdb.com/title/${item.external_ids.imdb}`} target="_blank">
-                                <span className="text-[10px] uppercase tracking-tighter opacity-80">IMDb</span>
-                                <span className="text-sm">{imdbRating}</span>
-                            </Link>
-                        </Button>
-                    )}
+                        {/* IMDb Button */}
+                        {imdbRating && item.external_ids?.imdb && (
+                            <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#F5C518] hover:bg-[#C49A13] text-black hover:text-white font-black border-0 rounded transition-transform hover:scale-105">
+                                <Link href={`https://www.imdb.com/title/${item.external_ids.imdb}`} target="_blank">
+                                    <span className="text-[10px] uppercase tracking-tighter opacity-80">IMDb</span>
+                                    <span className="text-sm">{imdbRating}</span>
+                                </Link>
+                            </Button>
+                        )}
 
-                    {/* RT Button */}
-                    {rtRating && (
-                        <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#FA320A] hover:bg-[#C02808] text-white font-black border-0 rounded transition-transform hover:scale-105">
-                            <Link href={`https://www.rottentomatoes.com/search?search=${encodeURIComponent(item.title)}`} target="_blank">
-                                <span className="text-[10px] uppercase tracking-tighter opacity-80">RT</span>
-                                <span className="text-sm">{rtRating}</span>
-                            </Link>
-                        </Button>
+                        {/* RT Button */}
+                        {rtRating && (
+                            <Button asChild size="sm" className="h-6 px-2 gap-1.5 bg-[#FA320A] hover:bg-[#C02808] text-white font-black border-0 rounded transition-transform hover:scale-105">
+                                <Link href={`https://www.rottentomatoes.com/search?search=${encodeURIComponent(item.title)}`} target="_blank">
+                                    <span className="text-[10px] uppercase tracking-tighter opacity-80">RT</span>
+                                    <span className="text-sm">{rtRating}</span>
+                                </Link>
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Trope Pill - floated right */}
+                    {(item.keywords?.length || item.themes?.length) && (
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-cyan-500/10 border-cyan-500/30">
+                            <FlaskConical className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="text-[10px] text-cyan-400 uppercase tracking-wider">Trope</span>
+                            <span className="text-xs text-white font-medium">{(item.keywords || item.themes)?.[0]}</span>
+                        </div>
                     )}
                 </div>
             ) : (

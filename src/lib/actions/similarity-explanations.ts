@@ -148,9 +148,9 @@ CRITICAL: Return ONLY a valid JSON object with EXACTLY this structure:
 }
 
 Rules:
-- "summary" (The Bridge): Focus on the shared narrative elements provided in Context. convince a fan of A to watch B.
-- "keyDifference" (The Wedge): Identify the biggest mismatch (e.g., "Show A is dark/gritty while Show B is campy").
-- Be concise, specific, and insightful. NO markdown.`
+- "summary" (The Bridge): Focus on the shared narrative elements provided in Context. Convince a fan of A to watch B. Use the ACTUAL TITLES from the input, never generic placeholders like "Show A" or "Show B".
+- "keyDifference" (The Wedge): Identify the biggest mismatch. Use the ACTUAL TITLES (e.g., "*Breaking Bad* is dark/gritty while *Community* is campy").
+- Be concise, specific, and insightful. NO markdown except italics for titles.`
 
 /**
  * Get context limit for the configured model

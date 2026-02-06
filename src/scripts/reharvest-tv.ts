@@ -21,18 +21,25 @@
 import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
-import { rewriteDescription, generateEmbedding, generateTags, ensureTags, sleep, aiLimiter } from '@/lib/harvesters/shared';
+import { generateEmbedding, generateTags, ensureTags, sleep, aiLimiter, getLLMConfig } from '@/lib/harvesters/shared';
+import { combineDescription, buildEmbeddingText, type StructuredDescription } from '@/lib/ai/structured-description';
+import { generateTvShowDescription } from '@/lib/ai/tv-show-description';
+import { generateVibeScores, type VibeScores } from '@/lib/ai/vibe-scoring';
+import { getSeriesExtended, type TvdbEnrichmentResult } from '@/lib/services/tvdb';
+import { extractEnrichment, isAnime, detectUniverseFromOfficialLists } from '@/lib/services/tvdb-utils';
 import pLimit from 'p-limit';
 
 // ============================================================================
 // CONFIG
 // ============================================================================
 
-const CONCURRENCY = 5;
+const CONCURRENCY = 2;  // Reduced from 5 to avoid LLM rate limiting
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const OMDB_BASE_URL = 'https://www.omdbapi.com';
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const OMDB_API_KEY = process.env.OMDB_API_KEY;
+const TVDB_API_KEY = process.env.TVDB_API_KEY;
+const TVDB_PIN = process.env.TVDB_PIN;
 
 // CLI Args
 const args = process.argv.slice(2);
@@ -45,6 +52,8 @@ const FORCE_TAGS = args.includes('--force-tags') || FORCE_REGEN;
 const FORCE_EMBEDDINGS = args.includes('--force-embeddings') || FORCE_REGEN;
 const EXCLUDE_RECENT_ARG = args.find(a => a.startsWith('--exclude-recent='));
 const EXCLUDE_RECENT_HOURS = EXCLUDE_RECENT_ARG ? parseInt(EXCLUDE_RECENT_ARG.split('=')[1], 10) : null;
+const DESC_ONLY = args.includes('--desc-only'); // Skip metadata updates, only regenerate descriptions
+const FORCE_VIBE = args.includes('--force-vibe') || FORCE_REGEN; // Force regenerate vibe scores
 
 if (!TMDB_API_KEY) {
     console.error('❌ Missing TMDB_API_KEY');
@@ -53,6 +62,10 @@ if (!TMDB_API_KEY) {
 
 if (!OMDB_API_KEY) {
     console.warn('⚠️  Missing OMDB_API_KEY. Ratings will be skipped.');
+}
+
+if (!TVDB_API_KEY) {
+    console.warn('⚠️  Missing TVDB_API_KEY. TVDB enrichment will be skipped.');
 }
 
 const supabase = createServiceRoleClient();
@@ -235,31 +248,118 @@ async function processItem(item: any) {
             }
         }
 
-        // 3. Check if we need to regenerate AI content
-        const needsDescription = FORCE_DESC || !item.description || item.description.length < 50;
+        // 3. Fetch TVDB enrichment (characters, semantic tags, official lists)
+        let tvdbEnrichment: TvdbEnrichmentResult | null = null;
+        const tvdbId = meta.external_ids.tvdb;
+        if (tvdbId && TVDB_API_KEY) {
+            console.log(`   ║ 📺 Fetching TVDB data (ID: ${tvdbId})...`);
+            try {
+                const tvdbSeries = await getSeriesExtended(Number(tvdbId), TVDB_API_KEY, TVDB_PIN || undefined);
+                if (tvdbSeries) {
+                    tvdbEnrichment = extractEnrichment(tvdbSeries);
+
+                    // Detailed TVDB logging
+                    console.log(`   ║ ╔══ TVDB ENRICHMENT ══════════════════════════════════════`);
+                    console.log(`   ║ ║ 🎭 Characters: ${tvdbEnrichment.characters.length}`);
+                    if (tvdbEnrichment.characters.length > 0) {
+                        const topChars = tvdbEnrichment.characters.slice(0, 5);
+                        topChars.forEach((c, i) => {
+                            console.log(`   ║ ║    ${i + 1}. ${c.name} (${c.actorName}) [${c.tier}]`);
+                        });
+                        if (tvdbEnrichment.characters.length > 5) {
+                            console.log(`   ║ ║    ...and ${tvdbEnrichment.characters.length - 5} more`);
+                        }
+                    }
+
+                    console.log(`   ║ ║ 🏷️  Semantic Tags: ${tvdbEnrichment.semanticTags.length}`);
+                    if (tvdbEnrichment.semanticTags.length > 0) {
+                        console.log(`   ║ ║    ${tvdbEnrichment.semanticTags.slice(0, 10).join(', ')}${tvdbEnrichment.semanticTags.length > 10 ? '...' : ''}`);
+                    }
+
+                    console.log(`   ║ ║ 📋 Official Lists: ${tvdbEnrichment.officialLists.length}`);
+                    if (tvdbEnrichment.officialLists.length > 0) {
+                        tvdbEnrichment.officialLists.forEach(list => {
+                            console.log(`   ║ ║    • ${list}`);
+                        });
+                    }
+
+                    if (tvdbEnrichment.contentRating) {
+                        console.log(`   ║ ║ 🔞 Content Rating: ${tvdbEnrichment.contentRating}`);
+                    }
+
+                    // Check for universe detection
+                    const universeSlug = detectUniverseFromOfficialLists(tvdbEnrichment.officialLists);
+                    if (universeSlug) {
+                        console.log(`   ║ ║ 🌌 Universe Detected: ${universeSlug}`);
+                    }
+
+                    // Check if anime
+                    if (tvdbSeries && isAnime(tvdbSeries)) {
+                        console.log(`   ║ ║ 🎌 Anime Detected`);
+                        if (tvdbEnrichment.absoluteEpisodeCount) {
+                            console.log(`   ║ ║    Absolute Episodes: ${tvdbEnrichment.absoluteEpisodeCount}`);
+                        }
+                    }
+
+                    console.log(`   ║ ╚═══════════════════════════════════════════════════════`);
+                } else {
+                    console.log(`   ║    ⚠️ TVDB series not found`);
+                }
+            } catch (tvdbErr) {
+                console.log(`   ║    ⚠️ TVDB fetch failed: ${tvdbErr instanceof Error ? tvdbErr.message : 'Unknown error'}`);
+            }
+        } else if (!tvdbId) {
+            console.log(`   ║ ⏭️  No TVDB ID available`);
+        } else if (!TVDB_API_KEY) {
+            console.log(`   ║ ⏭️  TVDB_API_KEY not configured`);
+        }
+
+        // 4. Check if we need to regenerate AI content
+        // Structured descriptions have 5 parts: premise, themes, tone, style, semanticSummary
+        const hasStructuredDesc = item.description_parts &&
+            item.description_parts.premise &&
+            item.description_parts.themes &&
+            item.description_parts.tone &&
+            item.description_parts.style &&
+            item.description_parts.semanticSummary; // 5th part for vector embeddings
+        const needsDescription = FORCE_DESC || !item.description || item.description.length < 50 || !hasStructuredDesc;
         const needsTags = FORCE_TAGS || !item.cached_tags || (item.cached_tags as any[]).length === 0;
-        const needsEmbedding = FORCE_EMBEDDINGS || !item.vector_text;
+        const needsEmbedding = FORCE_EMBEDDINGS || !item.vector_text || needsDescription; // Regenerate embedding if description changed
 
         let description = item.description;
+        let descriptionParts: StructuredDescription | null = item.description_parts || null;
         let validTags = item.cached_tags || [];
         let embeddingVector = null;
+        let vibeScores: VibeScores | null = item.vibe_scores || null;
 
         if (needsDescription) {
-            console.log(`   ║ 🧠 Regenerating description...`);
-            const richContext = `
-Title: ${meta.title} (${meta.release_year})
-Creator: ${meta.metadata?.created_by?.join(', ') || 'N/A'}
-Cast: ${meta.cast.slice(0, 5).join(', ')}
-Genres: ${meta.genres.join(', ')}
-Keywords: ${meta.keywords.join(', ')}
-Status: ${meta.status}
-Overview: ${meta.overview || 'N/A'}
-            `.trim();
+            console.log(`   ║ 🧠 Regenerating structured description (4-part)...`);
+            const context = {
+                title: meta.title,
+                originalDescription: meta.overview || '',
+                type: 'TV_SHOW',
+                metadata: {
+                    ...meta.metadata,
+                    releaseYear: meta.release_year,
+                    original_language: meta.original_language
+                },
+                status: meta.status,
+                // TV-specific context for better prompt routing
+                genres: meta.genres,
+                keywords: meta.keywords,
+                networks: meta.networks
+            };
 
-            description = await aiLimiter(() =>
-                rewriteDescription(supabase, meta.title, richContext, 'TV_SHOW')
+            descriptionParts = await aiLimiter(() =>
+                generateTvShowDescription(supabase, context)
             );
-            console.log(`   ║    ✅ Generated: ${description.slice(0, 60)}...`);
+            description = combineDescription(descriptionParts);
+            console.log(`   ║    ✅ Generated 5-part description:`);
+            console.log(`   ║       Premise: ${descriptionParts.premise?.slice(0, 50) || 'N/A'}...`);
+            console.log(`   ║       Themes: ${descriptionParts.themes?.slice(0, 50) || 'N/A'}...`);
+            console.log(`   ║       Tone: ${descriptionParts.tone?.slice(0, 50) || 'N/A'}...`);
+            console.log(`   ║       Style: ${descriptionParts.style?.slice(0, 50) || 'N/A'}...`);
+            console.log(`   ║       SemanticSummary: ${descriptionParts.semanticSummary?.slice(0, 50) || 'N/A'}...`);
         }
 
         if (needsTags) {
@@ -274,21 +374,134 @@ Overview: ${meta.overview || 'N/A'}
 
         if (needsEmbedding) {
             console.log(`   ║ 🧮 Regenerating embedding...`);
-            const vectorText = `
-                Title: ${meta.title}
-                Creator: ${meta.metadata?.created_by?.join(', ') || 'Unknown'}
-                Keywords: ${meta.keywords.slice(0, 10).join(', ')}
-                Plot: ${description}
-            `.trim();
+            // Use buildEmbeddingText for proper vector-optimized content
+            const vectorText = buildEmbeddingText({
+                title: meta.title,
+                category_type: 'TV_SHOW',
+                description_parts: descriptionParts || undefined,
+                description: description || undefined,
+                genres: meta.genres,
+                keywords: meta.keywords,
+                cast: meta.cast,
+                director: meta.director,
+                studio: meta.studio,
+                cached_tags: validTags as { id: string; name: string }[],
+                metadata: meta.metadata
+            });
             embeddingVector = await generateEmbedding(vectorText);
             if (embeddingVector) {
                 console.log(`   ║    ✅ Embedding generated (${embeddingVector.length} dims)`);
             }
         }
 
-        // 4. Build update payload
+        // 5. Generate vibe scores (new or regenerate if forced)
+        const needsVibeScores = FORCE_VIBE || !item.vibe_scores;
+        if (needsVibeScores) {
+            console.log(`   ║ 🎭 Generating vibe scores (20 dimensions)...`);
+            const llmConfig = await getLLMConfig(supabase);
+            if (llmConfig.apiKey) {
+                const startVibe = Date.now();
+                vibeScores = await aiLimiter(() =>
+                    generateVibeScores(
+                        { apiKey: llmConfig.apiKey!, provider: llmConfig.provider, model: llmConfig.model, endpoint: llmConfig.endpoint },
+                        { title: meta.title, overview: description || meta.overview, genres: meta.genres, keywords: meta.keywords }
+                    )
+                );
+                if (vibeScores) {
+                    console.log(`   ║    ✅ Vibe scores generated in ${Date.now() - startVibe}ms`);
+                    console.log(`   ║    Sample: grit=${vibeScores.grit}, cerebral=${vibeScores.cerebral}, prestige=${vibeScores.prestige}`);
+                } else {
+                    console.log(`   ║    ⚠️  No vibe scores generated`);
+                }
+            } else {
+                console.log(`   ║    ⚠️  No LLM config, skipping vibe scores`);
+            }
+        }
+
+        // 6. PEER REVIEW: Semantic Neighborhood Check (against 233k library)
+        // Validates new item by comparing against closest neighbors before saving
+        let peerReviewResult: { neighbors: any[]; outlierTags: string[] } = { neighbors: [], outlierTags: [] };
+
+        if (embeddingVector && embeddingVector.length > 0) {
+            console.log(`   ║ 🔗 PEER REVIEW: Checking semantic neighborhood...`);
+
+            // Find 5 closest neighbors using HNSW index
+            const { data: neighbors, error: neighborError } = await supabase.rpc('find_semantic_neighbors', {
+                p_embedding: embeddingVector,
+                p_category_type: 'TV_SHOW',
+                p_limit: 5
+            });
+
+            if (neighborError) {
+                console.log(`   ║    ⚠️  Neighbor search failed: ${neighborError.message}`);
+            } else if (neighbors && neighbors.length > 0) {
+                peerReviewResult.neighbors = neighbors;
+
+                console.log(`   ║ ╔══ SEMANTIC NEIGHBORS ══════════════════════════════════════`);
+                neighbors.forEach((n: any, i: number) => {
+                    const dist = n.distance?.toFixed(3) || 'N/A';
+                    console.log(`   ║ ║ ${i + 1}. ${n.title} (dist: ${dist}) [${n.bucket_type || 'N/A'}]`);
+                });
+                console.log(`   ║ ╚═══════════════════════════════════════════════════════════`);
+
+                // Validate bucket consistency
+                const neighborBuckets = neighbors.map((n: any) => n.bucket_type).filter(Boolean);
+                const bucketFromMeta = meta.metadata?.type === 'Scripted' ? 'NARRATIVE' :
+                    meta.genres?.some((g: string) => g.toLowerCase().includes('documentary')) ? 'OBSERVATIONAL' :
+                        'NARRATIVE';
+
+                const uniqueBuckets = [...new Set(neighborBuckets)];
+                if (uniqueBuckets.length === 1 && uniqueBuckets[0] !== bucketFromMeta) {
+                    console.log(`   ║ ⚠️  BUCKET MISMATCH: Neighbors are ${uniqueBuckets[0]}, but detected ${bucketFromMeta}`);
+                }
+            }
+        }
+
+        // Outlier Detection: Check vibe scores against category averages
+        if (vibeScores && Object.keys(vibeScores).length > 0) {
+            console.log(`   ║ 📊 DRIFT CHECK: Comparing vibes to category averages...`);
+
+            const { data: outliers, error: outlierError } = await supabase.rpc('detect_vibe_outliers', {
+                p_vibe_scores: vibeScores,
+                p_category_type: 'TV_SHOW'
+            });
+
+            if (outlierError) {
+                console.log(`   ║    ⚠️  Outlier detection failed: ${outlierError.message}`);
+            } else if (outliers && outliers.length > 0) {
+                const extremeOutliers = outliers.filter((o: any) => o.is_outlier);
+
+                if (extremeOutliers.length > 0) {
+                    console.log(`   ║ 🚨 OUTLIERS DETECTED (${extremeOutliers.length} dimensions):`);
+                    extremeOutliers.forEach((o: any) => {
+                        const direction = o.item_score > o.category_avg ? 'HIGH' : 'LOW';
+                        console.log(`   ║    • ${o.dimension}: ${o.item_score?.toFixed(2)} (avg: ${o.category_avg?.toFixed(2)}, z=${o.z_score?.toFixed(2)}) [${direction}]`);
+
+                        // Add relational tags for extreme outliers
+                        if (o.z_score > 4) {
+                            peerReviewResult.outlierTags.push(`extreme-${o.dimension}`);
+                        } else {
+                            peerReviewResult.outlierTags.push(`${direction.toLowerCase()}-${o.dimension}`);
+                        }
+                    });
+
+                    if (extremeOutliers.length >= 3) {
+                        peerReviewResult.outlierTags.push('genre-defying');
+                        console.log(`   ║ 🏷️  Added relational tags: ${peerReviewResult.outlierTags.join(', ')}`);
+                    }
+                } else {
+                    console.log(`   ║    ✅ All vibe scores within normal range`);
+                }
+            }
+        }
+
+        // 7. Build update payload
+        // NOTE: We don't update 'title' by default to avoid unique constraint violations
+        // when TMDB renames a show. Use --update-title flag to force title updates.
+        const UPDATE_TITLE = args.includes('--update-title');
+
+
         const updatePayload: Record<string, any> = {
-            title: meta.title,
             release_year: meta.release_year,
             runtime: meta.runtime,
             trailer_url: meta.trailer_url,
@@ -324,8 +537,14 @@ Overview: ${meta.overview || 'N/A'}
             last_metadata_update: new Date().toISOString(),
         };
 
-        if (needsDescription) {
+        // Only include title if explicitly requested
+        if (UPDATE_TITLE) {
+            updatePayload.title = meta.title;
+        }
+
+        if (needsDescription && descriptionParts) {
             updatePayload.description = description;
+            updatePayload.description_parts = descriptionParts;
         }
         if (needsTags) {
             updatePayload.cached_tags = validTags;
@@ -333,16 +552,41 @@ Overview: ${meta.overview || 'N/A'}
         if (embeddingVector) {
             updatePayload.vector_text = JSON.stringify(embeddingVector);
         }
+        if (vibeScores && needsVibeScores) {
+            updatePayload.vibe_scores = vibeScores;
+        }
 
-        // 5. Save
+        // 5. Save with retry logic for unique constraint violations
         if (DRY_RUN) {
             console.log(`   ║ 🔍 DRY RUN - Would update ${Object.keys(updatePayload).length} fields`);
         } else {
             console.log(`   ║ 💾 Saving ${Object.keys(updatePayload).length} fields...`);
             const { error } = await (supabase.from('global_items') as any).update(updatePayload).eq('id', item.id);
+
             if (error) {
-                console.log(`   ║ ❌ Error: ${error.message}`);
-                errorCount++;
+                // Check for unique constraint violation
+                if (error.message.includes('idx_global_items_title_category_unique')) {
+                    console.log(`   ║ ⚠️  Title conflict detected - TMDB title "${meta.title}" conflicts with existing item`);
+                    console.log(`   ║    Keeping original title: "${item.title}"`);
+                    // Title is already excluded by default, so this shouldn't happen unless --update-title is used
+                    if (UPDATE_TITLE) {
+                        // Retry without title
+                        const { title: _removed, ...payloadWithoutTitle } = updatePayload;
+                        const { error: retryError } = await (supabase.from('global_items') as any).update(payloadWithoutTitle).eq('id', item.id);
+                        if (retryError) {
+                            console.log(`   ║ ❌ Retry failed: ${retryError.message}`);
+                            errorCount++;
+                        } else {
+                            console.log(`   ║ ✅ Updated successfully (title preserved)`);
+                            successCount++;
+                        }
+                    } else {
+                        errorCount++;
+                    }
+                } else {
+                    console.log(`   ║ ❌ Error: ${error.message}`);
+                    errorCount++;
+                }
             } else {
                 console.log(`   ║ ✅ Updated successfully`);
                 successCount++;
