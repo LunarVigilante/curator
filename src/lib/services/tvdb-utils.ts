@@ -22,7 +22,7 @@ export function extractEnrichment(series: TvdbSeriesExtended): TvdbEnrichmentRes
             else if (c.peopleType === 'Voice') tier = 'Voice';
 
             return {
-                name: c.name,
+                name: c.name || 'Unknown',  // Fallback when TVDB lacks character name
                 actorName: c.personName,
                 tier,
                 sortOrder: c.sort
