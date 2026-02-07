@@ -1,6 +1,6 @@
 # TV Show Harvest & Backfill Walkthrough
 
-> **Version**: 7.0 (Peer Review + Hybrid-Relational Model)  
+> **Version**: 8.0 (Exemplar Anchoring + Normalization)  
 > **Last Updated**: 2026-02-06
 
 This document describes the complete TV show pipeline with:
@@ -8,6 +8,8 @@ This document describes the complete TV show pipeline with:
 - **Dual-Lane Indexing**: Janitor (scripts) + Curator (AI discovery)
 - **Peer Review**: Semantic neighborhood validation before save
 - **Drift Prevention**: Vibe outlier detection (3σ threshold)
+- **Exemplar Anchoring**: Curated reference shows calibrate vibe scoring
+- **Power Normalization**: Spreads clustered scores for better differentiation
 
 ---
 
@@ -21,7 +23,8 @@ This document describes the complete TV show pipeline with:
 6. [Database Schema](#database-schema)
 7. [RPC Functions](#rpc-functions)
 8. [Tags System](#tags-system)
-9. [CLI Reference](#cli-reference)
+9. [Vibe Scoring v2](#vibe-scoring-v2)
+10. [CLI Reference](#cli-reference)
 
 ---
 
@@ -64,7 +67,12 @@ For scripts to find items needing processing.
 -- Find items missing AI analysis (instant on 233k rows)
 CREATE INDEX idx_harvest_queue 
 ON global_items (created_at DESC) 
-WHERE bucket_type IS NULL OR vibe_scores = '{}'::jsonb;
+WHERE bucket_type IS NULL OR vibe_scores IS NULL OR vibe_scores = '{}'::jsonb;
+
+-- Find items missing embeddings
+CREATE INDEX idx_missing_embeddings 
+ON global_items (created_at DESC) 
+WHERE embedding IS NULL;
 ```
 
 ### Curator Lane (Discovery Lane)
@@ -133,21 +141,27 @@ const { data: outliers } = await supabase.rpc('detect_vibe_outliers', {
 2. AI CLASSIFICATION      ───────────────────────────────────
    generateTvShowDescription() → 5-part structured description
    generateTags() → 4-bucket taxonomy (15-20 tags)
-   generateVibeScores() → 20-dimension vibe profile
+   generateVibeScores() → 20-dimension vibe profile (with normalization)
 
 3. EMBEDDING              ───────────────────────────────────
    buildEmbeddingText() → generateEmbedding() → 1024d vector
 
-4. PEER REVIEW ⭐ NEW     ───────────────────────────────────
+4. PEER REVIEW            ───────────────────────────────────
    find_semantic_neighbors() → 5 closest items (HNSW)
    detect_vibe_outliers() → flag 3σ deviations
    Bucket consistency check
 
 5. SAVE                   ───────────────────────────────────
    UPDATE global_items with all fields
+   ⏱️ Per-item timing logged
 ```
 
-### CLI Flags
+### TVDB Character Data
+When TVDB returns no character name, the code falls back to the actor's `personName` to avoid displaying raw `"null"` in the character field.
+
+---
+
+## CLI Reference
 
 | Flag | Effect |
 |------|--------|
@@ -159,6 +173,24 @@ const { data: outliers } = await supabase.rpc('detect_vibe_outliers', {
 | `--force-embeddings` | Force embedding regen |
 | `--force-vibe` | Force vibe scores regen |
 | `--exclude-recent=N` | Skip items updated in last N hours |
+| `--desc-only` | Only regenerate AI content (skip metadata updates) |
+| `--start-at=N` | Skip first N items (crash recovery/resume) |
+| `--update-title` | Allow title updates (risky: may cause unique constraint violations) |
+
+### Example Usage
+```bash
+# Full reharvest
+npx tsx src/scripts/reharvest-tv.ts
+
+# Reharvest with description-only mode, skip recently updated
+npx tsx src/scripts/reharvest-tv.ts --desc-only --exclude-recent=1
+
+# Resume after crash at item 200
+npx tsx src/scripts/reharvest-tv.ts --start-at=200
+
+# Test on 5 items, dry run
+npx tsx src/scripts/reharvest-tv.ts --limit=5 --dry-run
+```
 
 ---
 
@@ -243,6 +275,154 @@ SELECT * FROM get_category_vibe_stats('TV_SHOW');
 -- Returns: dimension, avg_score, stddev_score, count
 ```
 
+### browse_items
+```sql
+SELECT * FROM browse_items(
+    p_category_type := 'TV_SHOW',
+    p_limit := 20,
+    p_offset := 0
+);
+-- Returns: paginated items with filters
+-- search_path: public, extensions (for vector ops)
+```
+
+---
+
+## Tags System
+
+### Centralized Tags Table
+All semantic tags are stored in a centralized `tags` table with AI-generated descriptions:
+
+```sql
+CREATE TABLE tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug TEXT UNIQUE NOT NULL,     -- e.g., 'awkward-cringe-comedy'
+    name TEXT NOT NULL,             -- e.g., 'awkward cringe comedy'
+    description TEXT,               -- AI-generated tooltip description
+    category TEXT                   -- mood, theme, style, narrative, pacing, tone
+);
+```
+
+### Tag Categories
+| Category | Examples |
+|----------|----------|
+| mood | buoyant, melancholic, tense |
+| theme | redemption, family, identity |
+| style | documentary, surreal, minimalist |
+| narrative | episodic, serialized, anthology |
+| pacing | slow-burn, rapid-fire, methodical |
+| tone | dark, light-hearted, satirical |
+
+### Tag Flow in Harvest Pipeline
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   generateTags(supabase, ...)               │
+│  AI generates semantic tag names from content context       │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    ensureTags(supabase, tagNames)           │
+│  1. Convert names to slugs                                  │
+│  2. Check existing tags in tags table                       │
+│  3. Generate AI descriptions for new tags                   │
+│  4. Categorize new tags (mood/theme/style/etc)              │
+│  5. Insert new tags                                         │
+│  6. Return {id, name, slug, description} array              │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   cached_tags (global_items)                │
+│  Denormalized copy: [{id, name}, ...] for fast retrieval    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Backfill Existing Tags
+Run the backfill script to migrate existing cached_tags to the tags table:
+
+```bash
+# Preview (dry run)
+npx tsx src/scripts/backfill-tags.ts --dry-run
+
+# Execute backfill
+npx tsx src/scripts/backfill-tags.ts
+
+# Limit for testing
+npx tsx src/scripts/backfill-tags.ts --limit=50
+```
+
+### UI Integration
+The sidebar uses `useTagDescriptions` hook to fetch descriptions from the tags table:
+- Tooltips display AI-generated descriptions on hover
+- Falls back to "Semantic tag: {name}" if no description exists
+
+---
+
+## Vibe Scoring v2
+
+### Exemplar Anchoring
+Each dimension is calibrated with curated reference shows that define the 1.0 extreme:
+
+| Dimension | 1.0 Anchors |
+|-----------|-------------|
+| grit | The Wire, The Shield, Generation Kill |
+| whimsy | Pushing Daisies, The Good Place, Schmigadoon! |
+| cerebral | Westworld S1, Devs, Primer |
+| pacing | 24, Bodyguard, Money Heist |
+| complexity | Dark, Game of Thrones, The Wire |
+| intimacy | In Treatment, The Bear, Fleabag |
+| adrenaline | Squid Game, Breaking Bad, Chernobyl |
+| aesthetic | Hannibal, Euphoria, Legion |
+| melancholy | The Leftovers, Six Feet Under, BoJack Horseman |
+| prestige | Twin Peaks: The Return, The Crown, Mad Men |
+| nostalgia | Stranger Things, GLOW, Freaks and Geeks |
+| surrealism | Atlanta, Twin Peaks, Man Seeking Woman |
+| grandiosity | Game of Thrones, Foundation, Rome |
+| provocative | Euphoria, Black Mirror, The Boys |
+| wholesomeness | Ted Lasso, Schitt's Creek, Great British Bake Off |
+| cynicism | Succession, Veep, It's Always Sunny |
+| symmetry | Severance, Mr. Robot, Homecoming |
+| grind | The Wire, Deadwood, Tinker Tailor Soldier Spy |
+| mystery | Lost, Severance, Yellowjackets |
+| camp | Riverdale, American Horror Story, True Blood |
+
+### Power Normalization (k=3)
+After LLM scoring, a power curve spreads clustered values:
+
+```
+Raw → Normalized:
+0.9 → 0.82  (high stays high)
+0.8 → 0.59  (mid compressed)
+0.6 → 0.52  (slightly above neutral)
+0.5 → 0.50  (unchanged)
+0.3 → 0.42  
+0.2 → 0.18  (low stays low)
+```
+
+### Vibe Dimensions (20)
+
+| Dimension | Low | High |
+|-----------|-----|------|
+| grit | Polished | Brutal |
+| whimsy | Serious | Playful |
+| cerebral | Visceral | Intellectual |
+| pacing | Meditative | Frenetic |
+| complexity | Simple | Labyrinthine |
+| intimacy | Epic | Personal |
+| adrenaline | Tranquil | Heart-pounding |
+| aesthetic | Utilitarian | Stylized |
+| melancholy | Joyful | Sorrowful |
+| prestige | Popcorn | Arthouse |
+| nostalgia | Modern | Retro |
+| surrealism | Realistic | Dreamlike |
+| grandiosity | Modest | Operatic |
+| provocative | Safe | Transgressive |
+| wholesomeness | Nihilistic | Heartfelt |
+| cynicism | Idealistic | Jaded |
+| symmetry | Chaotic | Precise |
+| grind | Accessible | Demanding |
+| mystery | Clear | Enigmatic |
+| camp | Sincere | Over-the-top |
+
 ---
 
 ## Cross-Category Queries
@@ -274,101 +454,3 @@ JOIN item_creatives ic ON gi.id = ic.item_id
 JOIN creatives c ON c.id = ic.creative_id
 WHERE c.name = 'Bryan Cranston';
 ```
-
----
-
-## Tags System
-
-### Centralized Tags Table
-All semantic tags are stored in a centralized `tags` table with AI-generated descriptions:
-
-```sql
-CREATE TABLE tags (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug TEXT UNIQUE NOT NULL,     -- e.g., 'awkward-cringe-comedy'
-    name TEXT NOT NULL,             -- e.g., 'awkward cringe comedy'
-    description TEXT,               -- AI-generated tooltip description
-    category TEXT,                  -- mood, theme, style, narrative, pacing, tone
-    source_type TEXT,               -- 'ai' or 'manual'
-    last_synced_at TIMESTAMPTZ
-);
-```
-
-### Tag Categories
-| Category | Examples |
-|----------|----------|
-| mood | buoyant, melancholic, tense |
-| theme | redemption, family, identity |
-| style | documentary, surreal, minimalist |
-| narrative | episodic, serialized, anthology |
-| pacing | slow-burn, rapid-fire, methodical |
-| tone | dark, light-hearted, satirical |
-
-### Tag Flow in Harvest Pipeline
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   generateTags(supabase, ...)               │
-│  AI generates semantic tag names from content context       │
-└──────────────────────────┬──────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    ensureTags(supabase, tagNames)           │
-│  1. Convert names to slugs                                  │
-│  2. Check existing tags in tags table                       │
-│  3. Generate AI descriptions for new tags                   │
-│  4. Categorize new tags (mood/theme/style/etc)              │
-│  5. Insert new tags with source_type='ai'                   │
-│  6. Return {id, name, slug, description} array              │
-└──────────────────────────┬──────────────────────────────────┘
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   cached_tags (global_items)                │
-│  Denormalized copy: [{id, name}, ...] for fast retrieval    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Backfill Existing Tags
-Run the backfill script to migrate existing cached_tags to the tags table:
-
-```bash
-# Preview (dry run)
-npx tsx src/scripts/backfill-tags.ts --dry-run
-
-# Execute backfill
-npx tsx src/scripts/backfill-tags.ts
-
-# Limit for testing
-npx tsx src/scripts/backfill-tags.ts --limit=50
-```
-
-### UI Integration
-The sidebar uses `useTagDescriptions` hook to fetch descriptions from the tags table:
-- Tooltips display AI-generated descriptions on hover
-- Falls back to "Semantic tag: {name}" if no description exists
-
----
-
-## Vibe Dimensions (20)
-
-| Dimension | Low | High |
-|-----------|-----|------|
-| grit | Polished | Brutal |
-| whimsy | Serious | Playful |
-| cerebral | Visceral | Intellectual |
-| pacing | Meditative | Frenetic |
-| complexity | Simple | Labyrinthine |
-| intimacy | Epic | Personal |
-| adrenaline | Tranquil | Heart-pounding |
-| aesthetic | Utilitarian | Stylized |
-| melancholy | Joyful | Sorrowful |
-| prestige | Popcorn | Arthouse |
-| nostalgia | Modern | Retro |
-| surrealism | Realistic | Dreamlike |
-| grandiosity | Modest | Operatic |
-| provocative | Safe | Transgressive |
-| wholesomeness | Nihilistic | Heartfelt |
-| cynicism | Idealistic | Jaded |
-| symmetry | Chaotic | Precise |
-| grind | Accessible | Demanding |
-| mystery | Clear | Enigmatic |
-| camp | Sincere | Over-the-top |

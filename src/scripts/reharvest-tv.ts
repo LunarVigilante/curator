@@ -12,10 +12,13 @@
  * - Updates all metadata fields
  * 
  * Usage:
- *   npx tsx src/scripts/reharvest-tv.ts           # Run full reharvest
- *   npx tsx src/scripts/reharvest-tv.ts --limit=50    # Limit to 50 items
- *   npx tsx src/scripts/reharvest-tv.ts --dry-run     # Preview without saving
- *   npx tsx src/scripts/reharvest-tv.ts --force       # Force regen descriptions/tags/embeddings
+ *   npx tsx src/scripts/reharvest-tv.ts                  # Run full reharvest
+ *   npx tsx src/scripts/reharvest-tv.ts --limit=50       # Limit to 50 items
+ *   npx tsx src/scripts/reharvest-tv.ts --dry-run        # Preview without saving
+ *   npx tsx src/scripts/reharvest-tv.ts --force          # Force regen descriptions/tags/embeddings
+ *   npx tsx src/scripts/reharvest-tv.ts --desc-only      # Only regenerate descriptions (skip metadata)
+ *   npx tsx src/scripts/reharvest-tv.ts --start-at=100   # Start at item N (for crash recovery)
+ *   npx tsx src/scripts/reharvest-tv.ts --exclude-recent=1  # Skip items updated in last N hours
  */
 
 import 'dotenv/config';
@@ -54,6 +57,8 @@ const EXCLUDE_RECENT_ARG = args.find(a => a.startsWith('--exclude-recent='));
 const EXCLUDE_RECENT_HOURS = EXCLUDE_RECENT_ARG ? parseInt(EXCLUDE_RECENT_ARG.split('=')[1], 10) : null;
 const DESC_ONLY = args.includes('--desc-only'); // Skip metadata updates, only regenerate descriptions
 const FORCE_VIBE = args.includes('--force-vibe') || FORCE_REGEN; // Force regenerate vibe scores
+const START_AT_ARG = args.find(a => a.startsWith('--start-at='));
+const START_AT = START_AT_ARG ? parseInt(START_AT_ARG.split('=')[1], 10) : 0;
 
 if (!TMDB_API_KEY) {
     console.error('❌ Missing TMDB_API_KEY');
@@ -220,6 +225,7 @@ async function processItem(item: any) {
     }
 
     processedCount++;
+    const itemStartTime = Date.now();
     console.log(`\n   ╔════════════════════════════════════════════════════════════════`);
     console.log(`   ║ 📺 ${processedCount}. ${item.title}`);
     console.log(`   ╠════════════════════════════════════════════════════════════════`);
@@ -507,7 +513,10 @@ async function processItem(item: any) {
         const UPDATE_TITLE = args.includes('--update-title');
 
 
-        const updatePayload: Record<string, any> = {
+        // DESC_ONLY mode skips metadata updates, only saves AI content
+        const updatePayload: Record<string, any> = DESC_ONLY ? {
+            last_metadata_update: new Date().toISOString(),
+        } : {
             release_year: meta.release_year,
             runtime: meta.runtime,
             trailer_url: meta.trailer_url,
@@ -598,6 +607,8 @@ async function processItem(item: any) {
                 successCount++;
             }
         }
+        const itemElapsed = ((Date.now() - itemStartTime) / 1000).toFixed(1);
+        console.log(`   ║ ⏱️  Completed in ${itemElapsed}s`);
         console.log(`   ╚════════════════════════════════════════════════════════════════`);
 
     } catch (error) {
@@ -621,7 +632,9 @@ async function main() {
     if (ITEM_LIMIT) console.log(`🔢 Limit: ${ITEM_LIMIT} items`);
     if (DRY_RUN) console.log(`🔍 Mode: DRY RUN (no changes saved)`);
     if (FORCE_REGEN) console.log(`♻️  Mode: FORCE (regenerate all AI content)`);
+    if (DESC_ONLY) console.log(`📝 Mode: DESC ONLY (skip metadata updates)`);
     if (EXCLUDE_RECENT_HOURS) console.log(`⏳ Filter: Excluding items updated in the last ${EXCLUDE_RECENT_HOURS} hours`);
+    if (START_AT > 0) console.log(`⏩ Start At: Skipping first ${START_AT} items (crash recovery)`);
     console.log('');
 
     // 1. Fetch all existing TV shows
@@ -666,9 +679,13 @@ async function main() {
     }
     console.log('');
 
-    // Apply limit
-    const itemsToProcess = ITEM_LIMIT ? items.slice(0, ITEM_LIMIT) : items;
-    console.log(`\n📊 Found ${items.length} TV shows, processing ${itemsToProcess.length}`);
+    // Apply limit and start-at
+    let itemsToProcess = ITEM_LIMIT ? items.slice(0, ITEM_LIMIT) : items;
+    if (START_AT > 0) {
+        console.log(`⏩ Skipping first ${START_AT} items...`);
+        itemsToProcess = itemsToProcess.slice(START_AT);
+    }
+    console.log(`\n📊 Found ${items.length} TV shows, processing ${itemsToProcess.length}${START_AT > 0 ? ` (starting at #${START_AT + 1})` : ''}`);
     console.log('─'.repeat(70));
 
     // 2. Process each item with concurrency
