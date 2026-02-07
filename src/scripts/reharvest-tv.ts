@@ -17,15 +17,19 @@
  *   npx tsx src/scripts/reharvest-tv.ts --dry-run        # Preview without saving
  *   npx tsx src/scripts/reharvest-tv.ts --force          # Force regen descriptions/tags/embeddings
  *   npx tsx src/scripts/reharvest-tv.ts --desc-only      # Only regenerate descriptions (skip metadata)
- *   npx tsx src/scripts/reharvest-tv.ts --start-at=100   # Start at item N (for crash recovery)
+ *   npx tsx src/scripts/reharvest-tv.ts --start-at=100   # Start at item N (positional)
+ *   npx tsx src/scripts/reharvest-tv.ts --resume         # Resume from last checkpoint (ID-based)
+ *   npx tsx src/scripts/reharvest-tv.ts --only=vibes     # Progressive: only regenerate vibe scores
  *   npx tsx src/scripts/reharvest-tv.ts --exclude-recent=1  # Skip items updated in last N hours
  */
 
 import 'dotenv/config';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { ImageService } from '@/lib/services/image/imageService';
-import { generateEmbedding, generateTags, ensureTags, sleep, aiLimiter, getLLMConfig } from '@/lib/harvesters/shared';
+import { generateEmbedding, generateTags, ensureTags, sleep, aiLimiter, getLLMConfig, computeSemanticHash, hasSemanticChanges } from '@/lib/harvesters/shared';
 import { combineDescription, buildEmbeddingText, type StructuredDescription } from '@/lib/ai/structured-description';
+import fs from 'fs';
+import path from 'path';
 import { generateTvShowDescription } from '@/lib/ai/tv-show-description';
 import { generateVibeScores, type VibeScores } from '@/lib/ai/vibe-scoring';
 import { getSeriesExtended, type TvdbEnrichmentResult } from '@/lib/services/tvdb';
@@ -59,6 +63,42 @@ const DESC_ONLY = args.includes('--desc-only'); // Skip metadata updates, only r
 const FORCE_VIBE = args.includes('--force-vibe') || FORCE_REGEN; // Force regenerate vibe scores
 const START_AT_ARG = args.find(a => a.startsWith('--start-at='));
 const START_AT = START_AT_ARG ? parseInt(START_AT_ARG.split('=')[1], 10) : 0;
+
+// Progressive enrichment: only run specific phases
+const ONLY_ARG = args.find(a => a.startsWith('--only='));
+const ONLY_MODE = ONLY_ARG ? ONLY_ARG.split('=')[1] : null; // vibes|tags|embeddings|desc
+
+// Checkpoint/resume support
+const CHECKPOINT_FILE = path.join(process.cwd(), '.reharvest-checkpoint.json');
+const RESUME = args.includes('--resume');
+
+interface Checkpoint {
+    lastItemId: string;
+    lastItemTitle: string;
+    processedCount: number;
+    timestamp: string;
+}
+
+function writeCheckpoint(itemId: string, title: string, count: number): void {
+    const checkpoint: Checkpoint = {
+        lastItemId: itemId,
+        lastItemTitle: title,
+        processedCount: count,
+        timestamp: new Date().toISOString()
+    };
+    try {
+        fs.writeFileSync(CHECKPOINT_FILE, JSON.stringify(checkpoint, null, 2));
+    } catch { /* best-effort */ }
+}
+
+function readCheckpoint(): Checkpoint | null {
+    try {
+        if (fs.existsSync(CHECKPOINT_FILE)) {
+            return JSON.parse(fs.readFileSync(CHECKPOINT_FILE, 'utf-8'));
+        }
+    } catch { /* corrupted checkpoint */ }
+    return null;
+}
 
 if (!TMDB_API_KEY) {
     console.error('❌ Missing TMDB_API_KEY');
@@ -232,7 +272,7 @@ async function processItem(item: any) {
     console.log(`   ║ TMDB ID: ${tmdbId} | UUID: ${item.id.slice(0, 8)}...`);
 
     try {
-        // 1. Fetch fresh TMDB data
+        // 1. Fetch fresh TMDB data (must come first — provides IMDB/TVDB IDs)
         console.log(`   ║ 🔄 Fetching TMDB data...`);
         const details = await fetchTmdbDetails(Number(tmdbId));
         if (!details) {
@@ -244,93 +284,114 @@ async function processItem(item: any) {
         const meta = extractMetadata(details);
         console.log(`   ║    Status: ${meta.status} | Seasons: ${meta.number_of_seasons} | Episodes: ${meta.number_of_episodes}`);
 
-        // 2. Fetch OMDb ratings
-        let omdbData = null;
-        if (meta.external_ids.imdb) {
-            console.log(`   ║ 🎯 Fetching OMDb data...`);
-            omdbData = await fetchOmdbData(meta.external_ids.imdb);
-            if (omdbData) {
-                console.log(`   ║    IMDB: ${omdbData.imdb_rating || 'N/A'} | RT: ${omdbData.rotten_tomatoes_rating || 'N/A'}%`);
-            }
+        // 2. Fetch OMDb + TVDB in parallel (independent of each other)
+        const tvdbId = meta.external_ids.tvdb;
+        console.log(`   ║ 🔄 Fetching OMDb + TVDB in parallel...`);
+
+        const [omdbData, tvdbResult] = await Promise.all([
+            // OMDb ratings
+            meta.external_ids.imdb
+                ? fetchOmdbData(meta.external_ids.imdb)
+                : Promise.resolve(null),
+            // TVDB enrichment
+            (tvdbId && TVDB_API_KEY)
+                ? getSeriesExtended(Number(tvdbId), TVDB_API_KEY, TVDB_PIN || undefined)
+                    .catch((err: Error) => {
+                        console.log(`   ║    ⚠️ TVDB fetch failed: ${err.message}`);
+                        return null;
+                    })
+                : Promise.resolve(null),
+        ]);
+
+        if (omdbData) {
+            console.log(`   ║    IMDB: ${omdbData.imdb_rating || 'N/A'} | RT: ${omdbData.rotten_tomatoes_rating || 'N/A'}%`);
         }
 
-        // 3. Fetch TVDB enrichment (characters, semantic tags, official lists)
+        // 3. Process TVDB enrichment results
         let tvdbEnrichment: TvdbEnrichmentResult | null = null;
-        const tvdbId = meta.external_ids.tvdb;
-        if (tvdbId && TVDB_API_KEY) {
-            console.log(`   ║ 📺 Fetching TVDB data (ID: ${tvdbId})...`);
-            try {
-                const tvdbSeries = await getSeriesExtended(Number(tvdbId), TVDB_API_KEY, TVDB_PIN || undefined);
-                if (tvdbSeries) {
-                    tvdbEnrichment = extractEnrichment(tvdbSeries);
+        if (tvdbResult) {
+            tvdbEnrichment = extractEnrichment(tvdbResult);
 
-                    // Detailed TVDB logging
-                    console.log(`   ║ ╔══ TVDB ENRICHMENT ══════════════════════════════════════`);
-                    console.log(`   ║ ║ 🎭 Characters: ${tvdbEnrichment.characters.length}`);
-                    if (tvdbEnrichment.characters.length > 0) {
-                        const topChars = tvdbEnrichment.characters.slice(0, 5);
-                        topChars.forEach((c, i) => {
-                            console.log(`   ║ ║    ${i + 1}. ${c.name} (${c.actorName}) [${c.tier}]`);
-                        });
-                        if (tvdbEnrichment.characters.length > 5) {
-                            console.log(`   ║ ║    ...and ${tvdbEnrichment.characters.length - 5} more`);
-                        }
-                    }
-
-                    console.log(`   ║ ║ 🏷️  Semantic Tags: ${tvdbEnrichment.semanticTags.length}`);
-                    if (tvdbEnrichment.semanticTags.length > 0) {
-                        console.log(`   ║ ║    ${tvdbEnrichment.semanticTags.slice(0, 10).join(', ')}${tvdbEnrichment.semanticTags.length > 10 ? '...' : ''}`);
-                    }
-
-                    console.log(`   ║ ║ 📋 Official Lists: ${tvdbEnrichment.officialLists.length}`);
-                    if (tvdbEnrichment.officialLists.length > 0) {
-                        tvdbEnrichment.officialLists.forEach(list => {
-                            console.log(`   ║ ║    • ${list}`);
-                        });
-                    }
-
-                    if (tvdbEnrichment.contentRating) {
-                        console.log(`   ║ ║ 🔞 Content Rating: ${tvdbEnrichment.contentRating}`);
-                    }
-
-                    // Check for universe detection
-                    const universeSlug = detectUniverseFromOfficialLists(tvdbEnrichment.officialLists);
-                    if (universeSlug) {
-                        console.log(`   ║ ║ 🌌 Universe Detected: ${universeSlug}`);
-                    }
-
-                    // Check if anime
-                    if (tvdbSeries && isAnime(tvdbSeries)) {
-                        console.log(`   ║ ║ 🎌 Anime Detected`);
-                        if (tvdbEnrichment.absoluteEpisodeCount) {
-                            console.log(`   ║ ║    Absolute Episodes: ${tvdbEnrichment.absoluteEpisodeCount}`);
-                        }
-                    }
-
-                    console.log(`   ║ ╚═══════════════════════════════════════════════════════`);
-                } else {
-                    console.log(`   ║    ⚠️ TVDB series not found`);
+            // Detailed TVDB logging
+            console.log(`   ║ ╔══ TVDB ENRICHMENT ══════════════════════════════════════`);
+            console.log(`   ║ ║ 🎭 Characters: ${tvdbEnrichment.characters.length}`);
+            if (tvdbEnrichment.characters.length > 0) {
+                const topChars = tvdbEnrichment.characters.slice(0, 5);
+                topChars.forEach((c, i) => {
+                    console.log(`   ║ ║    ${i + 1}. ${c.name} (${c.actorName}) [${c.tier}]`);
+                });
+                if (tvdbEnrichment.characters.length > 5) {
+                    console.log(`   ║ ║    ...and ${tvdbEnrichment.characters.length - 5} more`);
                 }
-            } catch (tvdbErr) {
-                console.log(`   ║    ⚠️ TVDB fetch failed: ${tvdbErr instanceof Error ? tvdbErr.message : 'Unknown error'}`);
             }
+
+            console.log(`   ║ ║ 🏷️  Semantic Tags: ${tvdbEnrichment.semanticTags.length}`);
+            if (tvdbEnrichment.semanticTags.length > 0) {
+                console.log(`   ║ ║    ${tvdbEnrichment.semanticTags.slice(0, 10).join(', ')}${tvdbEnrichment.semanticTags.length > 10 ? '...' : ''}`);
+            }
+
+            console.log(`   ║ ║ 📋 Official Lists: ${tvdbEnrichment.officialLists.length}`);
+            if (tvdbEnrichment.officialLists.length > 0) {
+                tvdbEnrichment.officialLists.forEach(list => {
+                    console.log(`   ║ ║    • ${list}`);
+                });
+            }
+
+            if (tvdbEnrichment.contentRating) {
+                console.log(`   ║ ║ 🔞 Content Rating: ${tvdbEnrichment.contentRating}`);
+            }
+
+            // Check for universe detection
+            const universeSlug = detectUniverseFromOfficialLists(tvdbEnrichment.officialLists);
+            if (universeSlug) {
+                console.log(`   ║ ║ 🌌 Universe Detected: ${universeSlug}`);
+            }
+
+            // Check if anime
+            if (tvdbResult && isAnime(tvdbResult)) {
+                console.log(`   ║ ║ 🎌 Anime Detected`);
+                if (tvdbEnrichment.absoluteEpisodeCount) {
+                    console.log(`   ║ ║    Absolute Episodes: ${tvdbEnrichment.absoluteEpisodeCount}`);
+                }
+            }
+
+            console.log(`   ║ ╚═══════════════════════════════════════════════════════`);
         } else if (!tvdbId) {
             console.log(`   ║ ⏭️  No TVDB ID available`);
         } else if (!TVDB_API_KEY) {
             console.log(`   ║ ⏭️  TVDB_API_KEY not configured`);
         }
 
-        // 4. Check if we need to regenerate AI content
-        // Structured descriptions have 5 parts: premise, themes, tone, style, semanticSummary
+        // 4. Semantic hash (skip AI regen when TMDB content unchanged)
+        const newSemanticHash = computeSemanticHash(
+            meta.title,
+            meta.overview || '',
+            meta.cast,
+            meta.genres
+        );
+        const semanticChanged = hasSemanticChanges(item.semantic_hash || null, newSemanticHash);
+        if (!semanticChanged && !FORCE_REGEN && !ONLY_MODE) {
+            console.log(`   ║ ⚡ Semantic hash unchanged — skipping AI regen`);
+        }
+
+        // Check if we need to regenerate AI content
+        // ONLY_MODE restricts to a single phase
         const hasStructuredDesc = item.description_parts &&
             item.description_parts.premise &&
             item.description_parts.themes &&
             item.description_parts.tone &&
             item.description_parts.style &&
-            item.description_parts.semanticSummary; // 5th part for vector embeddings
-        const needsDescription = FORCE_DESC || !item.description || item.description.length < 50 || !hasStructuredDesc;
-        const needsTags = FORCE_TAGS || !item.cached_tags || (item.cached_tags as any[]).length === 0;
-        const needsEmbedding = FORCE_EMBEDDINGS || !item.vector_text || needsDescription; // Regenerate embedding if description changed
+            item.description_parts.semanticSummary;
+
+        const needsDescription = ONLY_MODE
+            ? ONLY_MODE === 'desc'
+            : FORCE_DESC || (semanticChanged && (!item.description || item.description.length < 50 || !hasStructuredDesc));
+        const needsTags = ONLY_MODE
+            ? ONLY_MODE === 'tags'
+            : FORCE_TAGS || !item.cached_tags || (item.cached_tags as any[]).length === 0;
+        const needsEmbedding = ONLY_MODE
+            ? ONLY_MODE === 'embeddings'
+            : FORCE_EMBEDDINGS || !item.vector_text || needsDescription;
 
         let description = item.description;
         let descriptionParts: StructuredDescription | null = item.description_parts || null;
@@ -401,7 +462,9 @@ async function processItem(item: any) {
         }
 
         // 5. Generate vibe scores (new or regenerate if forced)
-        const needsVibeScores = FORCE_VIBE || !item.vibe_scores;
+        const needsVibeScores = ONLY_MODE
+            ? ONLY_MODE === 'vibes'
+            : FORCE_VIBE || !item.vibe_scores;
         if (needsVibeScores) {
             console.log(`   ║ 🎭 Generating vibe scores (20 dimensions)...`);
             const llmConfig = await getLLMConfig(supabase);
@@ -567,6 +630,8 @@ async function processItem(item: any) {
         if (embeddingVector) {
             updatePayload.vector_text = JSON.stringify(embeddingVector);
         }
+        // Always save the latest semantic hash
+        updatePayload.semantic_hash = newSemanticHash;
         if (vibeScores && needsVibeScores) {
             updatePayload.vibe_scores = vibeScores;
         }
@@ -605,6 +670,7 @@ async function processItem(item: any) {
             } else {
                 console.log(`   ║ ✅ Updated successfully`);
                 successCount++;
+                writeCheckpoint(item.id, item.title, processedCount);
             }
         }
         const itemElapsed = ((Date.now() - itemStartTime) / 1000).toFixed(1);
@@ -633,8 +699,10 @@ async function main() {
     if (DRY_RUN) console.log(`🔍 Mode: DRY RUN (no changes saved)`);
     if (FORCE_REGEN) console.log(`♻️  Mode: FORCE (regenerate all AI content)`);
     if (DESC_ONLY) console.log(`📝 Mode: DESC ONLY (skip metadata updates)`);
+    if (ONLY_MODE) console.log(`🎯 Mode: ONLY ${ONLY_MODE.toUpperCase()} (progressive enrichment)`);
     if (EXCLUDE_RECENT_HOURS) console.log(`⏳ Filter: Excluding items updated in the last ${EXCLUDE_RECENT_HOURS} hours`);
-    if (START_AT > 0) console.log(`⏩ Start At: Skipping first ${START_AT} items (crash recovery)`);
+    if (START_AT > 0) console.log(`⏩ Start At: Skipping first ${START_AT} items`);
+    if (RESUME) console.log(`🔄 Resume: Continuing from last checkpoint`);
     console.log('');
 
     // 1. Fetch all existing TV shows
@@ -647,7 +715,7 @@ async function main() {
     while (hasMore) {
         let query = supabase
             .from('global_items')
-            .select('id, title, external_ids, description, cached_tags, vector_text, category_type')
+            .select('id, title, external_ids, description, description_parts, cached_tags, vector_text, vibe_scores, semantic_hash, category_type, last_metadata_update')
             .eq('category_type', 'TV_SHOW')
             .order('last_metadata_update', { ascending: true, nullsFirst: true });
 
@@ -679,13 +747,26 @@ async function main() {
     }
     console.log('');
 
-    // Apply limit and start-at
+    // Apply limit, start-at, and resume
     let itemsToProcess = ITEM_LIMIT ? items.slice(0, ITEM_LIMIT) : items;
-    if (START_AT > 0) {
+    if (RESUME) {
+        const checkpoint = readCheckpoint();
+        if (checkpoint) {
+            const idx = itemsToProcess.findIndex(i => i.id === checkpoint.lastItemId);
+            if (idx >= 0) {
+                console.log(`🔄 Resuming after "${checkpoint.lastItemTitle}" (item ${idx + 1}/${itemsToProcess.length})`);
+                itemsToProcess = itemsToProcess.slice(idx + 1);
+            } else {
+                console.log(`⚠️  Checkpoint item not found in current result set, starting from beginning`);
+            }
+        } else {
+            console.log(`⚠️  No checkpoint file found, starting from beginning`);
+        }
+    } else if (START_AT > 0) {
         console.log(`⏩ Skipping first ${START_AT} items...`);
         itemsToProcess = itemsToProcess.slice(START_AT);
     }
-    console.log(`\n📊 Found ${items.length} TV shows, processing ${itemsToProcess.length}${START_AT > 0 ? ` (starting at #${START_AT + 1})` : ''}`);
+    console.log(`\n📊 Found ${items.length} TV shows, processing ${itemsToProcess.length}${START_AT > 0 ? ` (starting at #${START_AT + 1})` : ''}${RESUME ? ' (resumed)' : ''}`);
     console.log('─'.repeat(70));
 
     // 2. Process each item with concurrency
@@ -705,6 +786,11 @@ async function main() {
     console.log(`   ⏭️  Skipped: ${skippedCount}`);
     console.log(`   ❌ Errors:  ${errorCount}`);
     console.log(`   ⏱️  Time:    ${elapsed} minutes`);
+    // Clean up checkpoint on successful completion
+    if (errorCount === 0 && fs.existsSync(CHECKPOINT_FILE)) {
+        fs.unlinkSync(CHECKPOINT_FILE);
+        console.log(`   🧹 Checkpoint file cleaned up`);
+    }
     console.log('═'.repeat(70));
 }
 

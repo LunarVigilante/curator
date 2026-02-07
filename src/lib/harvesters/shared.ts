@@ -405,49 +405,38 @@ export async function ensureTags(
     const existingMap = new Map((existing || []).map((t: any) => [t.slug, t]));
     const toCreate = uniqueNames.filter(name => !existingMap.has(toSlug(name)));
 
-    // 2. Create missing tags with AI descriptions
+    // 2. Create missing tags with AI descriptions (batched for efficiency)
     let newTags: any[] = [];
     if (toCreate.length > 0) {
-        // Import AI description generator dynamically to avoid circular deps
-        const { generateTagDescription, categorizeTag } = await import('@/lib/ai/tag-description');
+        // Import batch generators to reduce LLM calls from 2*N to 2
+        const { batchGenerateTagDescriptions, batchCategorizeTags } = await import('@/lib/ai/tag-description');
 
-        // Generate descriptions for new tags (with rate limiting)
-        const tagsToInsert = [];
-        for (const name of toCreate) {
-            try {
-                const [description, category] = await Promise.all([
-                    generateTagDescription(name),
-                    categorizeTag(name)
-                ]);
-                tagsToInsert.push({
-                    name,
-                    slug: toSlug(name),
-                    description,
-                    category,
-                    source_type: 'ai'
-                });
-                // Small delay to avoid rate limiting
-                await sleep(50);
-            } catch (error) {
-                console.warn(`⚠️ Failed to generate description for tag "${name}":`, error);
-                tagsToInsert.push({
-                    name,
-                    slug: toSlug(name),
-                    description: null,
-                    category: null,
-                    source_type: 'ai'
-                });
+        try {
+            // Run batch description + batch categorization in parallel (2 LLM calls total)
+            const [descriptionMap, categoryMap] = await Promise.all([
+                batchGenerateTagDescriptions(toCreate),
+                batchCategorizeTags(toCreate)
+            ]);
+
+            const tagsToInsert = toCreate.map(name => ({
+                name,
+                slug: toSlug(name),
+                description: descriptionMap.get(name) || null,
+                category: categoryMap.get(name) || null,
+                source_type: 'ai'
+            }));
+
+            const { data, error } = await (supabase.from('tags') as any)
+                .insert(tagsToInsert)
+                .select('id, name, slug, description');
+
+            if (!error && data) {
+                newTags = data;
+            } else if (error) {
+                console.error('Failed to insert tags:', error);
             }
-        }
-
-        const { data, error } = await (supabase.from('tags') as any)
-            .insert(tagsToInsert)
-            .select('id, name, slug, description');
-
-        if (!error && data) {
-            newTags = data;
-        } else if (error) {
-            console.error('Failed to insert tags:', error);
+        } catch (error) {
+            console.warn('⚠️ Batch tag creation failed:', error);
         }
     }
 

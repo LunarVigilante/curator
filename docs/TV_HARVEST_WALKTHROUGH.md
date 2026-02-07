@@ -174,19 +174,24 @@ When TVDB returns no character name, the code falls back to the actor's `personN
 | `--force-vibe` | Force vibe scores regen |
 | `--exclude-recent=N` | Skip items updated in last N hours |
 | `--desc-only` | Only regenerate AI content (skip metadata updates) |
-| `--start-at=N` | Skip first N items (crash recovery/resume) |
-| `--update-title` | Allow title updates (risky: may cause unique constraint violations) |
+| `--only=MODE` | Progressive enrichment: `vibes`, `tags`, `embeddings`, or `desc` only |
+| `--start-at=N` | Skip first N items (positional) |
+| `--resume` | Resume from last checkpoint (ID-based, survives query changes) |
+| `--update-title` | Allow title updates (risky: unique constraint violations) |
 
 ### Example Usage
 ```bash
 # Full reharvest
 npx tsx src/scripts/reharvest-tv.ts
 
+# Only add vibe scores (1 LLM call per item instead of 8)
+npx tsx src/scripts/reharvest-tv.ts --only=vibes
+
+# Resume after crash (ID-based checkpoint)
+npx tsx src/scripts/reharvest-tv.ts --resume
+
 # Reharvest with description-only mode, skip recently updated
 npx tsx src/scripts/reharvest-tv.ts --desc-only --exclude-recent=1
-
-# Resume after crash at item 200
-npx tsx src/scripts/reharvest-tv.ts --start-at=200
 
 # Test on 5 items, dry run
 npx tsx src/scripts/reharvest-tv.ts --limit=5 --dry-run
