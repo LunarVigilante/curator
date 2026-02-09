@@ -11,6 +11,39 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { getLLMConfig } from '@/lib/harvesters/shared'
 
 /**
+ * Attempt to parse JSON, repairing common LLM output issues:
+ * - Trailing commas before closing braces
+ * - Control characters inside strings
+ * - Unescaped newlines inside values
+ */
+function safeJsonParse<T>(raw: string): T | null {
+    // First try as-is
+    try { return JSON.parse(raw) as T } catch { /* continue */ }
+
+    let repaired = raw
+    // Strip control chars except \n \r \t
+    repaired = repaired.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    // Replace literal newlines inside JSON string values with spaces
+    repaired = repaired.replace(/(["'])\s*\n\s*/g, '$1 ')
+    // Remove trailing commas before } or ]
+    repaired = repaired.replace(/,\s*([}\]])/g, '$1')
+
+    try { return JSON.parse(repaired) as T } catch { /* continue */ }
+
+    // Last resort: extract individual key-value pairs with regex
+    const pairs = new Map<string, string>()
+    const pairRegex = /"([^"]+)"\s*:\s*"((?:[^"\\]|\\.)*)"?/g
+    let m: RegExpExecArray | null
+    while ((m = pairRegex.exec(raw)) !== null) {
+        pairs.set(m[1], m[2].replace(/\\(["\\])/g, '$1'))
+    }
+    if (pairs.size > 0) {
+        return Object.fromEntries(pairs) as T
+    }
+    return null
+}
+
+/**
  * Generate an AI description for a semantic tag
  * @param tagName - The tag name (e.g., "buoyant", "high-energy bingeable")
  * @returns A 1-2 sentence description of what the tag means
@@ -125,12 +158,16 @@ export async function batchGenerateTagDescriptions(tagNames: string[]): Promise<
         return results
     }
 
-    const systemPrompt = `You are a media curator assistant. For each tag below, generate a brief description (1-2 sentences, max 50 words each) explaining what the tag means in entertainment context.
+    const systemPrompt = `You are a media curator assistant. For each tag, write a 1-sentence description (max 30 words) of what it means for TV/film.
 
-Output ONLY valid JSON: {"tag_name": "description", ...}
-No extra text before or after the JSON.`
+Rules:
+- Output ONLY a JSON object mapping tag name to description
+- Do NOT use quotes or special characters inside description values
+- Keep descriptions simple and plain-text
 
-    const userPrompt = `Generate descriptions for these ${tagNames.length} tags:\n${tagNames.map(n => `- "${n}"`).join('\n')}`
+Example: {"slow-burn": "A narrative that builds tension gradually over many episodes", "satirical": "Uses humor and irony to critique society or institutions"}`
+
+    const userPrompt = `Describe these ${tagNames.length} tags: ${tagNames.map(n => `"${n}"`).join(', ')}`
 
     try {
         const response = await callLLM({
@@ -141,17 +178,19 @@ No extra text before or after the JSON.`
             model: config.model,
             endpoint: config.endpoint,
             timeoutMs: 60000,
-            maxTokens: tagNames.length * 80
+            maxTokens: tagNames.length * 60
         })
 
         const jsonMatch = response.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]) as Record<string, string>
-            for (const name of tagNames) {
-                results.set(name, parsed[name] || `Describes media with "${name}" characteristics.`)
+            const parsed = safeJsonParse<Record<string, string>>(jsonMatch[0])
+            if (parsed) {
+                for (const name of tagNames) {
+                    results.set(name, parsed[name] || `Describes media with ${name} characteristics.`)
+                }
+                console.log(`   ║    🏷️  Batch described ${tagNames.length} tags in 1 call`)
+                return results
             }
-            console.log(`   ║    🏷️  Batch described ${tagNames.length} tags in 1 call`)
-            return results
         }
     } catch (error) {
         console.warn(`   ║    ⚠️  Batch tag description failed, falling back to individual:`, error)
@@ -208,14 +247,16 @@ Categories: mood, theme, style, narrative, pacing, tone`
 
         const jsonMatch = response.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]) as Record<string, string>
-            const validCategories = ['mood', 'theme', 'style', 'narrative', 'pacing', 'tone']
-            for (const name of tagNames) {
-                const cat = (parsed[name] || '').toLowerCase().trim()
-                results.set(name, validCategories.includes(cat) ? cat : 'theme')
+            const parsed = safeJsonParse<Record<string, string>>(jsonMatch[0])
+            if (parsed) {
+                const validCategories = ['mood', 'theme', 'style', 'narrative', 'pacing', 'tone']
+                for (const name of tagNames) {
+                    const cat = (parsed[name] || '').toLowerCase().trim()
+                    results.set(name, validCategories.includes(cat) ? cat : 'theme')
+                }
+                console.log(`   ║    🏷️  Batch categorized ${tagNames.length} tags in 1 call`)
+                return results
             }
-            console.log(`   ║    🏷️  Batch categorized ${tagNames.length} tags in 1 call`)
-            return results
         }
     } catch {
         // Fallback to individual

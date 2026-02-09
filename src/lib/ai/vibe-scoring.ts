@@ -85,12 +85,12 @@ const DIMENSION_EXEMPLARS: Record<keyof VibeScores, { high: string[]; descriptio
         description: 'Intellectual, puzzle-box, philosophical. Demands active engagement.'
     },
     pacing: {
-        high: ['24', 'Bodyguard', 'Money Heist'],
-        description: 'Kinetic, breathless, relentless. Constant cliffhangers and momentum.'
+        high: ['24', 'Reacher', 'Squid Game'],
+        description: 'Breathless, relentless momentum. Every episode ends on a cliffhanger; you physically cannot stop watching.'
     },
     complexity: {
-        high: ['Dark', 'Game of Thrones', 'The Wire'],
-        description: 'Layered, dense, multi-threaded. Requires charts to follow.'
+        high: ['Dark', 'Westworld (S1)', 'Primer'],
+        description: 'Labyrinthine, multi-threaded, requires a literal timeline chart. Three timelines, fifty characters, nothing is what it seems.'
     },
     intimacy: {
         high: ['In Treatment', 'The Bear', 'Fleabag'],
@@ -137,8 +137,8 @@ const DIMENSION_EXEMPLARS: Record<keyof VibeScores, { high: string[]; descriptio
         description: 'Nihilistic, self-interested, bleak. No hugging, no learning.'
     },
     symmetry: {
-        high: ['Severance', 'Mr. Robot', 'Homecoming (S1)'],
-        description: 'Precise, curated, rigid. Geometric perfection and quadrant framing.'
+        high: ['Severance', 'Mr. Robot', 'Kubrick films'],
+        description: 'Obsessively composed, every frame a calculated grid. Symmetrical hallways, centered subjects, sterile perfection like a Wes Anderson dollhouse or a Kubrick tracking shot.'
     },
     grind: {
         high: ['The Wire', 'Deadwood', 'Tinker Tailor Soldier Spy'],
@@ -214,8 +214,8 @@ const VIBE_SCORES_PROMPT = (ctx: VibeContext) => {
 1. grit: Polished/clean → Raw/brutal/unvarnished
 2. whimsy: Grave/serious → Playful/storybook/absurd
 3. cerebral: Visceral/primal → Intellectual/puzzle-box
-4. pacing: Meditative/slow → Kinetic/breathless
-5. complexity: Simple/linear → Layered/labyrinthine
+4. pacing: Meditative/glacial/contemplative → Kinetic/breathless/cliffhanger-every-scene
+5. complexity: Simple/linear/self-contained → Labyrinthine/multi-timeline/requires-a-wiki
 6. intimacy: Epic/sweeping → Claustrophobic/personal
 7. adrenaline: Tranquil/calm → Heart-pounding/intense
 8. aesthetic: Functional/plain → Stylized/visual-first
@@ -227,7 +227,7 @@ const VIBE_SCORES_PROMPT = (ctx: VibeContext) => {
 14. provocative: Family-friendly/safe → Transgressive/shocking
 15. wholesomeness: Dark/bleak → Warm/comforting
 16. cynicism: Optimistic/hopeful → Nihilistic/jaded
-17. symmetry: Chaotic/messy → Precise/geometric
+17. symmetry: Chaotic/handheld/improvised/raw → Obsessively composed/symmetrical/Kubrickian/every-frame-a-painting
 18. grind: Accessible/casual → Demanding/unforgiving
 19. mystery: Clear/explained → Enigmatic/question-driven
 20. camp: Earnest/sincere → Over-the-top/theatrical
